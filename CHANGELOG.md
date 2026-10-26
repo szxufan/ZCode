@@ -10,3 +10,8 @@
 * sync ZCode source ([3c5b227](https://github.com/szxufan/ZCode/commit/3c5b227649371507ddc4eb46ac5133afe6db1cab))
 
 * sync ZCode source ([0a1fc56](https://github.com/szxufan/ZCode/commit/0a1fc56d279fd1001f78387bd81aec1c26767411))
+
+
+### Documentation
+
+* note fork tag-push baseline workaround in release spec ([18e0d5f](https://github.com/szxufan/ZCode/commit/18e0d5f436d2d7a2a587bd3940e7fbd7cebf827b))
