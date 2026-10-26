@@ -131,11 +131,13 @@ jobs:
           sudo apt-get install -y rpm
       # 失败时把日志尾部写进 job summary 与 ::error:: annotations：job 日志需要授权才能经
       # API 读取；summary 可匿名经 check-runs API（output.summary）读取。
+      # 注意 GitHub 显式 shell: bash 等价于 bash -eo pipefail：管道失败会立即中断脚本，
+      # 必须用 `|| code=$?` 捕获退出码，否则 summary/annotations 代码不会执行。
       - name: Bundle desktop installer
         run: |
           set -o pipefail
-          pnpm bundle:desktop -- --os ${{ matrix.target }} --arch ${{ matrix.arch }} 2>&1 | tee bundle.log
-          code=$?
+          code=0
+          pnpm bundle:desktop -- --os ${{ matrix.target }} --arch ${{ matrix.arch }} 2>&1 | tee bundle.log || code=$?
           if [ "$code" != "0" ]; then
             {
               echo "### bundle failure (${{ matrix.name }}), exit ${code}"
