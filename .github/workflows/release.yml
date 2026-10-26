@@ -165,19 +165,21 @@ jobs:
           name: bundle-log-${{ matrix.name }}
           path: bundle.log
           retention-days: 3
+      # 注意用顶层 glob：`**` 会把 electron-builder 的 dist/win-unpacked/、dist/mac-arm64/
+      # 中间产物（未打包 app）一并收进 artifact，上传时又会混入目录导致 curl 读失败。
       - name: Collect installers
         uses: actions/upload-artifact@v4
         with:
           name: ${{ matrix.name }}
           path: |
-            packages/desktop/dist/**/*.exe
-            packages/desktop/dist/**/*.exe.blockmap
-            packages/desktop/dist/**/*.dmg
-            packages/desktop/dist/**/*.zip
-            packages/desktop/dist/**/*.AppImage
-            packages/desktop/dist/**/*.deb
-            packages/desktop/dist/**/*.rpm
-            packages/desktop/dist/**/*.pkg.tar.zst
+            packages/desktop/dist/*.exe
+            packages/desktop/dist/*.exe.blockmap
+            packages/desktop/dist/*.dmg
+            packages/desktop/dist/*.zip
+            packages/desktop/dist/*.AppImage
+            packages/desktop/dist/*.deb
+            packages/desktop/dist/*.rpm
+            packages/desktop/dist/*.pkg.tar.zst
           if-no-files-found: error
           retention-days: 14
 
@@ -245,8 +247,16 @@ jobs:
           release_id=$(printf '%s' "$body" | node -e "let d='';process.stdin.on('data',c=>d+=c).on('end',()=>{console.log(JSON.parse(d).id)})")
           upload_url=$(printf '%s' "$body" | node -e "let d='';process.stdin.on('data',c=>d+=c).on('end',()=>{console.log(JSON.parse(d).upload_url.split('{')[0])})")
           echo "release id: ${release_id}"
+          # 重跑时同名资产上传会 422，先清空旧资产保证幂等
+          existing_ids=$(curl -s -H "$auth" "$api/releases/${release_id}/assets?per_page=100" \
+            | node -e "let d='';process.stdin.on('data',c=>d+=c).on('end',()=>{console.log(JSON.parse(d).map(a=>a.id).join(' '))})")
+          for asset_id in $existing_ids; do
+            curl -s -X DELETE -H "$auth" "$api/releases/assets/${asset_id}"
+            echo "removed stale asset ${asset_id}"
+          done
           fail=0
           for f in dist-release/*; do
+            [ -f "$f" ] || continue
             name=$(basename "$f")
             size=$(stat -c %s "$f" 2>/dev/null || echo unknown)
             up=$(curl -s --retry 3 --retry-all-errors --max-time 900 \
