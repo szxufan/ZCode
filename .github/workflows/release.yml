@@ -217,10 +217,13 @@ jobs:
           cat SHA256SUMS.txt
       # 直接走 Releases REST API，不用第三方 action：HTTP 状态码与响应体都落在日志里，
       # 失败时可被 annotations 通道完整带出，避免黑盒。
+      # set +e 覆盖 shell:bash 默认注入的 -e：这里用显式退出码检查，任何 curl 失败
+      # 都会以 annotation 带出文件清单与响应体，而不是让脚本静默中断。
       - name: Create GitHub Release
         env:
           GITHUB_TOKEN: ${{ github.token }}
         run: |
+          set +e
           auth="Authorization: Bearer $GITHUB_TOKEN"
           api="https://api.github.com/repos/${GITHUB_REPOSITORY}"
           notes_json=$(node -e "process.stdout.write(JSON.stringify(require('fs').readFileSync('release-notes.md','utf8')))")
@@ -245,15 +248,20 @@ jobs:
           fail=0
           for f in dist-release/*; do
             name=$(basename "$f")
-            up=$(curl -s -w $'\n%{http_code}' -X POST -H "$auth" \
+            size=$(stat -c %s "$f" 2>/dev/null || echo unknown)
+            up=$(curl -s --retry 3 --retry-all-errors --max-time 900 \
+              -w $'\n%{http_code}' -X POST -H "$auth" \
               -H "Content-Type: application/octet-stream" \
               --data-binary "@$f" "${upload_url}?name=${name}")
             c=$(printf '%s' "$up" | tail -n1)
             if [ "$c" != "201" ]; then
-              echo "::error::upload ${name} HTTP ${c}: $(printf '%s' "$up" | sed '$d' | cut -c1-300)"
+              echo "::error::upload ${name} (${size} bytes) HTTP ${c}: $(printf '%s' "$up" | sed '$d' | cut -c1-300)"
               fail=1
             else
-              echo "uploaded: ${name}"
+              echo "uploaded: ${name} (${size} bytes)"
             fi
           done
+          if [ "$fail" != "0" ]; then
+            echo "::error::dist-release contents: $(ls -la dist-release | tail -n +2 | cut -c1-200 | tr '\n' '|')"
+          fi
           exit $fail
