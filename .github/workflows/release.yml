@@ -1,0 +1,184 @@
+name: Release
+
+# 发版流水线：本地 `pnpm release`（release-it）完成版本号、CHANGELOG、发版提交与 v* tag
+# 推送后，由本流水线在各平台 runner 上构建安装包并创建 GitHub Release。
+# 内部 OSS/CDN 预热与灰度发布链路不在 GitHub 上复现，触发方式、阶段与产物说明见
+# docs/desktop-github-release.md。
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+    inputs:
+      platforms:
+        description: "Platforms to build (release is only created for v* tag refs)"
+        type: choice
+        default: all
+        options:
+          - all
+          - windows-x64
+          - macos-arm64
+          - linux-x64
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  # ZCODE_ENV 未设置时桌面打包默认解析为 test 后端；发版必须显式锁定 production，
+  # 否则会把连接测试后端的安装包发布出去（见 packages/desktop/scripts/desktop-product-identity.mjs）。
+  ZCODE_ENV: production
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  plan:
+    # tag 推送时构建全部平台；手动触发时按 inputs.platforms 过滤。
+    runs-on: ubuntu-latest
+    outputs:
+      matrix: ${{ steps.plan.outputs.matrix }}
+    steps:
+      - name: Plan build matrix
+        id: plan
+        env:
+          PLATFORMS: ${{ inputs.platforms }}
+        run: |
+          platforms="${PLATFORMS:-all}"
+          all='[
+            {"name":"windows-x64","runs-on":"windows-latest","target":"win","arch":"x64"},
+            {"name":"macos-arm64","runs-on":"macos-latest","target":"mac","arch":"arm64"},
+            {"name":"linux-x64","runs-on":"ubuntu-latest","target":"linux","arch":"x64"}
+          ]'
+          case "$platforms" in
+            all)
+              matrix="$all"
+              ;;
+            windows-x64|macos-arm64|linux-x64)
+              matrix="$(echo "$all" | jq -c --arg name "$platforms" '[.[] | select(.name == $name)]')"
+              ;;
+            *)
+              echo "unknown platform: $platforms" >&2
+              exit 1
+              ;;
+          esac
+          echo "matrix=${matrix//$'\n'/}" >> "$GITHUB_OUTPUT"
+          echo "planned matrix: $matrix"
+
+  verify:
+    # 发版前在同一提交上复跑 lint 与 typecheck，快速失败；受影响单测沿用本地 pre-push 门禁，
+    # 不在发版流水线重复（见 docs/testing/pre-push-hook.md）。
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24.14.0
+          cache: pnpm
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+        env:
+          HUSKY: 0
+      - run: pnpm lint
+      - run: pnpm typecheck
+
+  build:
+    needs: [plan, verify]
+    runs-on: ${{ matrix.runs-on }}
+    timeout-minutes: 90
+    strategy:
+      # 任一平台失败不影响其余平台继续产出，便于定位；Release 仍要求全部平台成功。
+      fail-fast: false
+      matrix:
+        include: ${{ fromJSON(needs.plan.outputs.matrix) }}
+    name: build ${{ matrix.name }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24.14.0
+          cache: pnpm
+      - name: Cache Electron / electron-builder downloads
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cache/electron
+            ~/.cache/electron-builder
+            ~\AppData\Local\electron\Cache
+            ~\AppData\Local\electron-builder\Cache
+          key: electron-${{ runner.os }}-${{ hashFiles('**/pnpm-lock.yaml') }}
+          restore-keys: electron-${{ runner.os }}-
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+        env:
+          HUSKY: 0
+      # bundle 内部自行完成 prepare:runtime-assets（agent bundle、官方插件、native-search
+      # 离线归档）与桌面生产构建，不依赖额外的前置 build 步骤。
+      - name: Bundle desktop installer
+        run: pnpm bundle:desktop -- --${{ matrix.target }} --${{ matrix.arch }}
+      - name: Collect installers
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.name }}
+          path: |
+            packages/desktop/dist/**/*.exe
+            packages/desktop/dist/**/*.exe.blockmap
+            packages/desktop/dist/**/*.dmg
+            packages/desktop/dist/**/*.zip
+            packages/desktop/dist/**/*.AppImage
+            packages/desktop/dist/**/*.deb
+            packages/desktop/dist/**/*.rpm
+            packages/desktop/dist/**/*.pkg.tar.zst
+          if-no-files-found: error
+          retention-days: 14
+
+  release:
+    # 仅 v* tag 触发创建 Release；手动 dispatch 到分支 ref 时只做构建验证。
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: [verify, build]
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist-release
+          merge-multiple: true
+      - name: Guard tag against package.json version
+        run: |
+          version="${GITHUB_REF_NAME#v}"
+          package_version="$(node -p "require('./package.json').version")"
+          if [ "$version" != "$package_version" ]; then
+            echo "tag ${GITHUB_REF_NAME} does not match package.json version ${package_version}" >&2
+            exit 1
+          fi
+      - name: Extract release notes
+        run: |
+          node scripts/release-it/github-release-notes.mjs \
+            --version "${GITHUB_REF_NAME#v}" \
+            --changelog CHANGELOG.md > release-notes.md
+          cat release-notes.md
+      - name: Generate SHA256SUMS
+        run: |
+          cd dist-release
+          find . -type f ! -name 'SHA256SUMS.txt' -printf '%P\0' | sort -z |
+            xargs -0 sha256sum > SHA256SUMS.txt
+          cat SHA256SUMS.txt
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.ref_name }}
+          name: ${{ github.ref_name }}
+          body_path: release-notes.md
+          files: |
+            dist-release/**
+          fail_on_unmatched_files: true
