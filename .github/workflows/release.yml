@@ -215,12 +215,45 @@ jobs:
           find . -type f ! -name 'SHA256SUMS.txt' -printf '%P\0' | sort -z |
             xargs -0 sha256sum > SHA256SUMS.txt
           cat SHA256SUMS.txt
+      # 直接走 Releases REST API，不用第三方 action：HTTP 状态码与响应体都落在日志里，
+      # 失败时可被 annotations 通道完整带出，避免黑盒。
       - name: Create GitHub Release
-        uses: softprops/action-gh-release@v2
-        with:
-          tag_name: ${{ github.ref_name }}
-          name: ${{ github.ref_name }}
-          body_path: release-notes.md
-          files: |
-            dist-release/**
-          fail_on_unmatched_files: true
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          auth="Authorization: Bearer $GITHUB_TOKEN"
+          api="https://api.github.com/repos/${GITHUB_REPOSITORY}"
+          notes_json=$(node -e "process.stdout.write(JSON.stringify(require('fs').readFileSync('release-notes.md','utf8')))")
+          create_out=$(curl -s -w $'\n%{http_code}' -X POST \
+            -H "$auth" -H "Accept: application/vnd.github+json" \
+            "$api/releases" \
+            -d "{\"tag_name\":\"${GITHUB_REF_NAME}\",\"name\":\"${GITHUB_REF_NAME}\",\"body\":${notes_json},\"draft\":false,\"prerelease\":false}")
+          code=$(printf '%s' "$create_out" | tail -n1)
+          body=$(printf '%s' "$create_out" | sed '$d')
+          if [ "$code" != "201" ]; then
+            echo "::error::create release HTTP ${code}: $(printf '%s' "$body" | cut -c1-400)"
+            if [ "$code" = "422" ]; then
+              echo "release already exists, reusing it"
+              body=$(curl -s -H "$auth" "$api/releases/tags/${GITHUB_REF_NAME}")
+            else
+              exit 1
+            fi
+          fi
+          release_id=$(printf '%s' "$body" | node -e "let d='';process.stdin.on('data',c=>d+=c).on('end',()=>{console.log(JSON.parse(d).id)})")
+          upload_url=$(printf '%s' "$body" | node -e "let d='';process.stdin.on('data',c=>d+=c).on('end',()=>{console.log(JSON.parse(d).upload_url.split('{')[0])})")
+          echo "release id: ${release_id}"
+          fail=0
+          for f in dist-release/*; do
+            name=$(basename "$f")
+            up=$(curl -s -w $'\n%{http_code}' -X POST -H "$auth" \
+              -H "Content-Type: application/octet-stream" \
+              --data-binary "@$f" "${upload_url}?name=${name}")
+            c=$(printf '%s' "$up" | tail -n1)
+            if [ "$c" != "201" ]; then
+              echo "::error::upload ${name} HTTP ${c}: $(printf '%s' "$up" | sed '$d' | cut -c1-300)"
+              fail=1
+            else
+              echo "uploaded: ${name}"
+            fi
+          done
+          exit $fail
