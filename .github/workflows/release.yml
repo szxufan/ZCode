@@ -145,9 +145,13 @@ jobs:
               tail -n 200 bundle.log
               echo '```'
             } >> "${GITHUB_STEP_SUMMARY:-/dev/null}"
-            # bundle.mjs 失败时会把整段捕获输出拼成一行消息，单行可达数 MB——超出
-            # GitHub annotation 大小限制会被静默丢弃，必须先按行截断。
-            tail -n 80 bundle.log | cut -c1-400 | sed 's/%/%25/g; s/\r/%0D/g' | while IFS= read -r line; do
+            # bundle.mjs 失败时会把整段捕获输出拼成一行巨长消息，单行超出 annotation
+            # 大小限制会被静默丢弃。这里把结尾 12KB 按 300 字符切片全量转储，保证
+            # 超长行的实际报错内容可达；再补一份按行的 400 字符尾部便于阅读。
+            tail -c 12000 bundle.log | fold -w 300 | sed 's/%/%25/g; s/\r/%0D/g' | while IFS= read -r line; do
+              [ -n "$line" ] && echo "::warning::$line"
+            done
+            tail -n 45 bundle.log | cut -c1-400 | sed 's/%/%25/g; s/\r/%0D/g' | while IFS= read -r line; do
               [ -n "$line" ] && echo "::error::$line"
             done
           fi
