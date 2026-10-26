@@ -53,6 +53,7 @@ push tag v3.16.2
 
 ## 已知边界
 
+- **fork 仓库推首个 tag 会被 pre-push 门禁拦截**：受影响单测对“仓库中不存在的新 ref”走 `firstPushBase`（`scripts/affected-unit-tests/scope.mjs`），硬性要求 `origin/staging` 做集成分支基线；内部仓库有 staging，fork 没有。受支持的绕行方式是推送 tag 时显式指定基线（scope 解析优先读取该变量）：`ZCODE_AFFECTED_TEST_BASE=<上一版本对应的 main sha> git push origin vX.Y.Z`。分支推送不受影响（自动用远端分支 sha 作基线）。
 - Release 直接发布为 latest（非 draft）。需要人工确认时，在 release job 的 `softprops/action-gh-release` 步骤加 `draft: true`。
 - 未配置 electron-builder 的 GitHub publish provider，因此不产出 `latest.yml` 自动更新清单；客户端自动更新对接 GitHub Releases 属于后续产品决策，不在本流水线范围。
 - 构建矩阵平台清单维护在 workflow `plan` job 中（`windows-x64` / `macos-arm64` / `linux-x64`）。新增平台（如 macos-x64、linux-arm64）时同步扩展该矩阵与 `platforms` 输入选项，`bundle:desktop` 参数按 `--mac/--win/--linux` + `--x64/--arm64` 组合填写。
