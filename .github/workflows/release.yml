@@ -122,20 +122,39 @@ jobs:
       # bundle.mjs 的 CLI 契约是位置参数或 --os/--arch（win/mac/linux + x64/arm64）；
       # --win/--mac 等 flag 是它内部传给 electron-builder 的形式。pnpm 10 会把 -- 分隔符
       # 原样透传给脚本（脚本自行跳过），不要再叠加一层 --。
-      # 失败时把日志尾部逐行转成 ::error:: annotations：job 日志需要授权才能经 API 读取，
-      # annotations 可匿名读取，是无人值守诊断失败根因的唯一通道。
+      # rpm 目标走 fpm，需要构建机提供 rpmbuild（见 electron-builder.config.js rpm 注释）；
+      # 内部 GitLab runner 预装了它，GitHub hosted ubuntu 没有。xz 已预装。
+      - name: Install Linux packaging prerequisites
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y rpm
+      # 失败时把日志尾部写进 job summary 与 ::error:: annotations：job 日志需要授权才能经
+      # API 读取；summary 可匿名经 check-runs API（output.summary）读取。
       - name: Bundle desktop installer
         run: |
           set -o pipefail
           pnpm bundle:desktop -- --os ${{ matrix.target }} --arch ${{ matrix.arch }} 2>&1 | tee bundle.log
           code=$?
           if [ "$code" != "0" ]; then
-            echo "::error title=bundle exit::${{ matrix.name }} bundle failed with exit ${code}"
+            {
+              echo "### bundle failure (${{ matrix.name }}), exit ${code}"
+              echo '```text'
+              tail -n 200 bundle.log
+              echo '```'
+            } >> "${GITHUB_STEP_SUMMARY:-/dev/null}"
             tail -n 40 bundle.log | sed 's/%/%25/g; s/\r/%0D/g' | while IFS= read -r line; do
               [ -n "$line" ] && echo "::error::$line"
             done
           fi
           exit "$code"
+      - name: Upload bundle log on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: bundle-log-${{ matrix.name }}
+          path: bundle.log
+          retention-days: 3
       - name: Collect installers
         uses: actions/upload-artifact@v4
         with:
