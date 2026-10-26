@@ -56,5 +56,5 @@ push tag v3.16.2
 - **fork 仓库（无 `origin/staging` 分支）推送远端尚不存在的 ref 时会被 pre-push 门禁拦截**：受影响单测对这类 ref 走 `firstPushBase`（`scripts/affected-unit-tests/scope.mjs`），硬性要求 `origin/staging` 做集成分支基线，内部仓库有、fork 没有。受支持的做法是推送时显式指定基线（scope 解析优先读取该变量）：`ZCODE_AFFECTED_TEST_BASE=<基线 sha> git push ...`。注意脚本会先校验"推送目标 == 当前 HEAD"：tag 必须打在 HEAD 上该变量才生效；给历史提交补 tag 时门禁无法通过，只能在该提交已随分支推送通过门禁的前提下 `git push --no-verify`。分支推送不受影响（自动用远端分支 sha 作基线）。
 - Release 直接发布为 latest（非 draft）。需要人工确认时，在 release job 的 `softprops/action-gh-release` 步骤加 `draft: true`。
 - 未配置 electron-builder 的 GitHub publish provider，因此不产出 `latest.yml` 自动更新清单；客户端自动更新对接 GitHub Releases 属于后续产品决策，不在本流水线范围。
-- 构建矩阵平台清单维护在 workflow `plan` job 中（`windows-x64` / `macos-arm64` / `linux-x64`）。新增平台（如 macos-x64、linux-arm64）时同步扩展该矩阵与 `platforms` 输入选项，`bundle:desktop` 参数按 `--mac/--win/--linux` + `--x64/--arm64` 组合填写。
+- 构建矩阵平台清单维护在 workflow `plan` job 中（`windows-x64` / `macos-arm64` / `linux-x64`）。新增平台（如 macos-x64、linux-arm64）时同步扩展该矩阵与 `platforms` 输入选项，`bundle:desktop` 的目标用位置参数（`win x64`）或 `--os`/`--arch`（`win`/`mac`/`linux` + `x64`/`arm64`）指定；`--win`/`--mac` 等 flag 是 bundle 脚本内部传给 electron-builder 的形式，不是它的 CLI 参数。另注意 pnpm 10 会把 `--` 分隔符原样透传给脚本（脚本自行跳过），调用链上不要重复叠加 `--`。
 - GitHub hosted runner 上构建不设置 `ELECTRON_MIRROR`（那是 mise 提供的国内镜像），Electron 与 electron-builder 资源默认走官方源，bundle 脚本自带的镜像回退与重试逻辑保持不变。

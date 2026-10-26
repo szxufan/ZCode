@@ -119,10 +119,11 @@ jobs:
         run: pnpm install --frozen-lockfile
         env:
           HUSKY: 0
-      # bundle 内部自行完成 prepare:runtime-assets（agent bundle、官方插件、native-search
-      # 离线归档）与桌面生产构建，不依赖额外的前置 build 步骤。
+      # bundle.mjs 的 CLI 契约是位置参数或 --os/--arch（win/mac/linux + x64/arm64）；
+      # --win/--mac 等 flag 是它内部传给 electron-builder 的形式。pnpm 10 会把 -- 分隔符
+      # 原样透传给脚本（脚本自行跳过），不要再叠加一层 --。
       - name: Bundle desktop installer
-        run: pnpm bundle:desktop -- --${{ matrix.target }} --${{ matrix.arch }}
+        run: pnpm bundle:desktop -- --os ${{ matrix.target }} --arch ${{ matrix.arch }}
       - name: Collect installers
         uses: actions/upload-artifact@v4
         with:
