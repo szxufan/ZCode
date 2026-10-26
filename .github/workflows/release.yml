@@ -18,7 +18,6 @@ on:
           - all
           - windows-x64
           - macos-arm64
-          - linux-x64
 
 permissions:
   contents: read
@@ -49,16 +48,19 @@ jobs:
           PLATFORMS: ${{ inputs.platforms }}
         run: |
           platforms="${PLATFORMS:-all}"
+          # Linux 打包暂不纳入：GitHub hosted ubuntu 上 electron-builder 在 AppImage/deb
+          # 之后于 rpm/pacman 目标阶段无报错静默退出（fpm 工具链问题待查，见
+          # docs/desktop-github-release.md 已知边界）。产物形态对齐上游 Release 先例
+          # （zai-org/ZCode v3.14.3 = win-x64 exe + mac-arm64 dmg）。
           all='[
             {"name":"windows-x64","runs-on":"windows-latest","target":"win","arch":"x64"},
-            {"name":"macos-arm64","runs-on":"macos-latest","target":"mac","arch":"arm64"},
-            {"name":"linux-x64","runs-on":"ubuntu-latest","target":"linux","arch":"x64"}
+            {"name":"macos-arm64","runs-on":"macos-latest","target":"mac","arch":"arm64"}
           ]'
           case "$platforms" in
             all)
               matrix="$all"
               ;;
-            windows-x64|macos-arm64|linux-x64)
+            windows-x64|macos-arm64)
               matrix="$(echo "$all" | jq -c --arg name "$platforms" '[.[] | select(.name == $name)]')"
               ;;
             *)
@@ -119,23 +121,65 @@ jobs:
         run: pnpm install --frozen-lockfile
         env:
           HUSKY: 0
-      # bundle 内部自行完成 prepare:runtime-assets（agent bundle、官方插件、native-search
-      # 离线归档）与桌面生产构建，不依赖额外的前置 build 步骤。
+      # bundle.mjs 的 CLI 契约是位置参数或 --os/--arch（win/mac/linux + x64/arm64）；
+      # --win/--mac 等 flag 是它内部传给 electron-builder 的形式。pnpm 10 会把 -- 分隔符
+      # 原样透传给脚本（脚本自行跳过），不要再叠加一层 --。
+      # rpm 目标走 fpm，需要构建机提供 rpmbuild（见 electron-builder.config.js rpm 注释）；
+      # 内部 GitLab runner 预装了它，GitHub hosted ubuntu 没有。xz 已预装。
+      - name: Install Linux packaging prerequisites
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y rpm
+      # 失败时把日志尾部写进 job summary 与 ::error:: annotations：job 日志需要授权才能经
+      # API 读取；summary 可匿名经 check-runs API（output.summary）读取。
+      # 注意 GitHub 显式 shell: bash 等价于 bash -eo pipefail：管道失败会立即中断脚本，
+      # 必须用 `|| code=$?` 捕获退出码，否则 summary/annotations 代码不会执行。
       - name: Bundle desktop installer
-        run: pnpm bundle:desktop -- --${{ matrix.target }} --${{ matrix.arch }}
+        run: |
+          set -o pipefail
+          code=0
+          pnpm bundle:desktop -- --os ${{ matrix.target }} --arch ${{ matrix.arch }} 2>&1 | tee bundle.log || code=$?
+          if [ "$code" != "0" ]; then
+            {
+              echo "### bundle failure (${{ matrix.name }}), exit ${code}"
+              echo '```text'
+              tail -n 200 bundle.log
+              echo '```'
+            } >> "${GITHUB_STEP_SUMMARY:-/dev/null}"
+            # bundle.mjs 失败时会把整段捕获输出拼成一行巨长消息，单行超出 annotation
+            # 大小限制会被静默丢弃。这里把结尾 12KB 按 300 字符切片全量转储，保证
+            # 超长行的实际报错内容可达；再补一份按行的 400 字符尾部便于阅读。
+            tail -c 12000 bundle.log | fold -w 300 | sed 's/%/%25/g; s/\r/%0D/g' | while IFS= read -r line; do
+              [ -n "$line" ] && echo "::warning::$line"
+            done
+            tail -n 45 bundle.log | cut -c1-400 | sed 's/%/%25/g; s/\r/%0D/g' | while IFS= read -r line; do
+              [ -n "$line" ] && echo "::error::$line"
+            done
+          fi
+          exit "$code"
+      - name: Upload bundle log on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: bundle-log-${{ matrix.name }}
+          path: bundle.log
+          retention-days: 3
+      # 注意用顶层 glob：`**` 会把 electron-builder 的 dist/win-unpacked/、dist/mac-arm64/
+      # 中间产物（未打包 app）一并收进 artifact，上传时又会混入目录导致 curl 读失败。
       - name: Collect installers
         uses: actions/upload-artifact@v4
         with:
           name: ${{ matrix.name }}
           path: |
-            packages/desktop/dist/**/*.exe
-            packages/desktop/dist/**/*.exe.blockmap
-            packages/desktop/dist/**/*.dmg
-            packages/desktop/dist/**/*.zip
-            packages/desktop/dist/**/*.AppImage
-            packages/desktop/dist/**/*.deb
-            packages/desktop/dist/**/*.rpm
-            packages/desktop/dist/**/*.pkg.tar.zst
+            packages/desktop/dist/*.exe
+            packages/desktop/dist/*.exe.blockmap
+            packages/desktop/dist/*.dmg
+            packages/desktop/dist/*.zip
+            packages/desktop/dist/*.AppImage
+            packages/desktop/dist/*.deb
+            packages/desktop/dist/*.rpm
+            packages/desktop/dist/*.pkg.tar.zst
           if-no-files-found: error
           retention-days: 14
 
@@ -173,12 +217,61 @@ jobs:
           find . -type f ! -name 'SHA256SUMS.txt' -printf '%P\0' | sort -z |
             xargs -0 sha256sum > SHA256SUMS.txt
           cat SHA256SUMS.txt
+      # 直接走 Releases REST API，不用第三方 action：HTTP 状态码与响应体都落在日志里，
+      # 失败时可被 annotations 通道完整带出，避免黑盒。
+      # set +e 覆盖 shell:bash 默认注入的 -e：这里用显式退出码检查，任何 curl 失败
+      # 都会以 annotation 带出文件清单与响应体，而不是让脚本静默中断。
       - name: Create GitHub Release
-        uses: softprops/action-gh-release@v2
-        with:
-          tag_name: ${{ github.ref_name }}
-          name: ${{ github.ref_name }}
-          body_path: release-notes.md
-          files: |
-            dist-release/**
-          fail_on_unmatched_files: true
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          set +e
+          auth="Authorization: Bearer $GITHUB_TOKEN"
+          api="https://api.github.com/repos/${GITHUB_REPOSITORY}"
+          notes_json=$(node -e "process.stdout.write(JSON.stringify(require('fs').readFileSync('release-notes.md','utf8')))")
+          create_out=$(curl -s -w $'\n%{http_code}' -X POST \
+            -H "$auth" -H "Accept: application/vnd.github+json" \
+            "$api/releases" \
+            -d "{\"tag_name\":\"${GITHUB_REF_NAME}\",\"name\":\"${GITHUB_REF_NAME}\",\"body\":${notes_json},\"draft\":false,\"prerelease\":false}")
+          code=$(printf '%s' "$create_out" | tail -n1)
+          body=$(printf '%s' "$create_out" | sed '$d')
+          if [ "$code" != "201" ]; then
+            echo "::error::create release HTTP ${code}: $(printf '%s' "$body" | cut -c1-400)"
+            if [ "$code" = "422" ]; then
+              echo "release already exists, reusing it"
+              body=$(curl -s -H "$auth" "$api/releases/tags/${GITHUB_REF_NAME}")
+            else
+              exit 1
+            fi
+          fi
+          release_id=$(printf '%s' "$body" | node -e "let d='';process.stdin.on('data',c=>d+=c).on('end',()=>{console.log(JSON.parse(d).id)})")
+          upload_url=$(printf '%s' "$body" | node -e "let d='';process.stdin.on('data',c=>d+=c).on('end',()=>{console.log(JSON.parse(d).upload_url.split('{')[0])})")
+          echo "release id: ${release_id}"
+          # 重跑时同名资产上传会 422，先清空旧资产保证幂等
+          existing_ids=$(curl -s -H "$auth" "$api/releases/${release_id}/assets?per_page=100" \
+            | node -e "let d='';process.stdin.on('data',c=>d+=c).on('end',()=>{console.log(JSON.parse(d).map(a=>a.id).join(' '))})")
+          for asset_id in $existing_ids; do
+            curl -s -X DELETE -H "$auth" "$api/releases/assets/${asset_id}"
+            echo "removed stale asset ${asset_id}"
+          done
+          fail=0
+          for f in dist-release/*; do
+            [ -f "$f" ] || continue
+            name=$(basename "$f")
+            size=$(stat -c %s "$f" 2>/dev/null || echo unknown)
+            up=$(curl -s --retry 3 --retry-all-errors --max-time 900 \
+              -w $'\n%{http_code}' -X POST -H "$auth" \
+              -H "Content-Type: application/octet-stream" \
+              --data-binary "@$f" "${upload_url}?name=${name}")
+            c=$(printf '%s' "$up" | tail -n1)
+            if [ "$c" != "201" ]; then
+              echo "::error::upload ${name} (${size} bytes) HTTP ${c}: $(printf '%s' "$up" | sed '$d' | cut -c1-300)"
+              fail=1
+            else
+              echo "uploaded: ${name} (${size} bytes)"
+            fi
+          done
+          if [ "$fail" != "0" ]; then
+            echo "::error::dist-release contents: $(ls -la dist-release | tail -n +2 | cut -c1-200 | tr '\n' '|')"
+          fi
+          exit $fail
