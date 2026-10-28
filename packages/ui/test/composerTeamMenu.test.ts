@@ -46,14 +46,12 @@ function Harness({ pending = false, error = null }: { pending?: boolean; error?:
         composerOptions: {
           providerLabel: "Provider",
           modelsLabel: "Models",
-          effortLabel: "Effort",
           selectModelLabel: "Select model",
           levels: [
             { value: "low", label: "Low" },
             { value: "high", label: "High" },
           ],
           value: "low",
-          onValueChange: () => {},
           providerMenu: {
             groups,
             selectedKey: selected,
@@ -109,7 +107,13 @@ describe("Composer direct team provider menu", () => {
       expect(trigger.getAttribute("aria-busy")).toBe("true");
       expect(trigger.textContent).toContain("Individual");
       expect(screen.getByRole("status", { name: "Loading..." })).toBeTruthy();
-      expect(screen.getByRole("slider").getAttribute("aria-disabled")).toBe("true");
+      // 连接切换 pending 期间模型列表 inert，不再提供可交互的模型或档位入口。
+      expect(screen.queryByRole("slider")).toBeNull();
+      expect(
+        document
+          .querySelector<HTMLElement>("[data-composer-model-list]")
+          ?.getAttribute("inert"),
+      ).not.toBeNull();
       rerender(createElement(Harness, { error: "Switch failed; retry" }));
       expect(screen.queryByRole("status", { name: "Loading..." })).toBeNull();
       if (narrow) expect(screen.getByTestId("composer-provider-back")).toBeTruthy();
@@ -135,7 +139,7 @@ describe("Composer direct team provider menu", () => {
       expect(screen.getByTestId("composer-provider-trigger").textContent).toContain("Team One"),
     );
     expect(screen.queryByTestId("composer-provider-back")).toBeNull();
-    expect(screen.getByRole("slider")).toBeTruthy();
+    expect(screen.getByRole("menuitemradio", { name: "GLM-5.3" })).toBeTruthy();
   });
 });
 
@@ -159,7 +163,6 @@ it("连接 loading 期间固定原菜单展示，完成后一次采用新目录"
           composerOptions: {
             providerLabel: "Provider",
             modelsLabel: "Models",
-            effortLabel: "Effort",
             selectModelLabel: "Select model",
             levels: target
               ? []
@@ -168,7 +171,6 @@ it("连接 loading 期间固定原菜单展示，完成后一次采用新目录"
                   { value: "high", label: "High" },
                 ],
             value: target ? "" : "low",
-            onValueChange: () => {},
             providerMenu: {
               groups: target ? [groups[3]!] : groups,
               selectedKey: target ? "api" : "personal",
@@ -181,11 +183,14 @@ it("连接 loading 期间固定原菜单展示，完成后一次采用新目录"
       ),
     );
   const ui = render(content(false, false));
-  expect(screen.getByTestId("composer-thought-slider").getAttribute("aria-valuetext")).toBe("Low");
-  ui.rerender(content(true, true));
-  expect(screen.getByTestId("composer-thought-slider").getAttribute("aria-valuetext")).toBe("Low");
   expect(screen.getByTestId("composer-provider-trigger").textContent).toContain("Individual");
+  expect(screen.getByRole("menuitemradio", { name: "GLM-5.3" })).toBeTruthy();
+  ui.rerender(content(true, true));
+  // 连接 loading 期间固定上一个完整菜单展示，不混入目标目录。
+  expect(screen.getByTestId("composer-provider-trigger").textContent).toContain("Individual");
+  expect(screen.getByRole("menuitemradio", { name: "GLM-5.3" })).toBeTruthy();
+  expect(screen.queryByRole("menuitemradio", { name: "API model" })).toBeNull();
   ui.rerender(content(false, true));
-  expect(screen.queryByTestId("composer-thought-slider")).toBeNull();
   expect(screen.getByTestId("composer-provider-trigger").textContent).toContain("DeepSeek");
+  expect(screen.getByRole("menuitemradio", { name: "API model" })).toBeTruthy();
 });

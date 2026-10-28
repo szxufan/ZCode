@@ -1,0 +1,6 @@
+/* GLM Highspeed / FlashX 命中时，合并入口压缩态竖条填充使用 blue-500；
+   菜单内思考滑杆及其最高档渐变、气泡样式已随 Effort 设置一并移除
+   （docs/composer-model-thinking.md「移除模型菜单内的思考强度设置」）。 */
+[data-highspeed="true"] > .composer-thought-meter-fill {
+  background: var(--color-blue-500);
+}

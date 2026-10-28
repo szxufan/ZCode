@@ -1,4 +1,4 @@
-import { selectCombinedComposerThoughtLevel } from "./composer-model-picker.js";
+import { selectComposerThoughtLevel } from "./composer-model-picker.js";
 /* eslint-disable max-lines -- v4 conversation e2e helper 集中承载 pane/composer/queue/分屏等全部定位与断言原语，拆分会让 spec 的导入面漂移。 */
 // v4 竖切（protocol-v4）conversation e2e helper。
 // 与旧 conversation-session.ts 的区别：所有定位走 TID_V4_* 常量（testid contract v2，
@@ -1285,7 +1285,7 @@ export async function switchV4Model(provider: string, model: string, thought: st
     timeoutMsg: `模型切换后 config.model 投影没有更新为 ${model}`,
   });
 
-  if (thought && (await selectCombinedComposerThoughtLevel(thought))) return;
+  if (thought && (await selectComposerThoughtLevel(thought))) return;
   if (!thought && (await modelTrigger.getAttribute("data-composer-combined-model")) === "true") {
     await browser.keys("Escape");
     return;

@@ -34,7 +34,6 @@ function Harness({
   empty = false,
   levelsOverride,
   initialThought,
-  effortShortcutLabel = "Ctrl+T",
 }: {
   modelName?: string;
   invalid?: boolean;
@@ -44,7 +43,6 @@ function Harness({
   empty?: boolean;
   levelsOverride?: { value: string; label: string }[];
   initialThought?: string;
-  effortShortcutLabel?: string;
 }) {
   const [model, setModel] = useState(empty ? "" : "a/flash");
   const [thought, setThought] = useState(initialThought ?? (invalid ? "missing" : "high"));
@@ -94,12 +92,9 @@ function Harness({
         composerOptions: {
           providerLabel: "Provider",
           modelsLabel: "Models",
-          effortLabel: "Effort",
-          effortShortcutLabel,
           selectModelLabel: "Select model",
           levels: loading ? [] : (levelsOverride ?? levels),
           value: thought,
-          onValueChange: setThought,
         },
       }),
     ),
@@ -113,12 +108,17 @@ beforeEach(() => {
 });
 afterEach(cleanup);
 
-describe("composer combined model and thinking picker", () => {
+// 菜单内已无滑杆承接 Escape；通过冒泡到 document 的 Escape 走 Radix 关闭链路。
+function closeMenuWithEscape() {
+  fireEvent.keyDown(document.body, { key: "Escape" });
+}
+
+describe("composer combined model picker", () => {
   it("rolls between the open and closed content without replacing the trigger", async () => {
     render(createElement(Harness));
     const trigger = screen.getByTestId("chat-model-select-trigger");
     expect(trigger.querySelector('[data-composer-trigger-frame="open"]')).not.toBeNull();
-    fireEvent.keyDown(screen.getByRole("slider"), { key: "Escape" });
+    closeMenuWithEscape();
     await waitFor(() =>
       expect(trigger.querySelector('[data-composer-trigger-frame="open"]')).toBeNull(),
     );
@@ -136,97 +136,24 @@ describe("composer combined model and thinking picker", () => {
     expect(screen.getByTestId("chat-model-select-trigger")).toBe(trigger);
   });
 
-  it("shows the configured effort shortcut and hides an unassigned binding", () => {
-    const { rerender } = render(createElement(Harness, { effortShortcutLabel: "Alt+R" }));
-    expect(screen.getByTestId("composer-effort-shortcut").textContent).toBe("Alt+R");
-    rerender(createElement(Harness, { effortShortcutLabel: "" }));
-    expect(screen.queryByTestId("composer-effort-shortcut")).toBeNull();
-  });
-
-  it("updates the rolling effort value without replacing the slider or title", async () => {
-    render(createElement(Harness));
-    const slider = screen.getByRole("slider");
-    const title = screen.getByText("Effort");
-    const value = screen.getByTestId("composer-thought-value");
-    expect(value.querySelector('[title="High"]')).not.toBeNull();
-    fireEvent.change(slider, { target: { value: "1" } });
-    await waitFor(() => expect(value.textContent).toBe("Medium"));
-    expect(value.querySelector('[title="Medium"]')).not.toBeNull();
-    expect(screen.getByRole("slider")).toBe(slider);
-    expect(screen.getByText("Effort")).toBe(title);
-  });
-
-  it.each(["off", "disabled", "false", "no", "none", "nothink", "no-think", "no_think"])(
-    "shows sole %s as read-only text",
-    (value) => {
-      render(
-        createElement(Harness, {
-          levelsOverride: [{ value, label: "Off" }],
-          initialThought: value,
-        }),
-      );
-      expect(screen.getByText("Effort")).toBeTruthy();
-      expect(screen.getByTestId("composer-thought-value").textContent).toBe("Off");
+  it("never renders an effort setting in the model menu regardless of level count", () => {
+    for (const levelsOverride of [
+      undefined,
+      [{ value: "disabled", label: "Off" }],
+      [],
+    ]) {
+      render(createElement(Harness, { levelsOverride }));
+      // 合并入口的思考档位展示保留，但菜单内不再提供任何调整设置。
+      expect(screen.getByTestId("composer-thought-meter")).toBeTruthy();
+      expect(screen.queryByText("Effort")).toBeNull();
       expect(screen.queryByRole("slider")).toBeNull();
       expect(screen.queryByRole("switch")).toBeNull();
-    },
-  );
-  it.each(["on", "enabled", "enable", "true", "high"])(
-    "shows sole %s as a read-only effort value without adjustment controls",
-    (value) => {
-      render(
-        createElement(Harness, {
-          levelsOverride: [{ value, label: "On" }],
-          initialThought: value,
-        }),
-      );
-      expect(screen.getByText("Effort")).toBeTruthy();
-      expect(screen.getByTestId("composer-thought-value").textContent).toBe("On");
-      expect(screen.queryByRole("slider")).toBeNull();
-      expect(screen.queryByRole("switch")).toBeNull();
+      expect(screen.queryByTestId("composer-thought-slider")).toBeNull();
       expect(screen.queryByTestId("composer-effort-shortcut")).toBeNull();
-    },
-  );
-  it.each(["on", "enabled", "enable", "true"])(
-    "uses original off/%s values with a discrete slider regardless of option order",
-    (value) => {
-      render(
-        createElement(Harness, {
-          levelsOverride: [
-            { value, label: "On" },
-            { value: "off", label: "Off" },
-          ],
-          initialThought: "off",
-        }),
-      );
-      const slider = screen.getByRole("slider");
-      expect(slider.getAttribute("max")).toBe("1");
-      expect(screen.queryByRole("switch")).toBeNull();
-      expect(slider.getAttribute("aria-valuetext")).toBe("Off");
-      fireEvent.change(slider, { target: { value: "0" } });
-      expect(slider.getAttribute("aria-valuetext")).toBe("On");
-      expect(screen.getByRole("menu")).toBeTruthy();
-      fireEvent.change(slider, { target: { value: "1" } });
-      expect(slider.getAttribute("aria-valuetext")).toBe("Off");
-      fireEvent.keyDown(slider, { key: "Escape" });
-      expect(screen.queryByRole("menu")).toBeNull();
-    },
-  );
-  it.each(["low", "off"])(
-    "keeps %s/high as strength levels instead of a binary switch",
-    (value) => {
-      render(
-        createElement(Harness, {
-          levelsOverride: [
-            { value, label: "Low" },
-            { value: "high", label: "High" },
-          ],
-        }),
-      );
-      expect(screen.getByRole("slider")).toBeTruthy();
-      expect(screen.queryByRole("switch")).toBeNull();
-    },
-  );
+      cleanup();
+    }
+  });
+
   it("keeps an empty selection secondary without a phantom effort or effort placeholder", () => {
     render(createElement(Harness, { empty: true }));
     const trigger = screen.getByTestId("chat-model-select-trigger");
@@ -234,30 +161,8 @@ describe("composer combined model and thinking picker", () => {
     expect(trigger.getAttribute("aria-label")).toBe("Select model");
 
     expect(screen.queryByTestId("composer-thought-meter")).toBeNull();
-    fireEvent.keyDown(screen.getByRole("slider"), { key: "Escape" });
+    closeMenuWithEscape();
     expect(trigger.textContent).toBe("Select model");
-  });
-  it("keeps the native input while replacing model visuals", () => {
-    render(createElement(Harness));
-    const slider = screen.getByRole("slider");
-    const shell = slider.parentElement!;
-    const thumb = shell.querySelector(".composer-thought-slider-thumb");
-    fireEvent.click(screen.getByRole("menuitemradio", { name: "GLM-5.3", exact: true }));
-    expect(screen.getByRole("slider")).toBe(slider);
-    expect(
-      screen.getByRole("slider").parentElement!.querySelector(".composer-thought-slider-thumb"),
-    ).not.toBe(thumb);
-  });
-  it("shows a model selection label while open and restores selection text after closing", () => {
-    render(createElement(Harness));
-    const trigger = screen.getByTestId("chat-model-select-trigger");
-    expect(trigger.querySelector("[data-composer-open-label]")?.textContent).toBe("Select model");
-
-    fireEvent.change(screen.getByRole("slider"), { target: { value: "1" } });
-    expect(trigger.querySelector("[data-composer-open-label]")?.textContent).toBe("Select model");
-    fireEvent.keyDown(screen.getByRole("slider"), { key: "Escape" });
-    expect(trigger.textContent).toContain("GLM-5.3-Flash");
-    expect(trigger.textContent).toContain("Medium");
   });
   it("shows the provider logo and access badges, with management only inside the provider submenu", () => {
     const manage = vi.fn();
@@ -301,34 +206,7 @@ describe("composer combined model and thinking picker", () => {
     },
   );
 
-  it("keeps the menu open while mapping slider indices to declared levels", () => {
-    render(createElement(Harness));
-    const slider = screen.getByRole("slider", { name: "Effort" });
-    expect(document.querySelectorAll("[data-composer-thought-stop]")).toHaveLength(3);
-    expect(screen.getByTestId("composer-thought-track").getAttribute("data-progress")).toBe("100");
-    expect(slider.getAttribute("aria-valuetext")).toBe("High");
-    expect(
-      slider
-        .parentElement!.querySelector(".composer-thought-slider-fill")
-        ?.getAttribute("data-max"),
-    ).toBe("true");
-
-    fireEvent.change(slider, { target: { value: "1" } });
-    expect(slider.getAttribute("aria-valuetext")).toBe("Medium");
-    expect(
-      slider
-        .parentElement!.querySelector(".composer-thought-slider-fill")
-        ?.getAttribute("data-max"),
-    ).toBe("false");
-    expect(screen.queryByTestId("composer-thought-bubbles")).toBeNull();
-    expect(screen.getByTestId("composer-thought-track").getAttribute("data-progress")).toBe("50");
-    expect(screen.getByTestId("chat-model-select-trigger").getAttribute("aria-label")).toContain(
-      "Medium",
-    );
-    expect(screen.getByRole("menu")).toBeTruthy();
-  });
-
-  it("selects the provider model and synchronizes thinking without a second model click", () => {
+  it("selects the provider model and synchronizes the thought display without a second model click", () => {
     render(createElement(Harness));
     const providerTrigger = screen.getByTestId("composer-provider-trigger");
     fireEvent.keyDown(providerTrigger, { key: "ArrowRight" });
@@ -340,13 +218,12 @@ describe("composer combined model and thinking picker", () => {
       screen.getByRole("menuitemradio", { name: "Fixed model" }).getAttribute("aria-checked"),
     ).toBe("true");
     expect(screen.getAllByRole("menu")).toHaveLength(1);
-    expect(screen.queryByRole("slider")).toBeNull();
-    expect(screen.getByText("Effort")).toBeTruthy();
 
+    // 固定模型只有 Off：触发器竖条归零，不制造默认选择。
     expect(screen.getByTestId("composer-thought-meter").getAttribute("data-progress")).toBe("0");
     fireEvent.keyDown(screen.getByTestId("composer-provider-trigger"), { key: "ArrowRight" });
     fireEvent.click(screen.getByRole("menuitemradio", { name: "Provider A Individual" }));
-    expect(screen.getByRole("slider")).toBeTruthy();
+    expect(screen.getByTestId("composer-thought-meter").getAttribute("data-progress")).toBe("100");
   });
 
   it("preserves the selected model when selecting the current provider again", () => {
@@ -381,31 +258,11 @@ describe("composer combined model and thinking picker", () => {
     expect(screen.getByTestId("chat-model-select-trigger").getAttribute("aria-label")).toContain(
       "GLM-5.3-Flash",
     );
-    expect(screen.getByRole("slider").getAttribute("aria-disabled")).toBe("true");
   });
 
-  it("does not project an invalid effort as a selected first level", () => {
+  it("does not project an invalid effort as a selected level on the trigger", () => {
     render(createElement(Harness, { invalid: true }));
-    expect(screen.getByRole("slider").getAttribute("aria-valuetext")).toBe("—");
     expect(screen.getByTestId("composer-thought-meter").getAttribute("data-progress")).toBe("0");
-    fireEvent.change(screen.getByRole("slider"), { target: { value: "2" } });
-    expect(screen.getByRole("slider").getAttribute("aria-valuetext")).toBe("High");
-  });
-  it("can explicitly select the first level with Home when the current value is missing", () => {
-    render(createElement(Harness, { invalid: true }));
-    fireEvent.keyUp(screen.getByRole("slider"), { key: "Home" });
-    expect(screen.getByRole("slider").getAttribute("aria-valuetext")).toBe("Off");
-  });
-  it("retains slider focus while the same model catalog refreshes after an effort change", () => {
-    const view = render(createElement(Harness));
-    const slider = screen.getByRole("slider");
-    slider.focus();
-    view.rerender(createElement(Harness, { loading: true }));
-    expect(document.activeElement).toBe(slider);
-    expect(slider.getAttribute("aria-disabled")).toBe("true");
-    view.rerender(createElement(Harness));
-    expect(document.activeElement).toBe(slider);
-    expect(slider.getAttribute("aria-disabled")).toBe("false");
   });
 });
 
@@ -418,9 +275,10 @@ describe("narrow provider navigation", () => {
     try {
       render(createElement(Harness));
       fireEvent.click(screen.getByTestId("composer-provider-trigger"));
-      expect(screen.queryByTestId("composer-thought-slider")).toBeNull();
+      expect(screen.getByTestId("composer-provider-back")).toBeTruthy();
+      expect(screen.queryByTestId("composer-provider-trigger")).toBeNull();
       fireEvent.click(screen.getByTestId("composer-provider-back"));
-      expect(screen.getByTestId("composer-thought-slider")).toBeTruthy();
+      expect(screen.getByTestId("composer-provider-trigger")).toBeTruthy();
       fireEvent.click(screen.getByTestId("composer-provider-trigger"));
       fireEvent.click(screen.getByRole("menuitemradio", { name: "Provider B API" }));
       await waitFor(() =>
@@ -433,7 +291,7 @@ describe("narrow provider navigation", () => {
   });
 });
 
-describe("GLM Highspeed max effort", () => {
+describe("GLM Highspeed trigger meter", () => {
   it.each([
     ["GLM-5.3-Highspeed", true],
     ["glm-5.3-HIGHSPEED", true],
@@ -449,19 +307,6 @@ describe("GLM Highspeed max effort", () => {
     expect(screen.getByTestId("composer-thought-meter").getAttribute("data-highspeed")).toBe(
       String(enabled),
     );
-
-    expect(
-      document.querySelector(".composer-thought-slider-fill")?.getAttribute("data-highspeed"),
-    ).toBe(String(enabled));
-    fireEvent.change(screen.getByRole("slider"), { target: { value: "1" } });
-    expect(screen.queryByTestId("composer-thought-bubbles")).toBeNull();
-    expect(document.querySelector(".composer-thought-slider-fill")?.getAttribute("data-max")).toBe(
-      "false",
-    );
-    fireEvent.click(screen.getAllByRole("menuitemradio", { name: "GLM-5.3", exact: true }).at(-1)!);
-    expect(
-      document.querySelector(".composer-thought-slider-fill")?.getAttribute("data-highspeed"),
-    ).toBe("false");
   });
 });
 

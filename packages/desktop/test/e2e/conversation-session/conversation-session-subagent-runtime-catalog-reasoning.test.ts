@@ -17,7 +17,7 @@ import {
   TID_V4_MODEL_CONFIG,
   testId,
 } from "@zcode/shared/test-ids";
-import { selectCombinedComposerThoughtLevel } from "../helpers/composer-model-picker.js";
+import { selectComposerThoughtLevel } from "../helpers/composer-model-picker.js";
 import {
   DEFAULT_WORKSPACE,
   clearAppData,
@@ -399,12 +399,17 @@ async function assertThoughtOptionsAndSelectInScope(
   thoughtLevel: string,
 ) {
   if (scope === "body") {
-    // 主输入框已合并模型和思考入口；Subagent 设置仍使用独立下拉框。
-    await $(sel(TID_CHAT_MODEL_SELECT_TRIGGER)).click();
-    const slider = $('[data-testid="composer-thought-slider"]');
-    await slider.waitForDisplayed({ timeout: 15000 });
-    expect(JSON.parse((await slider.getAttribute("data-levels")) ?? "[]")).toEqual(levels);
-    expect(await selectCombinedComposerThoughtLevel(thoughtLevel)).toBe(true);
+    // 主输入框的思考档位由独立思考控件调整；候选目录断言走 v4 config 投影锚点，
+    // 不再打开合并菜单读取滑杆（菜单内已无思考强度设置）。
+    await browser.waitUntil(
+      async () =>
+        ((await $(sel(TID_V4_MODEL_CONFIG)).getAttribute("data-thought-levels")) ?? "") !== "",
+      { timeout: 15000, timeoutMsg: "v4 config 没有投影思考档位目录" },
+    );
+    const projectedLevels =
+      (await $(sel(TID_V4_MODEL_CONFIG)).getAttribute("data-thought-levels"))?.split(",") ?? [];
+    expect(projectedLevels).toEqual(levels);
+    expect(await selectComposerThoughtLevel(thoughtLevel)).toBe(true);
     await expect($(sel(TID_V4_MODEL_CONFIG))).toHaveAttribute("data-thought", thoughtLevel);
     return;
   }

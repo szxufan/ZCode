@@ -764,10 +764,11 @@ describe("V4ComposerModelControls recovery", () => {
     // Highspeed 删除后独立 Think 控件不再被 highspeedPresented 门控，默认渲染。
     expect(captured.thoughtControlProps).not.toBeNull();
     expect(captured.modelSelectProps?.composerOptions).toBeDefined();
-    captured.modelSelectProps?.composerOptions?.onValueChange("");
+    // 合并入口移除 Effort 设置后，档位写入只经独立 Think 控件的 onValueChange。
+    captured.thoughtControlProps?.onValueChange("");
     expect(onSelectThought).not.toHaveBeenCalled();
 
-    captured.modelSelectProps?.composerOptions?.onValueChange("high");
+    captured.thoughtControlProps?.onValueChange("high");
     expect(onSelectThought).toHaveBeenCalledWith("high", {
       provider: "custom-openai",
       model: "gpt-4o",
