@@ -22,14 +22,10 @@ before(async () => {
         load(id) {
           if (id.endsWith("/hooks/usePlatform.tsx"))
             return "export const usePlatform=()=>({executeDesktopCommand:async()=>{}});";
-          if (id.endsWith("/rewards/RewardsProvider.tsx"))
-            return "export const useOpenRewards=()=>()=>{};";
           if (id.endsWith("/shortcuts/useShortcutBindings.ts"))
             return 'export const useShortcutCommandLabel=()=>"";';
           if (id.endsWith("/store/StoreProvider.tsx"))
             return 'export const useZCodeStore=(select)=>select({interfaceMode:"coding",setInterfaceMode:()=>{},isRestoringOAuthSession:false});';
-          if (id.endsWith("/WorkspaceWebRemoteControlTrigger.tsx"))
-            return "export const WorkspaceWebRemoteControlTrigger=()=>null;";
           if (id.endsWith("/WorkspaceSidebarFooterUsageSummary.tsx"))
             return 'import React from "react"; export const useWorkspaceSidebarFooterUsageSummaryState=()=>({}); export const WorkspaceSidebarFooterPlanBadge=()=>React.createElement("span",{className:"rounded-full border border-border bg-surface px-1 py-px text-ui-xs text-foreground-subtle"},"Pro"); export const WorkspaceSidebarFooterUsageSummaryContent=()=>null;';
         },

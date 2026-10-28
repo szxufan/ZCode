@@ -2,13 +2,11 @@ import { applyDynamicWorkflowUserMode, type ApiClient } from "@zcode/shared";
 import type { ICredentialService } from "../credential/credential.js";
 import type { ICodingPlanSubscriptionService } from "./codingPlanSubscription.js";
 import { BigModelCodingPlanSubscriptionProvider } from "./bigmodelCodingPlanSubscriptionProvider.js";
-import type { ModelSelectionView } from "@zcode/provider";
 import { ZaiCodingPlanSubscriptionProvider } from "./zaiCodingPlanSubscriptionProvider.js";
 
 interface CodingPlanSubscriptionServiceDependencies {
   apiClient: ApiClient;
   credentialService: Pick<ICredentialService, "load">;
-  resolveOffPeakModelSelectionView?: () => Promise<ModelSelectionView>;
   /**
    * 用户在设置里选的动态工作流模式（launch.md「The user's choice」）。只有拥有设置权威的装配
    * （desktop 本地 Host、web/standalone server）注入；缺省时快照只含服务端的「提供」。
@@ -48,7 +46,6 @@ export function createCodingPlanSubscriptionService(
     getStartPlanPreview: () => bigmodelProvider.getStartPlanPreview(),
     getManualClaimPlanPreviews: () => bigmodelProvider.getManualClaimPlanPreviews(),
     claimManualPlan: (request) => bigmodelProvider.claimManualPlan(request),
-    getOffPeakClientConfig: (options) => bigmodelProvider.getOffPeakClientConfig(options),
     // 动态工作流灰度：与 client/configs 同源，
     // 因此和其它平台级配置一样固定走 bigmodel provider，与 family 无关。
     // 用户选择在这里套到「提供」上，renderer 读到的就是生效值；规则只写在 shared 的

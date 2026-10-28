@@ -24,7 +24,6 @@ const FILE_MANAGER_PANEL_IDS = ["preview", "directory"];
 type FileManagerPaneProps = Omit<ComponentProps<typeof PreviewPane>, "source"> & {
   source: CodeViewerSource | null;
   target: FileManagerTarget;
-  mobileOverlay: boolean;
   canOpenLocalFileManager: boolean;
   onNavigate: (source: CodeViewerSource) => void;
 };
@@ -32,7 +31,6 @@ type FileManagerPaneProps = Omit<ComponentProps<typeof PreviewPane>, "source"> &
 export function FileManagerPane({
   source,
   target,
-  mobileOverlay,
   canOpenLocalFileManager,
   onNavigate,
   ...previewProps
@@ -40,7 +38,7 @@ export function FileManagerPane({
   const { intl } = useZCodeIntl();
   const [headerContainer, setHeaderContainer] = useState<HTMLDivElement | null>(null);
   const containerRef = useRef<HTMLDivElement>(null);
-  const [isNarrow, setIsNarrow] = useState(mobileOverlay);
+  const [isNarrow, setIsNarrow] = useState(false);
   useEffect(() => {
     const container = containerRef.current;
     if (!container) return;
@@ -57,20 +55,18 @@ export function FileManagerPane({
   const setNavigationPreferenceOpen = useZCodeStore((state) => state.setFileManagerNavigationOpen);
   const [compactNavigationOpenOverride, setCompactNavigationOpenOverride] = useState<
     boolean | null
-  >(mobileOverlay ? !source : null);
-  const compactLayout = mobileOverlay || isNarrow;
+  >(null);
+  const compactLayout = isNarrow;
   // Bug 原因：显隐原本由每个 FileManagerPane 的 useState 持有，新文件 Tab 或 App 重启会再次默认展开。
   // workspace store 现在独占用户偏好；紧凑布局选中文件后的自动收起只保留在当前面板。
   const navigationOpen = compactLayout
-    ? (compactNavigationOpenOverride ??
-      storedNavigationPreferenceOpen ??
-      (!mobileOverlay || !source))
+    ? (compactNavigationOpenOverride ?? storedNavigationPreferenceOpen ?? true)
     : (storedNavigationPreferenceOpen ?? true);
   const canNavigate = Boolean(target.workspacePath && (!source || source.path));
   const showNavigation = canNavigate && navigationOpen;
   const previewPanelRef = usePanelRef();
   const directoryPanelRef = usePanelRef();
-  const navigationOnly = showNavigation && (isNarrow || mobileOverlay);
+  const navigationOnly = showNavigation && isNarrow;
   useLayoutEffect(() => {
     // Panel 的 className 只作用于内层，hidden 会留下外层占位；用库的布局状态收起并恢复宽度。
     if (navigationOnly) previewPanelRef.current?.collapse();
@@ -89,7 +85,7 @@ export function FileManagerPane({
       workspaceIdentity: target.workspaceIdentity,
       workspaceRemoteSessionId: target.workspaceRemoteSessionId,
     });
-    if (mobileOverlay || isNarrow) {
+    if (isNarrow) {
       setCompactNavigationOpenOverride(false);
     }
   };
@@ -135,7 +131,7 @@ export function FileManagerPane({
       <ResizablePanelGroup
         layoutId="file-manager-layout"
         panelIds={FILE_MANAGER_PANEL_IDS}
-        disabled={!showNavigation || isNarrow || mobileOverlay}
+        disabled={!showNavigation || isNarrow}
         className="min-h-0 flex-1"
       >
         <ResizablePanel
@@ -161,7 +157,7 @@ export function FileManagerPane({
             WORKSPACE_VERTICAL_RESIZE_HANDLE_CLASS_NAME,
             // 边框与拖拽高亮共用热区中线，避免目录边框与 resize 指示线左右错位。
             "before:pointer-events-none before:absolute before:inset-y-0 before:left-1/2 before:w-px before:-translate-x-1/2 before:bg-border before:content-[''] after:left-1/2 after:-translate-x-1/2",
-            (!showNavigation || isNarrow || mobileOverlay) && "hidden",
+            (!showNavigation || isNarrow) && "hidden",
           )}
         />
         <ResizablePanel

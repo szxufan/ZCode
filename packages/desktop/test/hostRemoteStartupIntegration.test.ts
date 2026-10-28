@@ -240,7 +240,6 @@ describe("Window Host 的 Source 重连与数据库启动整合", () => {
         runtimeProcessLifecycleReporter: {},
         runtimeTaskReporter: {},
         repoWikiTaskReporter: {},
-        createFullFeedbackLogArchiveViaMain() {},
         dispatchManualAutomationRun() {},
         browserControlMainBridge: {},
         cuaOperationStateReporter: {},

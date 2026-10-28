@@ -20,8 +20,6 @@ const MESSAGE_IDS: Record<SessionQuotaBannerKind, string> = {
   "daily-exhausted": "chat.quota.startPlan.dailyExhausted",
   "concurrent-limit": "chat.quota.startPlan.concurrentLimit",
   "provider-limited": "chat.quota.providerLimited",
-  "mcp-quota-exhausted": "chat.quota.mcp.quotaExhausted",
-  "mcp-plan-required": "chat.quota.mcp.codingPlanRequired",
 };
 
 function resolveMessageId(state: SessionQuotaBannerState): string {
@@ -96,8 +94,6 @@ export function ConversationQuotaBanner({
           { id: resolveMessageId(state) },
           {
             model: state.modelName ?? "",
-            // MCP 提示点名具体 server；服务端那句是英文的，界面文案一律走 i18n。
-            server: state.mcpServerName ?? "",
             remaining:
               state.remainingTokens === null
                 ? formatTokenCount(null)

@@ -38,7 +38,6 @@ import { buildDraftSuggestedPluginMention } from "@/v4/draftSuggestedPromptPrefi
 import { resolveDraftSuggestedPromptText } from "@/v4/draftSuggestedPromptItems.js";
 import {
   DRAFT_SUGGESTED_PROMPT_NAVIGATE_AUTOMATIONS,
-  DRAFT_SUGGESTED_PROMPT_NAVIGATE_AUTOMATIONS_OFFPEAK,
 } from "@/v4/draftSuggestedPromptItems.js";
 import {
   resolveDraftSuggestedPluginFlowStage,
@@ -48,7 +47,6 @@ import {
   type DraftSuggestedPluginOperation,
   trackDraftSuggestedPluginOperation,
 } from "@/v4/ConversationDraftSuggestedPluginFlow.js";
-import { useDraftSuggestedPromptItems } from "@/v4/useDraftSuggestedPromptItems.js";
 import { useDraftSuggestedPluginActionPopover } from "@/v4/useDraftSuggestedPluginActionPopover.js";
 import { getComposerDraftRevision } from "@/v4/composer/composerDraftRevision.js";
 import { useComposerTextInsertApplied } from "@/v4/useComposerTextInsertApplied.js";
@@ -87,7 +85,6 @@ export function ConversationDraftSuggestedPromptsContainer({
   remoteSessionId,
   onOpenAutomations,
   isDesktop = false,
-  isWebRemoteControl = false,
 }: Props) {
   const { intl, locale } = useZCodeIntl();
   const platform = usePlatform();
@@ -138,19 +135,15 @@ export function ConversationDraftSuggestedPromptsContainer({
   const activeOperationRef = useRef<DraftSuggestedPluginOperation | null>(null);
   const [cancelling, setCancelling] = useState(false);
   const workspaceKey = workspaceIdentity?.trim() || workspacePath;
-  const allItems = useDraftSuggestedPromptItems({
-    clientScenesService: resolution.services.clientScenesService,
-    rpcReady: resolution.rpcReady,
-    workspaceKey,
-  });
+  // Client Scenes 推荐目录已随 scenes 服务下线；非 proactive 草稿推荐恒为空，
+  // 主动推荐（office 模式轮换）仍由 featureSuggestedPromptRotation 提供。
+  const allItems: DraftSuggestedPromptItem[] = [];
   const items = useMemo(
     () =>
       (proactive ? recommendedItems : allItems).filter(
         (item) =>
           !item.actions?.some(
-            (action) =>
-              action === DRAFT_SUGGESTED_PROMPT_NAVIGATE_AUTOMATIONS ||
-              action === DRAFT_SUGGESTED_PROMPT_NAVIGATE_AUTOMATIONS_OFFPEAK,
+            (action) => action === DRAFT_SUGGESTED_PROMPT_NAVIGATE_AUTOMATIONS,
           ) || Boolean(onOpenAutomations),
       ),
     [allItems, onOpenAutomations, proactive, recommendedItems],
@@ -298,7 +291,7 @@ export function ConversationDraftSuggestedPromptsContainer({
       const resolved =
         await resolution.services.pluginManagementService.resolveSuggestedPluginReference({
           ...targetParams(),
-          ...resolveSuggestedPluginClientBoundary(isWebRemoteControl),
+          ...resolveSuggestedPluginClientBoundary(),
           stableId: current.plugin.stableId,
           operationId: current.operationId,
         });
@@ -307,7 +300,6 @@ export function ConversationDraftSuggestedPromptsContainer({
       return prependResolvedPlugin(current.plugin, requestVersion, resolved.icon);
     },
     [
-      isWebRemoteControl,
       prependResolvedPlugin,
       resolution.services.pluginManagementService,
       targetParams,
@@ -429,7 +421,7 @@ export function ConversationDraftSuggestedPromptsContainer({
             ...targetParams(),
             telemetry: {
               entry: "recommended_prompt",
-              client_kind: isWebRemoteControl ? "mobile" : "desktop",
+              client_kind: "desktop",
             },
             pluginName: flow.result!.pluginName!,
             marketplace: flow.result!.marketplace!,
@@ -476,7 +468,7 @@ export function ConversationDraftSuggestedPromptsContainer({
               ...targetParams(),
               telemetry: {
                 entry: "recommended_prompt",
-                client_kind: isWebRemoteControl ? "mobile" : "desktop",
+                client_kind: "desktop",
               },
               pluginId: flow.plugin.stableId,
               enabled: true,
@@ -550,13 +542,6 @@ export function ConversationDraftSuggestedPromptsContainer({
       }
       if (
         onOpenAutomations &&
-        item.actions?.includes(DRAFT_SUGGESTED_PROMPT_NAVIGATE_AUTOMATIONS_OFFPEAK)
-      ) {
-        onOpenAutomations("idle");
-        return;
-      }
-      if (
-        onOpenAutomations &&
         item.actions?.includes(DRAFT_SUGGESTED_PROMPT_NAVIGATE_AUTOMATIONS)
       ) {
         onOpenAutomations();
@@ -624,7 +609,7 @@ export function ConversationDraftSuggestedPromptsContainer({
           operation,
           resolution.services.pluginManagementService.resolveSuggestedPluginReference({
             ...targetParams(),
-            ...resolveSuggestedPluginClientBoundary(isWebRemoteControl),
+            ...resolveSuggestedPluginClientBoundary(),
             stableId: plugin.stableId,
             operationId: operation.operationId,
           }),
@@ -714,7 +699,6 @@ export function ConversationDraftSuggestedPromptsContainer({
       cancelOperation,
       clearOperationFeedback,
       isDesktop,
-      isWebRemoteControl,
       locale,
       onOpenAutomations,
       platform,

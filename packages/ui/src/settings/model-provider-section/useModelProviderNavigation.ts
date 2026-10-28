@@ -136,7 +136,6 @@ export function useModelProviderNavigation({
           subscriptionExpireTime: state.subscriptionExpireTime,
           subscriptionDetails: state.subscriptionDetails,
           quotaLimits: state.quotaLimits,
-          mcpQuotaLimit: state.mcpQuotaLimit ?? null,
           purchaseUrl: spec.purchaseUrl,
           statusActive: entitlementProvider?.executable === true,
         };

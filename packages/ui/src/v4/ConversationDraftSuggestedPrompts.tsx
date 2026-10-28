@@ -10,7 +10,7 @@ import {
   AlertDialogAction,
 } from "@/components/ui/alert-dialog.js";
 /* New task 草稿页推荐提示词入口。
-   推荐配置来自 Client Scenes 的 draft-suggestion scene。 */
+   推荐配置由上层推荐目录下发。 */
 import type { CSSProperties } from "react";
 import { X, Check, Info, LoaderCircle, SquareCode, TriangleAlert } from "lucide-react";
 import { AnimatePresence, motion, useReducedMotion } from "motion/react";
@@ -47,7 +47,7 @@ function DraftSuggestedPromptIcon({ name }: { name?: string }) {
 interface ConversationDraftSuggestedPromptsProps {
   className?: string;
   layout?: "chips" | "list";
-  /** 推荐项列表；由上层从 Client Scenes 映射后下发。 */
+  /** 推荐项列表；由上层推荐目录映射后下发。 */
   items?: DraftSuggestedPromptItem[];
   /** 点击回调；完整配置交给上层解析 prompt 与 Plugin catalog。 */
   onSelect?: (item: DraftSuggestedPromptItem) => void;

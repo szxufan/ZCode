@@ -1,4 +1,3 @@
-import { redactFeedbackText } from "@zcode/shared";
 import { usePlatform } from "@/hooks/usePlatform.js";
 import { RemotePasswordInput } from "@/remote-connection/RemotePasswordInput.js";
 import {
@@ -31,7 +30,6 @@ import { cn } from "@/components/lib/utils.js";
 import { Button } from "@/components/ui/button.js";
 import type { RemoteConnectionLogEntry } from "@/hooks/useRemoteConnectionLogs.js";
 import { useZCodeIntl } from "@/i18n/IntlProvider.js";
-import { useFeedbackStore } from "@/feedback/feedbackStore.js";
 import {
   formatRemoteLinkRailTarget,
   formatRemoteLinkRailDevice,
@@ -289,7 +287,6 @@ export function RemoteConnectionConnectingStep({
   const { intl } = useZCodeIntl();
   const credentialInputId = useId();
   const platform = usePlatform();
-  const openFeedbackSubmit = useFeedbackStore((state) => state.openSubmit);
   const logContainerRef = useRef<HTMLDivElement | null>(null);
   const shouldFollowLatestLogRef = useRef(true);
   const latestLogId = logs.at(-1)?.id;
@@ -398,24 +395,6 @@ export function RemoteConnectionConnectingStep({
       shouldFollowLatestLogRef.current = true;
     }
   }, [logs.length, latestLogId, latestLogTimestamp]);
-
-  const handleOpenFeedback = async () => {
-    // 远程连接失败时用户看到的是连接日志现场。
-    // 反馈入口只预填脱敏后的错误摘要，附件由用户主动选择。
-    openFeedbackSubmit({
-      title:
-        errorMessage.slice(0, 80) ||
-        intl.formatMessage({ id: "feedback.submit.template.section.remoteConnectFailed" }),
-      type: "bug",
-      module: kind === "ssh" ? "SSH连接失败" : kind === "wsl" ? "WSL连接失败" : "Agent任务执行失败",
-      severity: "P2-中",
-      includeLogs: false,
-      description: buildRemoteConnectionFeedbackDescription(errorMessage, logs, (id, values) =>
-        intl.formatMessage({ id }, values),
-      ),
-      screenshots: [],
-    });
-  };
 
   const installPanel = installConfirmation ? (
     // 安装确认是阶段内的中性信息面板，圆角比所属阶段行低一级。
@@ -585,16 +564,6 @@ export function RemoteConnectionConnectingStep({
           ) : null}
           <Button type="button" variant="secondary" size="sm" onClick={onBack}>
             {intl.formatMessage({ id: "remote.backToConnection" })}
-          </Button>
-          <Button
-            type="button"
-            variant="ghost"
-            size="sm"
-            onClick={() => {
-              void handleOpenFeedback();
-            }}
-          >
-            {intl.formatMessage({ id: "remoteConnection.feedback" })}
           </Button>
         </div>
       </div>
@@ -981,29 +950,4 @@ function formatInstallTarget(target: RemoteTarget): string {
     return ["WSL", target.distro ?? "default", target.user].filter(Boolean).join(" · ");
   if (target.kind === "docker") return `Docker · ${target.container}`;
   return target.url;
-}
-
-function buildRemoteConnectionFeedbackDescription(
-  errorMessage: string,
-  logs: RemoteConnectionLogEntry[],
-  formatMessage: (id: string, values?: Record<string, string>) => string,
-) {
-  const logText = logs
-    .slice(-30)
-    .map((entry) => `${entry.timestamp} [${entry.level.toUpperCase()}] ${entry.message}`)
-    .join("\n");
-  return redactFeedbackText(
-    [
-      formatMessage("feedback.submit.template.section.remoteHeading"),
-      "",
-      formatMessage("feedback.submit.template.section.errorSummary"),
-      errorMessage || formatMessage("feedback.submit.template.section.notProvided"),
-      "",
-      formatMessage("feedback.submit.template.section.remoteLog"),
-      logText || formatMessage("feedback.submit.template.section.remoteLogEmpty"),
-      "",
-      formatMessage("feedback.submit.template.section.remoteEnvironment"),
-      formatMessage("feedback.submit.template.section.supplement"),
-    ].join("\n"),
-  );
 }

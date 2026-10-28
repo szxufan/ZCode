@@ -32,13 +32,13 @@ vi.mock("electron", () => ({
   },
 }));
 
-import { createElectronDesktopContextPromptConfigFetcher } from "../src/main/desktopContextPromptRollout.js";
+import { createElectronClientConfigsFetcher } from "../src/main/rendererActionTraceRollout.js";
 import { createDesktopHelpConfigReader } from "../src/main/desktopHelpConfig.js";
 
 describe("Desktop main client/configs 的 X-Client-Language", () => {
   it("灰度配置请求按当前界面语言发送，切换后下一次请求生效", async () => {
     let locale = "zh-CN";
-    const fetchConfig = createElectronDesktopContextPromptConfigFetcher({
+    const fetchConfig = createElectronClientConfigsFetcher({
       appVersion: "3.0.0",
       deviceMid: "device-mid-1",
       resolveEndpointOrigin: async () => "https://zcode.example.com",

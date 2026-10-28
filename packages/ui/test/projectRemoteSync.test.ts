@@ -39,15 +39,12 @@ it("offers the original sync actions only for ready desktop SSH/WSL roots and dr
     s: { sessionId: "s", workspaceIdentity: "remote:server:s:/repo", workspacePath: "/repo" },
   };
   const { result, rerender } = renderHook(
-    ({ mobile, online }) =>
-      useProjectRemoteSync(
-        { isWebRemoteControl: mobile } as never,
-        {
-          hosts: [{ ...host, connectionStatus: online ? "online" : "offline" }],
-          entries: [],
-        } as never,
-      ),
-    { initialProps: { mobile: false, online: true } },
+    ({ online }) =>
+      useProjectRemoteSync({
+        hosts: [{ ...host, connectionStatus: online ? "online" : "offline" }],
+        entries: [],
+      } as never),
+    { initialProps: { online: true } },
   );
   expect(result.current.actions(project as never).map((action) => action.id)).toEqual([
     "sync-skills-0",
@@ -56,10 +53,8 @@ it("offers the original sync actions only for ready desktop SSH/WSL roots and dr
   ]);
   act(() => result.current.actions(project as never)[0]!.run());
   expect(result.current.dialog).not.toBeNull();
-  rerender({ mobile: false, online: false });
+  rerender({ online: false });
   expect(result.current.dialog).toBeNull();
-  rerender({ mobile: false, online: true });
+  rerender({ online: true });
   expect(result.current.dialog).toBeNull();
-  rerender({ mobile: true, online: true });
-  expect(result.current.actions(project as never)).toEqual([]);
 });

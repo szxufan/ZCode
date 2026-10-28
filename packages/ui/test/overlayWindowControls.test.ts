@@ -21,11 +21,11 @@ afterEach(() => {
   vi.clearAllMocks();
 });
 
-it("升级和奖励的网页关闭与窗口关闭分开，三种窗口操作走现有命令", () => {
+it("升级的网页关闭与窗口关闭分开，三种窗口操作走现有命令", () => {
   const onClose = vi.fn();
   render(
     createElement(EmbeddedWebsiteHeader, {
-      title: "Rewards",
+      title: "Upgrade",
       loading: false,
       canGoBack: false,
       canGoForward: false,

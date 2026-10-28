@@ -100,18 +100,6 @@ describe("AnimatedSidePanePanel layout", () => {
     ).toBe(false);
   });
 
-  it("keeps PreviewPane heavy content mounted inside the mobile overlay drawer", () => {
-    expect(
-      shouldRenderPreviewPaneHeavyContent({
-        isActiveTab: true,
-        isMobileOverlay: true,
-        isResizeSettling: true,
-        isSidePaneVisible: true,
-        visibleInlineSizePx: 0,
-      }),
-    ).toBe(true);
-  });
-
   it("omits the browser launcher item when embedded browser tabs are unsupported", () => {
     expect(
       resolveOpenTabLauncherItemIds({

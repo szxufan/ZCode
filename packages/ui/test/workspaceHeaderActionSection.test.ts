@@ -20,8 +20,6 @@ const capturedHeaderHelp = vi.hoisted(() => {
     openExternal: vi.fn(),
     exportLogs: vi.fn(async () => ({ success: true })),
     captureWindowScreenshot: vi.fn(async () => screenshot),
-    openSubmit: vi.fn(),
-    openFeatureRequest: vi.fn(),
     menuItems: [] as Array<{
       onSelect: (() => void | Promise<void>) | undefined;
     }>,
@@ -82,18 +80,6 @@ vi.mock("@/components/ui/toast.js", () => ({
   toast: vi.fn(() => 1),
 }));
 
-vi.mock("@/feedback/feedbackStore.js", () => ({
-  useFeedbackStore: (
-    selector: (state: {
-      openSubmit: (draft?: unknown) => void;
-      openFeatureRequest: () => void;
-    }) => unknown,
-  ) =>
-    selector({
-      openSubmit: capturedHeaderHelp.openSubmit,
-      openFeatureRequest: capturedHeaderHelp.openFeatureRequest,
-    }),
-}));
 
 describe("WorkspaceHeaderActionSection", () => {
   // 快捷键特性后组件经 useShortcutCommandLabel 读设置，裸渲染需提供最小 ServiceProvider。
@@ -149,53 +135,6 @@ describe("WorkspaceHeaderActionSection", () => {
     expect(html).toContain("sidePane.expand");
   });
 
-  it("只在 Desktop local/SSH/WSL/Docker 已有任务显示分享入口", async () => {
-    const { WorkspaceHeaderActionSection } =
-      await import("@/WorkspaceHeaderSections/WorkspaceHeaderActionSection.js");
-    const renderSection = (extra: Record<string, unknown>) =>
-      renderToStaticMarkup(
-        withSettingsServices(WorkspaceHeaderActionSection, {
-          activeTaskId: "task-1",
-          workspaceAbsPath: "/workspace",
-          isTerminalOpen: false,
-          isSidePaneOpen: false,
-          onToggleTerminal: vi.fn(),
-          onToggleSidePane: vi.fn(),
-          isDesktop: true,
-          user: { id: "user-1" },
-          ...extra,
-        }),
-      );
-
-    expect(renderSection({})).toContain("conversationShare.trigger");
-    expect(renderSection({ remoteTarget: { kind: "ssh" } })).toContain("conversationShare.trigger");
-    expect(renderSection({ isWebRemoteControl: true })).not.toContain("conversationShare.trigger");
-    expect(renderSection({ isDesktop: false })).not.toContain("conversationShare.trigger");
-    expect(renderSection({ remoteTarget: { kind: "server" } })).not.toContain(
-      "conversationShare.trigger",
-    );
-  });
-
-  it("未登录时不展示分享入口", async () => {
-    const { WorkspaceHeaderActionSection } =
-      await import("@/WorkspaceHeaderSections/WorkspaceHeaderActionSection.js");
-
-    const html = renderToStaticMarkup(
-      withSettingsServices(WorkspaceHeaderActionSection, {
-        activeTaskId: "task-1",
-        workspaceAbsPath: "/workspace",
-        isTerminalOpen: false,
-        isSidePaneOpen: false,
-        onToggleTerminal: vi.fn(),
-        onToggleSidePane: vi.fn(),
-        isDesktop: true,
-        user: null,
-      }),
-    );
-
-    expect(html).not.toContain("conversationShare.trigger");
-  });
-
   it("renders the help menu trigger before the terminal toggle", async () => {
     const { WorkspaceHeaderActionSection } =
       await import("@/WorkspaceHeaderSections/WorkspaceHeaderActionSection.js");
@@ -212,8 +151,6 @@ describe("WorkspaceHeaderActionSection", () => {
 
     expect(html).not.toContain("chat.summaryPanel.toggle");
     expect(html).toContain("workspaceHeader.help.menu");
-    expect(html).toContain("workspaceHeader.help.issueReport");
-    expect(html).toContain("workspaceHeader.help.productRequest");
     expect(html).toContain("workspaceHeader.help.community");
     expect(html).toContain("workspaceHeader.help.docs");
     expect(html).not.toContain("titleBar.menu.help.exportLogs");
@@ -222,26 +159,6 @@ describe("WorkspaceHeaderActionSection", () => {
     expect(html.indexOf("workspaceHeader.help.menu")).toBeLessThan(html.indexOf("terminal.toggle"));
   });
 
-  it("hides the help menu and terminal toggle in narrow remote mode", async () => {
-    const { WorkspaceHeaderActionSection } =
-      await import("@/WorkspaceHeaderSections/WorkspaceHeaderActionSection.js");
-
-    const html = renderToStaticMarkup(
-      withSettingsServices(WorkspaceHeaderActionSection, {
-        workspaceAbsPath: "/workspace",
-        isTerminalOpen: false,
-        isSidePaneOpen: false,
-        onToggleTerminal: vi.fn(),
-        onToggleSidePane: vi.fn(),
-        simplifyForNarrowRemote: true,
-      }),
-    );
-
-    expect(html).not.toContain("workspaceHeader.help.menu");
-    expect(html).not.toContain("workspaceHeader.help.issueReport");
-    expect(html).not.toContain("terminal.toggle");
-    expect(html).toContain("sidePane.expand");
-  });
 
   it("hides only the help menu when Windows caption menu owns help actions", async () => {
     const { WorkspaceHeaderActionSection } =
@@ -259,15 +176,13 @@ describe("WorkspaceHeaderActionSection", () => {
     );
 
     expect(html).not.toContain("workspaceHeader.help.menu");
-    expect(html).not.toContain("workspaceHeader.help.issueReport");
+    expect(html).not.toContain("workspaceHeader.help.community");
     expect(html).toContain("terminal.toggle");
     expect(html).toContain("sidePane.expand");
   });
 
-  it("routes help menu items to feedback, community, and docs entries", async () => {
+  it("routes help menu items to community and docs entries", async () => {
     capturedHeaderHelp.menuItems = [];
-    capturedHeaderHelp.openSubmit.mockClear();
-    capturedHeaderHelp.openFeatureRequest.mockClear();
     capturedHeaderHelp.openCommunity.mockClear();
     capturedHeaderHelp.openExternal.mockClear();
     capturedHeaderHelp.exportLogs.mockClear();
@@ -286,22 +201,11 @@ describe("WorkspaceHeaderActionSection", () => {
       }),
     );
 
-    expect(capturedHeaderHelp.menuItems).toHaveLength(4);
-    await capturedHeaderHelp.menuItems[2]?.onSelect?.();
+    expect(capturedHeaderHelp.menuItems).toHaveLength(2);
     capturedHeaderHelp.menuItems[1]?.onSelect?.();
     capturedHeaderHelp.menuItems[0]?.onSelect?.();
-    capturedHeaderHelp.menuItems[3]?.onSelect?.();
 
     expect(capturedHeaderHelp.captureWindowScreenshot).not.toHaveBeenCalled();
-    expect(capturedHeaderHelp.openSubmit).toHaveBeenNthCalledWith(
-      1,
-      expect.objectContaining({
-        type: "bug",
-        includeLogs: true,
-        screenshots: [],
-      }),
-    );
-    expect(capturedHeaderHelp.openFeatureRequest).toHaveBeenCalledTimes(1);
     expect(capturedHeaderHelp.openCommunity).toHaveBeenCalledTimes(1);
     expect(capturedHeaderHelp.openExternal).toHaveBeenCalledWith("https://zcode.z.ai/docs");
     expect(capturedHeaderHelp.exportLogs).not.toHaveBeenCalled();

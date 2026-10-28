@@ -31,24 +31,19 @@ describe("resolveFileDisplayDescriptor", () => {
     { extension: "flac", iconName: "audio" },
     { extension: "weba", iconName: "audio" },
   ])(
-    "maps .$extension to the $iconName icon for desktop and web",
+    "maps .$extension to the $iconName icon",
     async ({ extension, iconName }) => {
       const repoRoot = new URL("../../..", import.meta.url);
       const desktopIcon = await readFile(
         new URL(`packages/desktop/src/renderer/public/material-icons/${iconName}.svg`, repoRoot),
         "utf8",
       );
-      const webIcon = await readFile(
-        new URL(`packages/web/public/material-icons/${iconName}.svg`, repoRoot),
-        "utf8",
-      );
-
       expect(resolveFileDisplayDescriptor(`/workspace/report.${extension}`)).toMatchObject({
         fileIcon: iconName,
         fileIconSrc: buildMaterialFileIconSrc(iconName),
       });
       expect(desktopIcon).toMatch(/^<svg\b/);
-      expect(webIcon).toBe(desktopIcon);
+      
     },
   );
 

@@ -86,16 +86,6 @@ export function resolveChatEnterShortcut({
   return enterSubmits ? "Enter" : undefined;
 }
 
-export function shouldAvoidIosInputFocusZoom({
-  isMobileTextInputViewport,
-  isWebRemoteControl,
-}: {
-  isMobileTextInputViewport: boolean;
-  isWebRemoteControl: boolean;
-}): boolean {
-  return isWebRemoteControl && isMobileTextInputViewport;
-}
-
 export function resolveMobileInputTextSizeClassName({
   avoidIosInputFocusZoom,
 }: {

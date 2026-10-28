@@ -111,7 +111,7 @@ export function applyDynamicWorkflowUserMode(
 /**
  * 纯函数：把远端 envelope 的 `configs.dynamicWorkflow` 与本地覆盖环境变量折叠成「提供」，再应用用户选择。
  * 提供的优先级：覆盖 > 远端合法值 > 缺省。远端成功但**未下发**该 key 也视为 disabled——
- * 服务端撤掉 key 等于关闭，不能沿用旧快照（与 desktopContextPromptRollout 同一裁决）。
+ * 服务端撤掉 key 等于关闭，不能沿用旧快照（与其它单功能灰度同一裁决）。
  */
 export function resolveDynamicWorkflowClientConfig(input: {
   remote: unknown;

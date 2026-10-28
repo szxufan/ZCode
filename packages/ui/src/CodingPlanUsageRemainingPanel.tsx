@@ -18,7 +18,6 @@ import {
   findCodingPlanQuotaLimit,
   formatQuotaRemainingPercentage,
   formatQuotaResetTime,
-  resolveMcpQuotaLimit,
 } from "@/lib/codingPlanQuotaPresentation.js";
 import { renderOAuthProviderIcon } from "@/lib/oauthProviderIcon.js";
 import type {
@@ -261,7 +260,6 @@ export function CodingPlanUsageRemainingPanel({
   const fiveHourTokenLimit = findCodingPlanQuotaLimit(limits, "TOKENS_LIMIT", 3, 5);
   const weeklyTokenLimit = findCodingPlanQuotaLimit(limits, "TOKENS_LIMIT", 6);
   const monthlyToolLimit = findCodingPlanQuotaLimit(limits, "TIME_LIMIT", 5, 1);
-  const mcpQuotaLimit = resolveMcpQuotaLimit(state.visibleSnapshot);
   const fiveHourResetTime = fiveHourTokenLimit?.nextResetTime
     ? formatQuotaResetTime({
         locale,
@@ -281,15 +279,6 @@ export function CodingPlanUsageRemainingPanel({
     ? formatQuotaResetTime({
         locale,
         value: monthlyToolLimit.nextResetTime,
-        format: "date",
-      })
-    : undefined;
-  // MCP 额度按自然日重置，重置时刻恒为 00:00，展示时分没有信息量；
-  // 与 Weekly / Tool calls 统一用日期口径。
-  const mcpResetTime = mcpQuotaLimit?.nextResetTime
-    ? formatQuotaResetTime({
-        locale,
-        value: mcpQuotaLimit.nextResetTime,
         format: "date",
       })
     : undefined;
@@ -412,13 +401,6 @@ export function CodingPlanUsageRemainingPanel({
                 })}
                 value={formatQuotaRemainingPercentage(locale, monthlyToolLimit)}
                 resetTime={monthlyToolResetTime}
-              />
-            ) : null}
-            {mcpQuotaLimit ? (
-              <UsageLimitRow
-                label={intl.formatMessage({ id: "sidebar.usage.plan.mcp" })}
-                value={formatQuotaRemainingPercentage(locale, mcpQuotaLimit)}
-                resetTime={mcpResetTime}
               />
             ) : null}
           </>

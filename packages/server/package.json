@@ -11,8 +11,7 @@
     "./source-server/*.js": "./src/source-server/*.ts"
   },
   "scripts": {
-    "dev": "tsup --watch --onSuccess 'node dist/entry-http.js'",
-    "build": "tsup && pnpm run build:remote",
+    "build": "pnpm run build:remote",
     "build:remote": "tsx build-remote.ts",
     "lint": "oxlint",
     "lint:fix": "oxlint --fix"
@@ -48,7 +47,6 @@
     "@types/ssh2": "^1.15.5",
     "@types/ws": "^8.18.1",
     "esbuild": "^0.25.0",
-    "tsup": "^8.4.0",
     "tsx": "^4.19.4",
     "typescript": "^6.0.2"
   }

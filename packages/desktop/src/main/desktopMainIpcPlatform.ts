@@ -11,7 +11,6 @@ import {
   PlatformChannels,
   rendererLogPayloadSchema,
   stringArraySchema,
-  webRemoteControlWorkspaceTargetsSchema,
   type DesktopCommandId,
   type ApplicationIconRequest,
   type Locale,
@@ -22,7 +21,6 @@ import {
   type CreateTempTextAttachmentRequest,
   type MaterializeWorkflowArtifactFileRequest,
   type UpdateStatePayload,
-  type WebRemoteControlWorkspaceTarget,
   type WindowControlsOverlayReadyPayload,
 } from "@zcode/shared";
 import { getInstalledEditors } from "./editors.js";
@@ -87,10 +85,6 @@ export function registerPlatformIpcHandlers(options: {
   syncTaskRealtimeWorkspaceKeys: (windowId: number, workspaceKeys: Iterable<string>) => void;
   getUpdateState: () => UpdateStatePayload;
   openUpdateStatusWindow: () => void;
-  syncWebRemoteControlWorkspaces: (
-    windowId: number,
-    workspaces: WebRemoteControlWorkspaceTarget[],
-  ) => void;
   getDesktopSessionActivity: () => {
     runningAgentSessionCount: number;
   };
@@ -281,26 +275,7 @@ export function registerPlatformIpcHandlers(options: {
     if (win) {
       options.windowWorkspaceMap.set(win.id, new Set(result.data));
       options.syncTaskRealtimeWorkspaceKeys(win.id, result.data);
-      // 远控恢复统一由 SyncWebRemoteControlWorkspaces 的完整快照驱动。
     }
-  });
-
-  ipcMain.on(PlatformChannels.SyncWebRemoteControlWorkspaces, (event, payload: unknown) => {
-    const result = webRemoteControlWorkspaceTargetsSchema.safeParse(payload);
-    if (!result.success) {
-      options.logger.warn(
-        "[sync-web-remote-control-workspaces] invalid payload:",
-        formatZodError(result.error),
-      );
-      return;
-    }
-
-    const win = BrowserWindow.fromWebContents(event.sender);
-    if (!win) {
-      return;
-    }
-
-    options.syncWebRemoteControlWorkspaces(win.id, result.data);
   });
 
   ipcMain.on(PlatformChannels.SyncWindowUnreadCount, (event, payload: unknown) => {

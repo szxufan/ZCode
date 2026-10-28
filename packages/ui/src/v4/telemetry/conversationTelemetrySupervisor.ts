@@ -147,18 +147,6 @@ function backgroundSeedFromTurnStarted(
   fact: Extract<ConversationTelemetryFact, { kind: "turn.started" }>,
 ): AcceptedConversationPromptTelemetrySeed | null {
   if (!fact.sourceCommandId) return null;
-  if (fact.offPeakTaskId) {
-    return {
-      sessionId: fact.sessionId,
-      sourceCommandId: fact.sourceCommandId,
-      sendTime: fact.occurredAt,
-      extraDetail: {
-        message_source: "off_peak_task",
-        off_peak_task_id: fact.offPeakTaskId,
-        ...(fact.offPeakRunType ? { off_peak_run_type: fact.offPeakRunType } : {}),
-      },
-    };
-  }
   if (!fact.automationId || !fact.taskTrigger) {
     if (fact.inputSource !== "background_task") return null;
     return {

@@ -9,7 +9,6 @@ export type ArmsRumEnv = "local" | "prod";
 declare const __ZCODE_ENV__: string;
 declare const __ZCODE_PRODUCT_FLAVOR__: string;
 declare const __ZCODE_ARMS_RUM_ENDPOINT__: string;
-declare const __ZCODE_TELEMETRY_REPORT_ENDPOINT__: string;
 declare const __ZCODE_AUTO_UPDATE_ENABLED__: boolean;
 
 export function normalizeZCodeEnv(value: string | undefined): ZCodeEnv {
@@ -52,11 +51,6 @@ export const RUNTIME_ZCODE_DEBUG =
 /** ARMS RUM 上报地址；为空时 SDK 以 enable=false 初始化，不产生上报。 */
 export const ZCODE_ARMS_RUM_ENDPOINT: string =
   typeof __ZCODE_ARMS_RUM_ENDPOINT__ !== "undefined" ? __ZCODE_ARMS_RUM_ENDPOINT__ : "";
-/** 事件上报（数仓）地址；为空时不上报。 */
-export const ZCODE_TELEMETRY_REPORT_ENDPOINT: string =
-  typeof __ZCODE_TELEMETRY_REPORT_ENDPOINT__ !== "undefined"
-    ? __ZCODE_TELEMETRY_REPORT_ENDPOINT__
-    : "";
 /** 桌面自动更新是否启用。 */
 export const ZCODE_AUTO_UPDATE_ENABLED: boolean =
   typeof __ZCODE_AUTO_UPDATE_ENABLED__ !== "undefined" ? __ZCODE_AUTO_UPDATE_ENABLED__ : false;

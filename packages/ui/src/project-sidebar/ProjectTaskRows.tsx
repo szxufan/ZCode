@@ -68,7 +68,6 @@ export const ProjectTaskRow = memo(function Row({
         showEmptyState={false}
         // 原因：旧接线只传排序，遗漏 timeline 样式，导致目录信息和空闲灰点消失。
         taskRowVariant={variant}
-        hoverEnabled={!presentation.isWebRemoteControl}
         sortBy="updated"
         onSelectTask={select}
         onRenameTask={rename}

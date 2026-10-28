@@ -16,7 +16,6 @@ export function PluginAddMenu({
   testId,
   variant = "default",
   size = "default",
-  isWebRemoteControl = false,
 }: {
   onCreateTask?: (request?: CreateTaskRequest) => void;
   onAddMarketplace: () => void;
@@ -24,10 +23,9 @@ export function PluginAddMenu({
   /** 市场顶栏与相邻动作统一 secondary + lg；设置页插件区保持默认主按钮。 */
   variant?: "default" | "secondary";
   size?: "default" | "lg";
-  isWebRemoteControl?: boolean;
 }) {
   const { intl } = useZCodeIntl();
-  const creator = usePluginCreator(onCreateTask, isWebRemoteControl);
+  const creator = usePluginCreator(onCreateTask);
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>

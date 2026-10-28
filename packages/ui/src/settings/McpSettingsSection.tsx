@@ -546,7 +546,6 @@ interface McpSettingsSectionProps {
   remoteSessionId?: string;
   remoteTarget?: RemoteTarget;
   localWorkspacePath?: string;
-  isWebRemoteControl?: boolean;
   scopeFilter: "user" | "workspace";
   parentScopeKey: string;
   workspaceTabs: ConfigWorkspaceTarget[];
@@ -566,7 +565,6 @@ export function McpSettingsSection({
   remoteSessionId,
   remoteTarget,
   localWorkspacePath,
-  isWebRemoteControl = false,
   scopeFilter,
   parentScopeKey,
   workspaceTabs,
@@ -1168,7 +1166,7 @@ export function McpSettingsSection({
     shouldShowRemoteSyncActions({
       remoteSessionId,
       remoteTarget,
-      clientMode: isWebRemoteControl ? "web-remote-replayable" : "desktop-continuous",
+      clientMode: "desktop-continuous",
       hasLocalSourceService: Boolean(baseServices.mcpSyncService),
     }) && activeWorkspacePath
       ? remoteTarget

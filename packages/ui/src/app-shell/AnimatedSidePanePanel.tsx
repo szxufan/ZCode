@@ -366,8 +366,6 @@ export function AnimatedSidePanePanel({
   fullViewToggle,
   fullView = null,
   fullViewSlotRef,
-  mobileOverlay = false,
-  mobileStacked = false,
 }: {
   services: IServiceAccessor;
   frameClassName?: string;
@@ -452,8 +450,6 @@ export function AnimatedSidePanePanel({
   onBrowserUrlChange: (tabId: string, url: string) => void;
   onBrowserPageMetadataChange: (tabId: string, metadata: BrowserSidePaneMetadata) => void;
   onSelectGitSource: (value: GitChangeSourceId) => void;
-  mobileOverlay?: boolean;
-  mobileStacked?: boolean;
 }) {
   const onOpenPluginUi = useOpenPluginUi();
   const { intl } = useZCodeIntl();
@@ -527,12 +523,11 @@ export function AnimatedSidePanePanel({
   const isWindowResizeSettling = useWindowResizeSettling(hasRenderedSidePane);
   const widthUnlockTimerRef = useRef<number | null>(null);
   const previousIsVisibleRef = useRef(isVisible);
-  const panelLayout = resolveAnimatedSidePanePanelLayout({ mobileOverlay });
+  const panelLayout = resolveAnimatedSidePanePanelLayout();
   const hasReviewTab = visibleTabs.some((tab) => tab.type === "git");
   const canOpenSelectionSideConversation = shouldOfferSelectionSideConversation({
     activeTaskId,
     isMobileTextInputViewport,
-    mobileOverlay,
   });
   const tabDragSensors = useSensors(
     useSensor(PointerSensor, {
@@ -831,7 +826,7 @@ export function AnimatedSidePanePanel({
     .filter((itemId) => !isOfficeMode || (itemId !== "terminal" && itemId !== "review"))
     .map((itemId) => openTabLauncherItemById[itemId]);
   const closeSidePaneButton =
-    isVisible && !mobileOverlay && onCloseSidePane ? (
+    isVisible && onCloseSidePane ? (
       <div className="flex shrink-0 items-center gap-0.5 [app-region:no-drag]">
         {fullViewToggle ? (
           <SidePaneFullViewToggleButton
@@ -976,21 +971,18 @@ export function AnimatedSidePanePanel({
   const panelContent = (
     <div
       aria-hidden={!isVisible}
-      data-workspace-side-frame={mobileOverlay ? undefined : "true"}
+      data-workspace-side-frame="true"
       className={cn(
         // 独立外框放在内容层：关闭仍保留 Browser Guest 和 tab 实例，不改变面板持久化边界。
         "h-full overflow-hidden bg-background",
-        !mobileOverlay && frameClassName,
-        mobileStacked && "max-md:rounded-none max-md:border-0",
-        mobileOverlay && "min-w-0",
-        mobileStacked && "max-md:!w-full",
+        frameClassName,
         // 完整视图：相对外层 PanelGroup 铺满整行，库管理的 panel 宽度保持不变。
         // 修复原因：插件 UI 页面挂在 body 末尾的 fixed 停靠层（无 z-index）里，外框曾用 z-10
         // 把不透明背景画在它上面，插件 tab 显示为空白。对话列内容都在 z-30 的宿主里，
         // 外框只需 z-0 建立自己的层叠上下文，按 DOM 顺序排在停靠层之下。
         fullView && "absolute inset-0 z-0",
       )}
-      style={mobileOverlay || fullView ? undefined : lockedContentStyle}
+      style={fullView ? undefined : lockedContentStyle}
     >
       <ScopedErrorBoundary
         scope="workspace-side-pane"
@@ -1024,13 +1016,12 @@ export function AnimatedSidePanePanel({
                 className="relative h-full gap-0"
               >
                 <TabsList
-                  style={mobileOverlay ? undefined : captionControlsStyle}
+                  style={captionControlsStyle}
                   className={cn(
                     "flex justify-start w-full rounded-none p-0 border-0 border-b border-border/50 bg-transparent shadow-none !h-12 overflow-hidden",
                     fullView?.leadingInsetClassName,
                     // 独立面板将标签栏移至窗口顶部，需补充窗口拖拽区域；标签和按钮仍处理自身交互。
                     isDesktop &&
-                      !mobileOverlay &&
                       "[app-region:drag] [&_button]:[app-region:no-drag] [&_[data-side-pane-tab-id]]:[app-region:no-drag]",
                   )}
                 >
@@ -1147,9 +1138,9 @@ export function AnimatedSidePanePanel({
                 </TabsList>
 
                 <div
-                  ref={mobileOverlay ? undefined : fullViewSlotRef}
+                  ref={fullViewSlotRef}
                   data-side-pane-content-slot=""
-                  className={cn("relative min-h-0 flex-1 isolate", mobileOverlay && "min-w-0")}
+                  className="relative min-h-0 flex-1 isolate"
                 >
                   {fullView && !hasVisibleTabs ? (
                     <div className="absolute inset-0 z-10">{openTabLauncher}</div>
@@ -1193,10 +1184,7 @@ export function AnimatedSidePanePanel({
                         key={tab.id}
                         value={tab.id}
                         forceMount
-                        className={cn(
-                          "relative z-10 h-full min-h-0 bg-background data-[state=inactive]:hidden",
-                          mobileOverlay && "min-w-0",
-                        )}
+                        className="relative z-10 h-full min-h-0 bg-background data-[state=inactive]:hidden"
                       >
                         {tab.type === "bash-output" ? (
                           <BackgroundBashOutputSidePane
@@ -1208,7 +1196,6 @@ export function AnimatedSidePanePanel({
                           <SubagentSessionSidePane
                             tab={tab}
                             focused={isVisible && tab.id === contentActiveTabId}
-                            compactForRemoteControl={mobileOverlay}
                             onOpenBrowserUrl={onOpenBrowserUrl}
                             onOpenCodeViewer={onOpenCodeViewer}
                             onOpenFileLink={onOpenFileLink}
@@ -1312,7 +1299,6 @@ export function AnimatedSidePanePanel({
                                       : workspaceRemoteSessionId,
                                   }
                             }
-                            mobileOverlay={mobileOverlay}
                             canOpenLocalFileManager={Boolean(isDesktop)}
                             onNavigate={(source) => onNavigateFileManager(tab.id, source)}
                             onClose={() => onCloseTab(tab.id)}
@@ -1329,7 +1315,6 @@ export function AnimatedSidePanePanel({
                                 tab.source?.type === "media" ||
                                 (tab.source?.type === "file" &&
                                   inferMediaPreview(tab.source.path) !== null),
-                              isMobileOverlay: mobileOverlay,
                               isResizeSettling: isWindowResizeSettling,
                               isSidePaneVisible: isVisible,
                               visibleInlineSizePx: sidePaneVisibleInlineSizePx,
@@ -1403,7 +1388,6 @@ export function AnimatedSidePanePanel({
                                 isDesktop={isDesktop}
                                 isWindowsDesktop={isWindowsDesktop}
                                 isMacDesktop={isMacDesktop}
-                                isWebRemoteControl={mobileOverlay}
                               />
                             </div>
                           </ServiceProvider>
@@ -1508,10 +1492,7 @@ export function AnimatedSidePanePanel({
       {isVisible && !fullView ? (
         <ResizableHandle
           data-workspace-side-pane-resize-handle="true"
-          className={cn(
-            WORKSPACE_VERTICAL_RESIZE_HANDLE_CLASS_NAME,
-            mobileStacked && "max-md:hidden",
-          )}
+          className={WORKSPACE_VERTICAL_RESIZE_HANDLE_CLASS_NAME}
         />
       ) : null}
       <ResizablePanel
@@ -1530,11 +1511,6 @@ export function AnimatedSidePanePanel({
         disabled={isResizeDisabled}
         className={cn(
           "!overflow-hidden transition-opacity duration-200 ease-out",
-          mobileOverlay &&
-            "max-md:!h-full max-md:!w-full max-md:!min-w-0 max-md:!max-w-none max-md:!flex-1 max-md:!basis-auto max-md:border-l",
-          mobileStacked &&
-            !mobileOverlay &&
-            "max-md:!h-[min(45dvh,24rem)] max-md:!w-full max-md:!min-w-0 max-md:!max-w-none max-md:!flex-none max-md:!basis-auto max-md:border-l-0 max-md:border-t",
           // 截图期间 panel 仍保持 opacity=1，避免 opacity=0 让 Chromium 丢弃 guest
           // compositor surface；实际 browser surface 已 fixed 到窗口内的低透明合成层，不会露出 tab 栏。
           isVisible || isScreenshotSurfaceActive ? "opacity-100" : "pointer-events-none opacity-0",

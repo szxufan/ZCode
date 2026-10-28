@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it } from "vitest";
 import { AddressInfo } from "node:net";
-import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { rm } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { ServiceCollection } from "@zcode/services";
@@ -91,7 +91,7 @@ describe("server info HTTP endpoint", () => {
     });
   });
 
-  it("requires the lite token for protected API routes", async () => {
+  it("requires the ingress token for protected API routes", async () => {
     const server = createHttpServer(new ServiceCollection(), 0, {
       authToken: "secret-token",
     });
@@ -104,14 +104,11 @@ describe("server info HTTP endpoint", () => {
 
     const accepted = await fetch(`${baseUrl}/api/server-info?token=secret-token`);
     expect(accepted.status).toBe(200);
-    expect(accepted.headers.get("set-cookie")).toContain("zcode_lite_token=");
 
-    const cookieAccepted = await fetch(`${baseUrl}/api/server-info`, {
-      headers: {
-        cookie: "zcode_lite_token=secret-token",
-      },
+    const bearerAccepted = await fetch(`${baseUrl}/api/server-info`, {
+      headers: { authorization: "Bearer secret-token" },
     });
-    expect(cookieAccepted.status).toBe(200);
+    expect(bearerAccepted.status).toBe(200);
 
     const capabilityRejected = await fetch(`${baseUrl}/api/rpc-host-capability`, {
       method: "POST",
@@ -144,34 +141,5 @@ describe("server info HTTP endpoint", () => {
       `http://127.0.0.1:${address.port}/ws/remote/retired-session`,
     );
     expect(websocketUpgradeRoute.status).toBe(404);
-  });
-
-  it("serves static web files with SPA fallback", async () => {
-    const staticRoot = await mkdtemp(join(tmpdir(), "zcode-lite-static-"));
-    tempDirs.push(staticRoot);
-    await writeFile(join(staticRoot, "index.html"), "<html>lite</html>", "utf8");
-    await writeFile(join(staticRoot, "app.js"), "console.log('lite');", "utf8");
-
-    const server = createHttpServer(new ServiceCollection(), 0, {
-      staticRoot,
-      spaFallback: true,
-    });
-    servers.push(server);
-    const address = server.address() as AddressInfo;
-    const baseUrl = `http://127.0.0.1:${address.port}`;
-
-    const asset = await fetch(`${baseUrl}/app.js`);
-    expect(asset.status).toBe(200);
-    // 不同静态资源适配器使用两种合法 JS MIME；断言资源可执行类型而非库版本拼写。
-    expect(asset.headers.get("content-type")).toMatch(/^(?:text|application)\/javascript(?:;|$)/);
-    await expect(asset.text()).resolves.toBe("console.log('lite');");
-
-    const fallback = await fetch(`${baseUrl}/workspace/deep/link`);
-    expect(fallback.status).toBe(200);
-    expect(fallback.headers.get("content-type")).toContain("text/html");
-    await expect(fallback.text()).resolves.toBe("<html>lite</html>");
-
-    const apiFallback = await fetch(`${baseUrl}/api/missing`);
-    expect(apiFallback.status).toBe(404);
   });
 });

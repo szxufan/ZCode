@@ -8,7 +8,6 @@ import type {
 import type { CodeViewerSource } from "@/lib/codeViewer.js";
 import type { Theme } from "@/useTheme.js";
 export { LEGACY_SINGLE_ROOT_PROJECT_PREFIX } from "@zcode/services";
-export type { WebRemoteControlMobileTaskView, WebRemoteControlStatus } from "@zcode/shared";
 export interface ProjectDevice {
   id: string;
   label: string;
@@ -102,7 +101,6 @@ export interface ProjectSidebarProps {
   onCreateConversationTaskOnSource?: (sourceServerId: string) => void;
   onOpenFolderFromWorkspaceMenu: () => void;
   onOpenRemoteWorkspace?: AppProps["onOpenRemoteWorkspace"];
-  webRemoteControlWorkspaceSwitcher?: import("@/root/types.js").WebRemoteControlWorkspaceSwitcherApi;
   theme: Theme;
   onConnectRemote: (
     options: RemoteTarget,
@@ -126,7 +124,6 @@ export interface ProjectSidebarProps {
   remoteWorkspaceRecoveryByWorkspaceKey?: Record<string, RemoteWorkspaceRecoveryStatus>;
   remoteWorkspaceErrorByWorkspaceKey: Record<string, string>;
   isDesktop?: boolean;
-  isWebRemoteControl?: boolean;
   isMacDesktop?: boolean;
   isWindowsDesktop?: boolean;
   isSidebarVisible?: boolean;
@@ -146,6 +143,4 @@ export interface ProjectSidebarProps {
   automationsActive?: boolean;
   pluginStoreActive?: boolean;
   onFileTreeOpenChange?: (open: boolean) => void;
-  onWebRemoteTaskOpen?: (options: { crossWorkspace: boolean }) => void;
-  onWebRemoteTaskSwitchingChange?: (switching: boolean) => void;
 }

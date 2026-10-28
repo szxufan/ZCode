@@ -32,8 +32,6 @@ before(async () => {
             return "export const useOptionalPlatform=()=>null; export const usePlatform=()=>({}); export const useSelectDirectory=()=>async()=>null;";
           if (id.endsWith("/hooks/useConfirmDialog.ts"))
             return "const confirm=async()=>true; export const useConfirmDialog=()=>confirm;";
-          if (id.endsWith("/hooks/useWebRemoteControlStatus.ts"))
-            return "export const useWebRemoteControlStatus=()=>({mobileConnected:false});";
           if (id.endsWith("/v4/useWorkspaceSessionsIndexItems.ts"))
             return "const result={items:[]}; export const useWorkspaceSessionsIndexItems=()=>result;";
           if (id.endsWith("/settings/CodingPlanUpgradeDialogProvider.tsx"))

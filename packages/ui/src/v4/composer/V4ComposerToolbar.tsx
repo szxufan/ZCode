@@ -16,8 +16,6 @@
  * 三件套不能全部门控在 config!==null 上——草稿态会整体不渲染。
  */
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { AlarmClockIcon } from "lucide-react";
-import { cn } from "@/components/lib/utils.js";
 import {
   BUILTIN_MODEL_PROVIDER_IDS,
   getModelProviderFamilySpec,
@@ -41,8 +39,6 @@ import type {
 import { ModelConfigSelect, type ModelSelectGroup } from "@/ModelConfigSelect.js";
 import type { ComposerModelOptions } from "@/chat-input-toolbar/ComposerModelMenu.js";
 import { Button } from "@/components/ui/button.js";
-import { HighspeedModelIndicator } from "@/highspeed/HighspeedModelIndicator.js";
-import { formatHighspeedRemainingTime } from "@/highspeed/highspeedTime.js";
 import { ChatContextUsage } from "@/chat-input-toolbar/display.js";
 import {
   hasChatCodingPlanUsageRemaining,
@@ -126,50 +122,6 @@ const MODEL_SELECTION_LOADING_STATE: ModelSelectionState = { status: "loading" }
 
 /** 稳定空回调（热键 hook 单实例只处理本组件拥有的选项，其余动作占位）。 */
 function noop(): void {}
-
-function HighspeedCountdown({ expiresAt }: { expiresAt: number }) {
-  const { intl, locale } = useZCodeIntl();
-  const [now, setNow] = useState(() => Date.now());
-
-  useEffect(() => {
-    const timer = window.setInterval(() => setNow(Date.now()), 1_000);
-    return () => window.clearInterval(timer);
-  }, []);
-
-  const remainingTime = formatHighspeedRemainingTime(expiresAt, now);
-  const absoluteExpiryLabel = intl.formatMessage(
-    { id: "chat.highspeed.expiresAt" },
-    {
-      time: new Date(expiresAt).toLocaleTimeString(locale, {
-        hour: "2-digit",
-        minute: "2-digit",
-      }),
-    },
-  );
-  const remainingTimeLabel = intl.formatMessage(
-    { id: "chat.highspeed.remainingTime" },
-    { time: remainingTime },
-  );
-
-  // Bug 根因：倒计时原先晚于 Think 折叠，在中等窄窗口继续占用固定 82px；
-  // 窄窗口只收起数值，保留可 hover 的时钟入口。
-  return (
-    <span
-      aria-label={absoluteExpiryLabel}
-      title={remainingTimeLabel}
-      data-highspeed-countdown="true"
-      className="highspeed-inline-countdown inline-flex h-7 w-[82px] shrink-0 items-center justify-center gap-1 rounded-md p-1 text-ui-caption @max-xl/composer:w-7 @max-xl/composer:gap-0 @max-xl/composer:p-0"
-    >
-      <AlarmClockIcon className="size-4 shrink-0" aria-hidden="true" />
-      <span
-        data-highspeed-countdown-value="true"
-        className="relative h-[18px] w-[54px] shrink-0 leading-4 tabular-nums @max-xl/composer:hidden"
-      >
-        <span className="absolute left-0 top-0.5">{remainingTime}</span>
-      </span>
-    </span>
-  );
-}
 
 export interface ModelSelectionSource {
   provider: string;
@@ -392,8 +344,6 @@ export interface V4ComposerToolbarProps {
   sessionId: string | null;
   phase: SessionPhase | null;
   provider?: ZCodeProvider;
-  /** 当前工具条是否运行在 Web 远控壳中。 */
-  isWebRemoteControl?: boolean;
   /** 当前视口是否为手机输入布局。 */
   isMobileViewport?: boolean;
   /** 草稿态（sessionId=null），仅区分新任务呈现，不改变选择来源。 */
@@ -402,18 +352,6 @@ export interface V4ComposerToolbarProps {
   draftConfig?: Partial<SessionConfigState>;
   usage: SessionUsageState | null;
   disabled: boolean;
-  /** Highspeed 卡生效时固定本轮模型，禁止通过选择器或快捷键切换。 */
-  modelLocked?: boolean;
-  /** 扩散尾段开始后（恢复入场则立即）展示 Highspeed 模型与倒计时。 */
-  highspeedPresented?: boolean;
-  /** 本次入场是否为 draw 新命中的激活动效；恢复入场的模型标识不做翻页。 */
-  highspeedEntranceAnimated?: boolean;
-  /** 模型翻页完成并静置后播放一次扫光。 */
-  highspeedSweepActive?: boolean;
-  /** Highspeed 卡片过期时间；有值时在模型与 Think 之间显示倒计时。 */
-  highspeedExpiresAt?: number;
-  /** draw 响应绑定的模型；只覆盖锁定期的触发器文案。 */
-  highspeedModel?: string;
   /** 单个 composer 内的配置 picker 排他 owner；只属于 renderer-local presentation。 */
   activeConfigPicker: V4ComposerConfigPicker | null;
   onConfigPickerOpenChange: (picker: V4ComposerConfigPicker, open: boolean) => void;
@@ -447,18 +385,11 @@ function V4ComposerModelControlsImpl({
   modelSelectionReload,
   modelSelectionRefresh,
   provider,
-  isWebRemoteControl = false,
   isMobileViewport = false,
   draftMode = false,
   draftConfig,
   usage,
   disabled,
-  modelLocked = false,
-  highspeedPresented = false,
-  highspeedEntranceAnimated = false,
-  highspeedSweepActive = false,
-  highspeedExpiresAt,
-  highspeedModel,
   activeConfigPicker,
   onConfigPickerOpenChange,
   onSelectModel,
@@ -942,7 +873,6 @@ function V4ComposerModelControlsImpl({
   ]);
   const handleModelValueChange = useCallback(
     (value: string, reasoningLevel?: string) => {
-      if (modelLocked) return;
       const decoded = decodeCustomModelValue(value);
       // 草稿的点击时可见模型可能只存在于 catalog，或已经被最新 draft
       // intent 覆盖，不能让 SessionPane 再从迟到的 prewarm projection 反推。
@@ -1007,7 +937,6 @@ function V4ComposerModelControlsImpl({
       effectiveConfig?.provider,
       onRecoverCustomModelSelection,
       onSelectModel,
-      modelLocked,
       modelSelectionView,
       workspaceIdentity,
       workspacePath,
@@ -1216,15 +1145,12 @@ function V4ComposerModelControlsImpl({
   const modelMenuVisible = modelSelectGroups.length > 0 || showManageModelsAction;
   // Bug 根因：手机端固定宽度的二级菜单没有消费 Radix 测得的当前方向可用宽度，
   // 共享 min-w-32 还会阻止极窄空间继续收缩。保持二级交互，同时把窗口边缘作为硬上限。
-  const providerSubmenuClassName =
-    isWebRemoteControl && isMobileViewport
-      ? "w-40 min-w-0 max-w-(--radix-dropdown-menu-content-available-width)"
-      : undefined;
+  const providerSubmenuClassName = undefined;
   useToolbarShortcutBindings({
     hasAnyOption: Boolean(modelOption) || Boolean(thoughtOption),
     toolbarDisabled: disabled || recoveryPending || connectionSwitch.pending,
     modelMenuDisabled:
-      disabled || recoveryPending || modelLocked || connectionSwitch.pending || !modelMenuVisible,
+      disabled || recoveryPending || connectionSwitch.pending || !modelMenuVisible,
     modelOption,
     thoughtOption: thoughtOption ?? undefined,
     onOpenModelMenu: handleOpenModelMenuShortcut,
@@ -1261,28 +1187,17 @@ function V4ComposerModelControlsImpl({
         data-usage-max={usage?.contextWindow?.maxTokens ?? ""}
         className="hidden"
       />
-      {/* Highspeed 卡激活即锁定模型；不能等动效交接完成才隐藏，否则 usage 圈圈会短暂闪现。 */}
-      {!modelLocked ? (
-        <ChatContextUsage
-          codingPlanUsageRemaining={codingPlanUsageRemaining}
-          taskUsage={taskUsage}
-          startPlanBalance={contextStartPlanBalance}
-          selectedProvider={displayProvider}
-          intl={intl}
-          locale={locale}
-          onSendCompressionCommand={onSendCompressionCommand}
-          compressionDisabled={disabled || recoveryPending}
-        />
-      ) : null}
-      {/* 加速轮的模型由本次卡决定，选型菜单此时不可用，所以指示器优先于选型加载态。 */}
-      {highspeedPresented && highspeedModel ? (
-        <HighspeedModelIndicator
-          model={highspeedModel}
-          originalModel={modelTriggerDisplay.fullLabel}
-          sweepActive={highspeedSweepActive}
-          animateEntrance={highspeedEntranceAnimated}
-        />
-      ) : modelSelectionState.status === "error" && modelSelectionReload ? (
+      <ChatContextUsage
+        codingPlanUsageRemaining={codingPlanUsageRemaining}
+        taskUsage={taskUsage}
+        startPlanBalance={contextStartPlanBalance}
+        selectedProvider={displayProvider}
+        intl={intl}
+        locale={locale}
+        onSendCompressionCommand={onSendCompressionCommand}
+        compressionDisabled={disabled || recoveryPending}
+      />
+      {modelSelectionState.status === "error" && modelSelectionReload ? (
         <Button
           type="button"
           variant="ghost"
@@ -1328,23 +1243,20 @@ function V4ComposerModelControlsImpl({
           manageModelsLabel={manageModelsLabel}
           onManageModels={handleOpenModelProviderSettings}
           lockReasonMessage={intl.formatMessage({
-            id: modelLocked
-              ? "chat.highspeed.modelLocked"
-              : "chat.toolbar.modelSwitch.lockedByRunningTask",
+            id: "chat.toolbar.modelSwitch.lockedByRunningTask",
           })}
           isItemLocked={isModelOptionLocked}
           onValueChange={handleModelValueChange}
           disabled={
             disabled ||
             recoveryPending ||
-            modelLocked ||
             (modelSelectionState.status !== "ready" &&
               !(modelSelectionState.status === "loading" && modelSelectionState.catalog))
           }
           tooltipTitle={modelTriggerDisplay.fullLabel}
           shortcutLabel={modelShortcutLabel}
           triggerRef={modelTriggerRef}
-          open={!modelLocked && activeConfigPicker === "model"}
+          open={activeConfigPicker === "model"}
           onOpenChange={handleModelPickerOpenChange}
           openRequestKey={modelMenuOpenRequestKey}
           labelVisibilityClassName="hidden @sm/composer:inline-flex"
@@ -1356,15 +1268,11 @@ function V4ComposerModelControlsImpl({
           providerSubmenuClassName={providerSubmenuClassName}
         />
       ) : null}
-      {highspeedPresented && highspeedExpiresAt !== undefined ? (
-        <HighspeedCountdown expiresAt={highspeedExpiresAt} />
-      ) : null}
-      {thoughtOption && (modelLocked || highspeedPresented) ? (
+      {thoughtOption ? (
         <ThoughtLevelCycleControl
           composerCollapsePriority={3}
           labelVisibilityClassName="inline-flex"
           indicatorClassName="block"
-          triggerClassName={cn(highspeedPresented && "text-ui-caption")}
           option={thoughtOption}
           onValueChange={handleThoughtValueChange}
           disabled={disabled || recoveryPending}

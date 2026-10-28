@@ -136,10 +136,6 @@ function createManager(
     resolveWslTarget?: (
       target: Extract<RemoteTarget, { kind: "wsl" }>,
     ) => Promise<Extract<RemoteTarget, { kind: "wsl" }>>;
-    webRemoteControlManager?: {
-      failRemoteSession: ReturnType<typeof vi.fn>;
-      replaceRemoteSession: ReturnType<typeof vi.fn>;
-    };
     logger?: {
       info: ReturnType<typeof vi.fn>;
       warn: ReturnType<typeof vi.fn>;
@@ -157,7 +153,6 @@ function createManager(
     reportRemoteConnectionStateChanged: options?.reportRemoteConnectionStateChanged,
     reportRemoteDisconnect: options?.reportRemoteDisconnect,
     monotonicNowMs: options?.monotonicNowMs,
-    webRemoteControlManagerRef: { current: options?.webRemoteControlManager ?? null },
   });
 }
 
@@ -1446,45 +1441,6 @@ describe("desktopRemoteSessions R1 window Host forwarding", () => {
     }
   });
 
-  it("手机 runtime attachment 到已有窗口 Local Host", async () => {
-    const child = new MockUtilityProcess(1001);
-    const win = createWindow(1, 101);
-    const manager = createManager(new Map([[101, child]]));
-    const workspaceIdentity = "remote:ssh:dev.internal:22:developer:/work/demo";
-    const connecting = manager.createRemoteWorkspaceSession(win as never, sshTarget, "connect-1", {
-      workspacePath: "/work/demo",
-      workspaceIdentity,
-    });
-    await emitConnected({
-      child,
-      requestId: "connect-1",
-      remoteSessionId: "remote-session-1",
-      workspacePath: "/work/demo",
-      workspaceIdentity,
-    });
-    confirmLatestScopedAttachment(manager, win);
-    await connecting;
-    child.postMessage.mockClear();
-
-    const mobile = manager.attachRemoteWorkspaceSessionHost({
-      windowId: 1,
-      remoteSessionId: "remote-session-1",
-      workspacePath: "/work/demo",
-      workspaceIdentity,
-      workspaceKey: workspaceIdentity,
-      clientMode: "web-remote-replayable",
-    });
-    expect(mobile.process).toBe(child);
-    expect(child.postMessage).toHaveBeenCalledTimes(1);
-    for (const [message] of child.postMessage.mock.calls) {
-      expect(message).toMatchObject({
-        type: HostMessageTypes.AttachServicePort,
-        clientMode: "web-remote-replayable",
-        scope: { kind: "remote", remoteSessionId: "remote-session-1" },
-      });
-    }
-  });
-
   it("renderer reload 只重建 attachment，复用 session 与 Host PID", async () => {
     const child = new MockUtilityProcess(1001);
     const win = createWindow(1, 101);
@@ -1510,7 +1466,7 @@ describe("desktopRemoteSessions R1 window Host forwarding", () => {
     confirmLatestScopedAttachment(manager, win);
   });
 
-  it("连接断开后保留离线路由供 tab dispose，但禁止 reload、手机和 Bot 重新 attachment", async () => {
+  it("连接断开后保留离线路由供 tab dispose，但禁止 reload 重新 attachment", async () => {
     const child = new MockUtilityProcess(1001);
     const win = createWindow(1, 101);
     const manager = createManager(new Map([[101, child]]));
@@ -1551,16 +1507,6 @@ describe("desktopRemoteSessions R1 window Host forwarding", () => {
       expect.objectContaining({ type: HostMessageTypes.AttachServicePort }),
       expect.anything(),
     );
-    expect(() =>
-      manager.attachRemoteWorkspaceSessionHost({
-        windowId: 1,
-        remoteSessionId: "remote-session-1",
-        workspacePath,
-        workspaceIdentity,
-        workspaceKey: workspaceIdentity,
-        clientMode: "web-remote-replayable",
-      }),
-    ).toThrow("远程 workspace source 当前离线");
     manager.disposeRemoteWorkspaceSession("remote-session-1", "tab-closed");
     expect(child.postMessage).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -1570,16 +1516,10 @@ describe("desktopRemoteSessions R1 window Host forwarding", () => {
     );
   });
 
-  it("Source 自动重连后先恢复 Desktop，手机 bridge 失败不回滚新 session", async () => {
+  it("Source 自动重连后先恢复 Desktop，新 session 不被回滚", async () => {
     const child = new MockUtilityProcess(1001);
     const win = createWindow(1, 101);
-    const webRemoteControlManager = {
-      failRemoteSession: vi.fn(),
-      replaceRemoteSession: vi.fn(async () => {
-        throw new Error("mobile bridge unavailable");
-      }),
-    };
-    const manager = createManager(new Map([[101, child]]), { webRemoteControlManager });
+    const manager = createManager(new Map([[101, child]]));
     const workspacePath = "/work/demo";
     const workspaceIdentity = "remote:ssh:dev.internal:22:developer:/work/demo";
     const connecting = manager.createRemoteWorkspaceSession(win as never, sshTarget, "connect-1", {
@@ -1605,7 +1545,6 @@ describe("desktopRemoteSessions R1 window Host forwarding", () => {
       recoveryAttempt: 2,
       recoveryLimit: 3,
     });
-    expect(webRemoteControlManager.failRemoteSession).not.toHaveBeenCalled();
     expect(win.webContents.send).toHaveBeenCalledWith(PlatformChannels.RemoteSessionClosed, {
       sessionId: "remote-session-1",
       reason: "host-exit",
@@ -1638,12 +1577,6 @@ describe("desktopRemoteSessions R1 window Host forwarding", () => {
         workspaceIdentity,
       }),
     );
-    expect(webRemoteControlManager.replaceRemoteSession).toHaveBeenCalledWith({
-      previousSessionId: "remote-session-1",
-      sessionId: "remote-session-2",
-      workspacePath,
-      workspaceIdentity,
-    });
     expect(child.postMessage).not.toHaveBeenCalledWith(
       expect.objectContaining({
         type: HostMessageTypes.DisposeRemoteWorkspaceSession,
@@ -1651,19 +1584,6 @@ describe("desktopRemoteSessions R1 window Host forwarding", () => {
       }),
     );
 
-    child.emit("message", {
-      type: HostResponseTypes.RemoteWorkspaceClosed,
-      remoteSessionId: "remote-session-2",
-      reason: "connection-closed",
-      exitCode: 255,
-      signal: null,
-      recoverable: false,
-    });
-    expect(webRemoteControlManager.failRemoteSession).toHaveBeenCalledWith(
-      "remote-session-2",
-      "window-host:connection-offline",
-      expect.objectContaining({ reason: "workspace-closed" }),
-    );
   });
 
   async function reconnectSourceSession(params: {
@@ -1794,348 +1714,5 @@ describe("desktopRemoteSessions R1 window Host forwarding", () => {
         remoteSessionId: "remote-session-2",
       }),
     );
-  });
-  it("手机项目准备只转交 Host descriptor，不创建桌面 tab/continuous attachment", async () => {
-    const child = new MockUtilityProcess(1001);
-    const win = createWindow(1, 101);
-    const remoteControl = {
-      failRemoteSession: vi.fn(),
-      replaceRemoteSession: vi.fn(async () => undefined),
-    };
-    const manager = createManager(new Map([[101, child]]), {
-      webRemoteControlManager: remoteControl,
-    });
-    const pending = manager.prepareProjectWorkspace(
-      win as never,
-      { projectId: "p", hostId: "remote:server:s" },
-      "mobile-project",
-    );
-    expect(child.postMessage).toHaveBeenCalledWith({
-      type: HostMessageTypes.PrepareProjectWorkspace,
-      requestId: "mobile-project",
-      projectId: "p",
-      hostId: "remote:server:s",
-      clientMode: "web-remote-replayable",
-    });
-    const remote = {
-      sourceServerId: "s",
-      remoteSessionId: "mobile-scope",
-      workspacePath: "/new",
-      workspaceIdentity: "remote:server:s:/new",
-      generation: 1,
-      target: sshTarget,
-    };
-    child.emit("message", {
-      type: HostResponseTypes.ProjectWorkspacePrepared,
-      requestId: "mobile-project",
-      result: {
-        ok: true,
-        value: {
-          projectId: "p",
-          hostId: "remote:server:s",
-          workspacePath: "/new",
-          workspaceIdentity: remote.workspaceIdentity,
-          additionalDirectories: [],
-          remote,
-        },
-      },
-    });
-    expect((await pending).remote?.remoteSessionId).toBe("mobile-scope");
-    manager.reattachRemoteWorkspaceSessionsForWindow(win as never, "renderer-reload");
-    expect(win.webContents.postMessage).not.toHaveBeenCalled();
-    const mobile = manager.attachRemoteWorkspaceSessionHost({
-      windowId: 1,
-      remoteSessionId: "mobile-scope",
-      workspacePath: "/new",
-      workspaceIdentity: remote.workspaceIdentity,
-      workspaceKey: remote.workspaceIdentity,
-      clientMode: "web-remote-replayable",
-    });
-    expect(mobile.process).toBe(child);
-    child.emit("message", {
-      type: HostResponseTypes.RemoteWorkspaceReconnected,
-      previousRemoteSessionId: "mobile-scope",
-      descriptor: { ...remote, remoteSessionId: "mobile-reconnected", generation: 2 },
-    });
-    await vi.waitFor(() =>
-      expect(remoteControl.replaceRemoteSession).toHaveBeenCalledWith(
-        expect.objectContaining({ sessionId: "mobile-reconnected" }),
-      ),
-    );
-    expect(win.webContents.postMessage).not.toHaveBeenCalled();
-    manager.disposeRemoteWorkspaceSessionsForWindow(101);
-  });
-
-  it("Host 退出使尚未完成的项目导航失败，不留下永不返回的请求", async () => {
-    const child = new MockUtilityProcess(1001);
-    const win = createWindow(1, 101);
-    const manager = createManager(new Map([[101, child]]));
-    const pending = manager.prepareProjectWorkspace(
-      win as never,
-      { projectId: null },
-      "mobile-project",
-    );
-    const rejected = expect(pending).rejects.toThrow("Host");
-    child.emit("exit", 1);
-    await rejected;
-  });
-  it("Host 返回目录后、首次配置同步完成前退出也必须结束导航请求", async () => {
-    const child = new MockUtilityProcess(1001);
-    child.postMessage.mockImplementation(() => undefined);
-    const win = createWindow(1, 101);
-    const manager = createManager(new Map([[101, child]]));
-    const rejected = vi.fn();
-    void manager
-      .prepareProjectWorkspace(
-        win as never,
-        { projectId: "p", hostId: "remote:server:s" },
-        "mobile-project",
-      )
-      .catch(rejected);
-    child.emit("message", {
-      type: HostResponseTypes.ProjectWorkspacePrepared,
-      requestId: "mobile-project",
-      result: {
-        ok: true,
-        value: {
-          projectId: "p",
-          hostId: "remote:server:s",
-          workspacePath: "/new",
-          workspaceIdentity: "remote:server:s:/new",
-          additionalDirectories: [],
-          remote: {
-            sourceServerId: "s",
-            remoteSessionId: "mobile-scope",
-            workspacePath: "/new",
-            workspaceIdentity: "remote:server:s:/new",
-            generation: 1,
-            target: sshTarget,
-          },
-        },
-      },
-    });
-    child.emit("exit", 1);
-    await vi.waitFor(() =>
-      expect(rejected).toHaveBeenCalledWith(
-        expect.objectContaining({ message: expect.stringContaining("Host") }),
-      ),
-    );
-  });
-
-  it("窗口关闭后不能把迟到的配置成功结果返回为导航成功", async () => {
-    const child = new MockUtilityProcess(1001);
-    child.postMessage.mockImplementation(() => undefined);
-    const win = createWindow(1, 101);
-    const manager = createManager(new Map([[101, child]]));
-    const settled = vi.fn();
-    void manager
-      .prepareProjectWorkspace(
-        win as never,
-        { projectId: "p", hostId: "remote:server:s" },
-        "mobile-project",
-      )
-      .then(
-        () => settled("success"),
-        () => settled("rejected"),
-      );
-    child.emit("message", {
-      type: HostResponseTypes.ProjectWorkspacePrepared,
-      requestId: "mobile-project",
-      result: {
-        ok: true,
-        value: {
-          projectId: "p",
-          hostId: "remote:server:s",
-          workspacePath: "/new",
-          workspaceIdentity: "remote:server:s:/new",
-          additionalDirectories: [],
-          remote: {
-            sourceServerId: "s",
-            remoteSessionId: "mobile-scope",
-            workspacePath: "/new",
-            workspaceIdentity: "remote:server:s:/new",
-            generation: 1,
-            target: sshTarget,
-          },
-        },
-      },
-    });
-    await vi.waitFor(() =>
-      expect(child.postMessage).toHaveBeenCalledWith(
-        expect.objectContaining({ type: HostMessageTypes.ProviderProvisioningExecute }),
-      ),
-    );
-    const command = child.postMessage.mock.calls.find(
-      ([message]) => message.type === HostMessageTypes.ProviderProvisioningExecute,
-    )![0];
-    manager.disposeRemoteWorkspaceSessionsForWindow(101);
-    child.emit("message", {
-      type: HostResponseTypes.ProviderProvisioningExecutionResult,
-      requestId: command.requestId,
-      environmentKey: command.environmentKey,
-      status: "applied",
-    });
-    await vi.waitFor(() => expect(settled).toHaveBeenCalled());
-    expect(settled).toHaveBeenCalledWith("rejected");
-  });
-});
-
-describe("mobile scope admission joins", () => {
-  function setup() {
-    const child = new MockUtilityProcess(1001);
-    const win = createWindow(1, 101);
-    const reportRemoteConnectionStateChanged = vi.fn();
-    const manager = createManager(new Map([[101, child]]), { reportRemoteConnectionStateChanged });
-    const value = {
-      projectId: "p",
-      hostId: "remote:server:s",
-      workspacePath: "/new",
-      workspaceIdentity: "remote:server:s:/new",
-      additionalDirectories: [],
-      remote: {
-        sourceServerId: "s",
-        remoteSessionId: "mobile-scope",
-        workspacePath: "/new",
-        workspaceIdentity: "remote:server:s:/new",
-        generation: 1,
-        target: sshTarget,
-      },
-    };
-    const prepare = (requestId: string) => {
-      const result = manager.prepareProjectWorkspace(
-        win as never,
-        { projectId: "p", hostId: value.hostId },
-        requestId,
-      );
-      child.emit("message", {
-        type: HostResponseTypes.ProjectWorkspacePrepared,
-        requestId,
-        result: { ok: true, value },
-      });
-      return result;
-    };
-    return { child, win, manager, prepare, reportRemoteConnectionStateChanged };
-  }
-  it("a second navigation waits for the shared scope's initial provisioning", async () => {
-    const { child, manager, prepare } = setup();
-    child.postMessage.mockImplementation(() => undefined);
-    const first = prepare("first");
-    await vi.waitFor(() =>
-      expect(child.postMessage).toHaveBeenCalledWith(
-        expect.objectContaining({ type: HostMessageTypes.ProviderProvisioningExecute }),
-      ),
-    );
-    const settled = vi.fn();
-    const second = prepare("second").then(settled);
-    await Promise.resolve();
-    await Promise.resolve();
-    const completedBeforeProvisioning = settled.mock.calls.length;
-    const command = child.postMessage.mock.calls.find(
-      ([message]) => message.type === HostMessageTypes.ProviderProvisioningExecute,
-    )![0];
-    child.emit("message", {
-      type: HostResponseTypes.ProviderProvisioningExecutionResult,
-      requestId: command.requestId,
-      environmentKey: command.environmentKey,
-      status: "applied",
-    });
-    await Promise.all([first, second]);
-    manager.disposeRemoteWorkspaceSessionsForWindow(101);
-    expect(completedBeforeProvisioning).toBe(0);
-  });
-  it("desktop adoption of a mobile scope reports connection only after renderer readiness", async () => {
-    const { child, win, manager, prepare, reportRemoteConnectionStateChanged } = setup();
-    await prepare("mobile");
-    const desktop = manager.createRemoteWorkspaceSession(
-      win as never,
-      sshTarget,
-      "desktop",
-      undefined,
-      { remoteUsageTelemetryEligible: true },
-    );
-    await emitConnected({ child, requestId: "desktop", remoteSessionId: "mobile-scope" });
-    expect(reportRemoteConnectionStateChanged).not.toHaveBeenCalled();
-    confirmLatestScopedAttachment(manager, win);
-    await desktop;
-    expect(reportRemoteConnectionStateChanged).toHaveBeenCalledWith({
-      rendererId: 101,
-      remoteKind: "ssh",
-      transition: "connected",
-    });
-    manager.disposeRemoteWorkspaceSessionsForWindow(101);
-  });
-
-  it("新建连接未带 context 时，手机桥接必须等 UI 绑定选中目录后才能通过 identity 校验", async () => {
-    // 回归锁定（3.12.0 手机远控连不上 WSL 项目）：新建连接不带 context，Host descriptor 停留在 "/"，
-    // identity 由解析后的 target 生成；UI tab 用未解析 target 生成的 identity 与之不同。
-    // BindRemoteWorkspaceSessionContext 是唯一能让 descriptor 与 tab 对齐的入口，缺了它桥接必然被拒。
-    const child = new MockUtilityProcess(1001);
-    const win = createWindow(1, 101);
-    const resolvedWslTarget = { kind: "wsl", distro: "Ubuntu", user: "dev" } as const;
-    const manager = createManager(new Map([[101, child]]), {
-      resolveWslTarget: async () => resolvedWslTarget,
-    });
-    const connecting = manager.createRemoteWorkspaceSession(
-      win as never,
-      { kind: "wsl" },
-      "connect-wsl",
-    );
-    for (let index = 0; index < 6; index += 1) await Promise.resolve();
-    await emitConnected({
-      child,
-      requestId: "connect-wsl",
-      remoteSessionId: "remote-session-1",
-      target: resolvedWslTarget,
-    });
-    confirmLatestScopedAttachment(manager, win);
-    await connecting;
-
-    const tabIdentity = "remote:wsl:default:/home/dev";
-    const attachMobile = () =>
-      manager.attachRemoteWorkspaceSessionHost({
-        windowId: 1,
-        remoteSessionId: "remote-session-1",
-        workspacePath: "/home/dev",
-        workspaceIdentity: tabIdentity,
-        workspaceKey: tabIdentity,
-        clientMode: "web-remote-replayable",
-      });
-    expect(attachMobile).toThrow("远程 workspaceKey 与 logical session 不匹配。");
-
-    child.postMessage.mockClear();
-    const previousAttachmentId = getLatestScopedAttachment(win).attachmentId;
-    const binding = manager.bindRemoteWorkspaceSessionContext(
-      "remote-session-1",
-      { workspacePath: "/home/dev", workspaceIdentity: tabIdentity },
-      101,
-    );
-    // R3 的 main bind 先等 Host 回 RemoteWorkspaceContextBound ACK，再换代 renderer attachment。
-    const bindRequest = child.postMessage.mock.calls.find(
-      ([message]) => message.type === HostMessageTypes.BindRemoteWorkspaceContext,
-    )?.[0] as { requestId: string };
-    expect(bindRequest).toBeDefined();
-    child.emit("message", {
-      type: HostResponseTypes.RemoteWorkspaceContextBound,
-      requestId: bindRequest.requestId,
-    });
-    // 合并后 bind 仍等待新的 scoped attachment；不能用旧 attachment 的 ACK 越过新门禁。
-    await vi.waitFor(() =>
-      expect(getLatestScopedAttachment(win).attachmentId).not.toBe(previousAttachmentId),
-    );
-    confirmLatestScopedAttachment(manager, win);
-    await binding;
-    child.postMessage.mockClear();
-
-    expect(attachMobile().remoteKind).toBe("wsl");
-    expect(child.postMessage.mock.calls[0]?.[0]).toMatchObject({
-      type: HostMessageTypes.AttachServicePort,
-      clientMode: "web-remote-replayable",
-      scope: {
-        kind: "remote",
-        remoteSessionId: "remote-session-1",
-        workspacePath: "/home/dev",
-        workspaceIdentity: tabIdentity,
-      },
-    });
   });
 });

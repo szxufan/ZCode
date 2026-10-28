@@ -15,7 +15,6 @@ import { createPortal } from "react-dom";
 import { useShallow } from "zustand/react/shallow";
 import { DndContext, DragOverlay } from "@dnd-kit/core";
 import { Hash, Maximize2, Minimize2 } from "lucide-react";
-import { OFF_PEAK_DEFAULT_GROUP_ID } from "@zcode/shared";
 import { Button } from "@/components/ui/button.js";
 import { ControlHintTooltip } from "@/ControlHintTooltip.js";
 import { TaskRenameDialog } from "@/TaskRenameDialog.js";
@@ -74,7 +73,6 @@ export function TaskGroupedView({
   onCreate,
   workspacePath,
   workspaceIdentity,
-  onOpenAutomations,
   toolbarTarget,
   stickyTarget,
   scrollRef,
@@ -85,7 +83,6 @@ export function TaskGroupedView({
   onCreate(groupId: string | null): void;
   workspacePath: string;
   workspaceIdentity?: string;
-  onOpenAutomations?: () => void;
   toolbarTarget: HTMLElement | null;
   stickyTarget: HTMLElement | null;
   scrollRef: RefObject<HTMLDivElement | null>;
@@ -190,10 +187,6 @@ export function TaskGroupedView({
       return next;
     });
   const createTask = (groupId: string | null) => {
-    if (groupId === OFF_PEAK_DEFAULT_GROUP_ID) {
-      onOpenAutomations?.();
-      return;
-    }
     if (groupId)
       changeCollapsed((current) => {
         const next = new Set(current);

@@ -290,7 +290,6 @@ describe("createLocalServices remote authority", () => {
       createLocalServices,
       disposeServiceResources,
       getAccountRequestAuthService,
-      getOffPeakRequestAuthBuilder,
     } = await import("../src/node.js");
     const { ICredentialService, ISettingService } = await import("../src/index.js");
     const services = createLocalServices({
@@ -306,7 +305,6 @@ describe("createLocalServices remote authority", () => {
     try {
       const accountRequestAuthService = getAccountRequestAuthService(services);
       expect(accountRequestAuthService).toBeDefined();
-      expect(getOffPeakRequestAuthBuilder(services)).toBeTypeOf("function");
       const { ProxyChannel } = await import("@zcode/rpc");
       const exposeService = vi.spyOn(ProxyChannel, "fromService");
       const registerChannel = vi.fn();
@@ -378,7 +376,7 @@ describe("createLocalServices remote authority", () => {
     const transport = {
       fetch: vi.fn<typeof fetch>(
         async () =>
-          new Response(JSON.stringify({ code: 0, msg: "ok", data: [] }), {
+          new Response(JSON.stringify({ code: 0, msg: "ok", data: { configs: {} } }), {
             status: 200,
             headers: { "content-type": "application/json" },
           }),
@@ -386,7 +384,7 @@ describe("createLocalServices remote authority", () => {
       dispose: vi.fn(),
       disposeAndWait: vi.fn(async () => {}),
     };
-    const [{ createLocalServices, disposeServiceResources }, { IClientScenesService }] =
+    const [{ createLocalServices, disposeServiceResources }, { IClientConfigService }] =
       await Promise.all([import("../src/node.js"), import("../src/index.js")]);
     const services = createLocalServices({
       hostApiNetworkTransport: transport,
@@ -394,9 +392,10 @@ describe("createLocalServices remote authority", () => {
     });
 
     try {
-      await expect(services.get(IClientScenesService).list()).resolves.toMatchObject({
-        code: 0,
-        data: [],
+      await expect(services.get(IClientConfigService).getSnapshot()).resolves.toEqual({
+        pluginStoreOrder: null,
+        zsrcUrl: null,
+        uiPluginRecommendations: [],
       });
       expect(transport.fetch).toHaveBeenCalledOnce();
     } finally {

@@ -38,9 +38,6 @@ const conversationTelemetryState = vi.hoisted(() => ({
 }));
 
 // Bugfix：本文件只验证 SessionPane 布局骨架，隔离闲时入口对真实 TabStore 的依赖。
-vi.mock("@/v4/OffPeakNewTaskEntry.js", () => ({
-  OffPeakNewTaskEntry: () => null,
-}));
 
 // 同理隔离推荐提示词容器：它通过 useWorkspaceServicesResolution 依赖 TabStoreProvider，
 // 而本文件只挂 SessionPane 验证布局，不提供 Tab store。
@@ -563,66 +560,7 @@ describe("SessionPane v4 chat layout parity", () => {
     expect(statusPanelCapture.props.at(-1)?.onResumeGoal).toEqual(expect.any(Function));
   });
 
-  it("keeps scoped Agent detail opening on remote compact while hiding the directory", () => {
-    const onOpenSubagentSession = vi.fn();
-    const row = subagentRow();
-    const snapshot = makeSnapshot({
-      backgroundWorks: [
-        {
-          workId: "work-agent",
-          kind: "subagent",
-          title: "分析状态面板",
-          status: "running",
-          startedAt: 1_777_777_778,
-          anchorRowId: row.rowId,
-          childSessionId: "child-session",
-        },
-      ],
-      rows: { window: [userInputRow(), row], totalCount: 2, firstRowId: 1 },
-    });
-
-    renderPane({ snapshot, onOpenSubagentSession });
-    const panelProps = statusPanelCapture.props.at(-1);
-    if (!panelProps) throw new Error("Status panel props were not captured");
-    expect(panelProps.parentSessionId).toBe("session-1");
-    expect(panelProps.runningSubagents).toEqual([]);
-
-    (
-      panelProps.onOpenSubagentSession as (request: {
-        rootSessionId: string;
-        parentSessionId: string;
-        childSessionId: string;
-        subagentType: string;
-        title: string;
-      }) => void
-    )({
-      rootSessionId: "session-1",
-      parentSessionId: "session-1",
-      childSessionId: "child-session",
-      subagentType: "Explore",
-      title: "分析状态面板",
-    });
-    expect(onOpenSubagentSession).toHaveBeenCalledWith({
-      workspacePath: "/workspace",
-      rootSessionId: "session-1",
-      parentSessionId: "session-1",
-      childSessionId: "child-session",
-      subagentType: "Explore",
-      title: "分析状态面板",
-    });
-
-    renderPane({
-      compactForRemoteControl: true,
-      snapshot,
-      onOpenSubagentSession,
-    });
-    expect(statusPanelCapture.props.at(-1)?.isWebRemoteControl).toBe(true);
-    expect(statusPanelCapture.props.at(-1)?.isMobileViewport).toBe(false);
-    expect(statusPanelCapture.props.at(-1)?.onOpenSubagentSession).toEqual(expect.any(Function));
-    expect(statusPanelCapture.props.at(-1)?.onOpenSubagentDirectory).toBeUndefined();
-  });
-
-  it("wires the Composer background entry to panel expansion and controlled Running state", () => {
+    it("wires the Composer background entry to panel expansion and controlled Running state", () => {
     const onSummaryPanelVariantOverrideChange = vi.fn();
     const snapshot = makeSnapshot({
       backgroundWorks: [

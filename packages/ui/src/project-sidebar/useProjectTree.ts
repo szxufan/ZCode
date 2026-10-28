@@ -23,7 +23,7 @@ import { areStabilizedValuesEquivalent } from "@/v4/taskListItemStabilization.js
 const subscribeToNothing = () => () => {};
 const zeroRevision = () => 0;
 const EMPTY: ProjectTree = { projects: [], tasks: [] };
-export function useProjectTree(isDesktop = false) {
+export function useProjectTree() {
   const services = useBaseWorkspaceServices();
   // 远端 bridge 的 base 服务属于 Source；侧栏读写与失效流必须整组来自窗口目录。
   const directoryServices = services.windowProjectDirectory ?? services;
@@ -267,7 +267,7 @@ export function useProjectTree(isDesktop = false) {
       }));
   }, [tree, tabs, registry]);
   const scopeKey = JSON.stringify(scopes);
-  useProjectUnreadSignals(scopes, refresh, isDesktop);
+  useProjectUnreadSignals(scopes, refresh);
   const sourceVersion = JSON.stringify(
     directory.hosts.map((host) => [host.id, host.membershipId, host.connectionStatus]).sort(),
   );

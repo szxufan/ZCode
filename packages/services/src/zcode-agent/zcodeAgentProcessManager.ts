@@ -34,7 +34,6 @@ import { createServiceLogger } from "#src/logger/serviceLogger.js";
 import { ZCodeProtocolClient } from "./zcodeProtocolClient.js";
 import { ZCodeStdioTransport } from "./zcodeStdioTransport.js";
 import { readZCodeStdioTapDevState } from "./zcodeStdioTapDevConfig.js";
-import type { ZCodeAgentPresentationSurface } from "./zcodeAgentPresentationSurface.js";
 import { shouldSpawnInDetachedProcessGroup } from "../process/processTreeTerminator.js";
 import type { RuntimeProcessLifecycleReporter } from "../process/runtimeProcessLifecycle.js";
 import { buildAgentWorkspaceIdentityEnv } from "../runtime-tools/agentProxyEnv.js";
@@ -51,7 +50,6 @@ export interface ZCodeAgentCommand {
 }
 
 export interface ZCodeAgentCommandResolverContext {
-  presentationSurface?: ZCodeAgentPresentationSurface;
   workspacePath: string;
   workspaceIdentity?: string;
   workspaceKey: string;
@@ -63,7 +61,6 @@ export type ZCodeAgentCommandResolver = (
 
 export interface ZCodeAgentProcessManagerOptions {
   commandResolver?: ZCodeAgentCommandResolver;
-  presentationSurface?: ZCodeAgentPresentationSurface;
   requestTimeoutMs?: number;
   processLifecycleReporter?: RuntimeProcessLifecycleReporter;
   /**
@@ -445,14 +442,11 @@ export function resolveDefaultZCodeAgentCommand(
 ): ZCodeAgentCommand | null {
   const command = process.env.ZCODE_AGENT_SERVER_COMMAND?.trim();
   if (command) {
-    return applyPresentationSurfaceToCommand(
-      {
-        command,
-        args: parseArgsJson(process.env.ZCODE_AGENT_SERVER_ARGS_JSON) ?? ["app-server", "--stdio"],
-        cwd: process.env.ZCODE_AGENT_SERVER_CWD?.trim() || context.workspacePath,
-      },
-      context.presentationSurface,
-    );
+    return {
+      command,
+      args: parseArgsJson(process.env.ZCODE_AGENT_SERVER_ARGS_JSON) ?? ["app-server", "--stdio"],
+      cwd: process.env.ZCODE_AGENT_SERVER_CWD?.trim() || context.workspacePath,
+    };
   }
 
   // 顺序：env 显式覆盖 → monorepo dev 源码/dist（dev 改源码立刻生效，不会被远端历史装的 native binary
@@ -460,46 +454,9 @@ export function resolveDefaultZCodeAgentCommand(
   const bundled =
     resolveBundledWorkspaceZCodeAgentCommand(context) ??
     resolveElectronRuntimeZCodeAgentCommand(context);
-  return applyPresentationSurfaceToCommand(
-    bundled
-      ? { ...bundled, supportsStorageStartup: true }
-      : resolveDeployedZCodeAgentBinaryCommand(context),
-    context.presentationSurface,
-  );
-}
-
-function applyPresentationSurfaceToCommand(
-  command: ZCodeAgentCommand | null,
-  presentationSurface: ZCodeAgentCommandResolverContext["presentationSurface"],
-): ZCodeAgentCommand | null {
-  if (!command || presentationSurface !== "desktop") {
-    return command;
-  }
-
-  const commandArgs = command.args ?? [];
-  const args: string[] = [];
-  for (let index = 0; index < commandArgs.length; index += 1) {
-    const arg = commandArgs[index]!;
-    if (arg === "--surface") {
-      const nextArg = commandArgs[index + 1];
-      // Bug 原因：旧逻辑无条件消费下一个 token，孤立的 --surface 会把后续
-      // --stdio 等 option 一并吞掉，导致自定义 Agent 命令失去协议启动参数。
-      // 只有明确的非 option value 才属于 --surface；其他 option 继续走原参数链路。
-      if (nextArg !== undefined && !nextArg.startsWith("-")) {
-        index += 1;
-      }
-      continue;
-    }
-    if (arg.startsWith("--surface=")) {
-      continue;
-    }
-    args.push(arg);
-  }
-
-  return {
-    ...command,
-    args: [...args, "--surface", "desktop"],
-  };
+  return bundled
+    ? { ...bundled, supportsStorageStartup: true }
+    : resolveDeployedZCodeAgentBinaryCommand(context);
 }
 
 export function wrapZCodeAgentCommandWithStdioTapDevProxy(
@@ -571,7 +528,6 @@ export class ZCodeAgentProcessManager {
   }
 
   private readonly commandResolver: ZCodeAgentCommandResolver;
-  private readonly presentationSurface: ZCodeAgentProcessManagerOptions["presentationSurface"];
   private readonly requestTimeoutMs: number | undefined;
   private readonly processLifecycleReporter: RuntimeProcessLifecycleReporter | undefined;
   private readonly resolveSpawnEnv: ZCodeAgentProcessManagerOptions["resolveSpawnEnv"];
@@ -591,7 +547,6 @@ export class ZCodeAgentProcessManager {
 
   constructor(options?: ZCodeAgentProcessManagerOptions) {
     this.commandResolver = options?.commandResolver ?? resolveDefaultZCodeAgentCommand;
-    this.presentationSurface = options?.presentationSurface;
     this.requestTimeoutMs = options?.requestTimeoutMs;
     this.processLifecycleReporter = options?.processLifecycleReporter;
     this.resolveSpawnEnv = options?.resolveSpawnEnv;
@@ -968,7 +923,6 @@ export class ZCodeAgentProcessManager {
     const resolveCommandStartedAt = Date.now();
     const command = await this.commandResolver({
       ...params,
-      ...(this.presentationSurface ? { presentationSurface: this.presentationSurface } : {}),
       workspaceKey,
     });
     const resolveCommandDurationMs = Date.now() - resolveCommandStartedAt;
@@ -1383,7 +1337,6 @@ export class ZCodeAgentProcessManager {
     try {
       const command = await this.commandResolver({
         ...params,
-        ...(this.presentationSurface ? { presentationSurface: this.presentationSurface } : {}),
         workspaceKey,
       });
       return command

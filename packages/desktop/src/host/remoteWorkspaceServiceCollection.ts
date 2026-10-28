@@ -14,8 +14,6 @@ import {
   IZCodeTaskService,
   IZCodeAgentService,
   IZCodeSessionService,
-  IConversationShareService,
-  createUnsupportedConversationShareService,
   IBotsService,
   IFileWatcherService,
   IOAuthService,
@@ -25,7 +23,6 @@ import {
   IUsageStatsService,
   ICodingPlanSubscriptionService,
   IClientConfigService,
-  IClientScenesService,
   ISkillsService,
   ISkillSyncService,
   IMcpSyncService,
@@ -50,7 +47,6 @@ import {
   assertRemoteWorkspaceRpcContract,
 } from "./remoteWorkspaceRpcContract.js";
 import {
-  createServiceLogger,
   createLegacySingleRootProjectService,
   createRemoteProjectService,
 } from "@zcode/services/node";
@@ -79,7 +75,6 @@ export const REMOTE_WORKSPACE_RPC_REGISTRATIONS = [
   ["zcodeTaskService", IZCodeTaskService],
   ["zcodeAgentService", IZCodeAgentService],
   ["zcodeSessionService", IZCodeSessionService],
-  ["conversationShareService", IConversationShareService],
   ["botsService", IBotsService],
   ["fileWatcherService", IFileWatcherService],
   ["oauthService", IOAuthService],
@@ -88,7 +83,6 @@ export const REMOTE_WORKSPACE_RPC_REGISTRATIONS = [
   ["sourceServerWorkspaceService", ISourceServerWorkspaceService],
   ["usageStatsService", IUsageStatsService],
   ["codingPlanSubscriptionService", ICodingPlanSubscriptionService],
-  ["clientScenesService", IClientScenesService],
   ["skillsService", ISkillsService],
   ["skillSyncService", ISkillSyncService],
   ["mcpSyncService", IMcpSyncService],
@@ -103,21 +97,6 @@ export const REMOTE_WORKSPACE_RPC_REGISTRATIONS = [
   ["settingsSyncService", ISettingsSyncService],
   ["promptAttachmentTransferService", IPromptAttachmentTransferService],
 ] as const satisfies readonly [keyof IServiceAccessor, ServiceDescriptor<unknown>][];
-
-const conversationShareLog = createServiceLogger("conversation-share");
-
-function createUnsupportedRemoteConversationShareService(): IConversationShareService {
-  return createUnsupportedConversationShareService({
-    message: "Conversation sharing is not available for this client or remote target",
-    onRejected: (action) => {
-      conversationShareLog.warn(undefined, "conversation share action rejected", {
-        action,
-        kind: "feature_disabled",
-        reason: "server_remote_unsupported",
-      });
-    },
-  });
-}
 
 export function resolveServerProjectService(params: {
   connectionServices: IServiceAccessor;
@@ -207,13 +186,6 @@ export function createServerRemoteWorkspaceServiceCollection(params: {
     .register(IZCodeTaskService, params.connectionServices.zcodeTaskService)
     .register(IZCodeAgentService, params.connectionServices.zcodeAgentService)
     .register(IZCodeSessionService, params.connectionServices.zcodeSessionService)
-    // R3 的分享属于目标 Environment；不能恢复旧 SSH 的本机 JWT 混装。
-    .register(
-      IConversationShareService,
-      params.targetKind === "server"
-        ? createUnsupportedRemoteConversationShareService()
-        : params.connectionServices.conversationShareService,
-    )
     .register(IBotsService, params.connectionServices.botsService)
     .register(IFileWatcherService, params.connectionServices.fileWatcherService)
     .register(IOAuthService, params.connectionServices.oauthService)
@@ -226,7 +198,6 @@ export function createServerRemoteWorkspaceServiceCollection(params: {
       params.connectionServices.codingPlanSubscriptionService,
     )
     .register(IClientConfigService, params.clientConfigService)
-    .register(IClientScenesService, params.connectionServices.clientScenesService)
     .register(ISkillsService, params.connectionServices.skillsService)
     .register(ISkillSyncService, params.connectionServices.skillSyncService)
     .register(IMcpSyncService, params.connectionServices.mcpSyncService)

@@ -3,7 +3,7 @@ import { z } from "zod";
 
 // 额度类型拆在 usage-quota.ts，见该文件头部说明；这里 re-export 保持既有 import 路径不变。
 export * from "./usage-quota.js";
-import type { UsageMcpQuotaSnapshot, UsageQuotaSnapshot } from "./usage-quota.js";
+import type { UsageQuotaSnapshot } from "./usage-quota.js";
 import type { ZCodeAccountAccess, ZCodeProviderAccountAccess } from "./zcode-protocol/index.js";
 
 export const ESTIMATED_TOKEN_CHAR_DIVISOR = 3;
@@ -92,12 +92,6 @@ export interface UsageEntitlementSnapshot {
   remaining: UsageEntitlementRemaining | null;
   subscription: UsageEntitlementSubscription | null;
   quota: UsageQuotaSnapshot | null;
-  /**
-   * ZCode 官方 Server MCP 的调用额度（`/api/v1/mcp/usage`）。
-   * 与 quota 同一份快照下发，是为了继承 entitlement 已有的缓存 / in-flight 合并 / TTL 策略；
-   * 拉取失败、未开通 Coding Plan、或该额度不属于本次查询的连接时一律为 null（可选数据面）。
-   */
-  mcpQuota?: UsageMcpQuotaSnapshot | null;
 }
 
 export interface UsageEntitlementContext {

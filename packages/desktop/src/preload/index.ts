@@ -58,7 +58,6 @@ import type {
   EmbeddedBrowserSitePermissionsSnapshot,
   Locale,
   OAuthStateRegistration,
-  WebRemoteControlAuthStateChange,
   OpenInEditorOptions,
   RemoteTarget,
   TaskNotificationPayload,
@@ -79,11 +78,6 @@ import type {
   SaveFileResult,
   PrintPageToPdfResult,
   SSHConfigAliasOption,
-  WebRemoteControlContext,
-  WebRemoteControlReconnectWorkspaceRequest,
-  WebRemoteControlReconnectWorkspaceResult,
-  WebRemoteControlStatus,
-  WebRemoteControlWorkspaceTarget,
   RemoteConnectionRuntimeLog,
   WindowControlsOverlayMetrics,
   WindowControlsOverlayReadyPayload,
@@ -121,8 +115,6 @@ let latestReadyUpdateVersion: string | null = null;
 let latestUpdateState: UpdateStatePayload | null = null;
 let latestPostUpdateReleaseNotes: PostUpdateReleaseNotesPayload | null = null;
 const pendingOpenWorkspacePaths: string[] = [];
-const shareImportCallbacks = new Set<(payload: { shareCode: string }) => void>();
-const pendingShareImports: { shareCode: string }[] = [];
 const MACOS_WINDOW_CONTROLS_BASE_LEFT_PADDING_PX = 96;
 const WINDOWS_WINDOW_CONTROLS_BASE_RIGHT_PADDING_PX = 136;
 const WINDOWS_TITLE_BAR_HEIGHT_PX = 48;
@@ -211,14 +203,6 @@ ipcRenderer.on(PlatformChannels.OpenWorkspacePath, (_event: unknown, path: strin
   }
 });
 
-ipcRenderer.on(PlatformChannels.ShareImport, (_event: unknown, payload: { shareCode: string }) => {
-  if (shareImportCallbacks.size === 0) {
-    pendingShareImports.push(payload);
-    return;
-  }
-  for (const callback of shareImportCallbacks) callback(payload);
-});
-
 function updateRendererProcessTitle(): void {
   process.title = formatZCodeRendererProcessName(document.title);
 }
@@ -296,19 +280,6 @@ contextBridge.exposeInMainWorld("zcode", {
       .then((result: BindRemoteWorkspaceSessionContextIpcResult) =>
         unwrapRemoteWorkspaceBindResult(result),
       ),
-  startWebRemoteControl: (context: WebRemoteControlContext) =>
-    ipcRenderer.invoke(PlatformChannels.StartWebRemoteControl, context),
-  stopWebRemoteControl: (): Promise<void> =>
-    ipcRenderer.invoke(PlatformChannels.StopWebRemoteControl),
-  getWebRemoteControlStatus: () => ipcRenderer.invoke(PlatformChannels.GetWebRemoteControlStatus),
-  onWebRemoteControlStatusChanged: (
-    callback: (status: WebRemoteControlStatus) => void,
-  ): (() => void) => {
-    const handler = (_event: unknown, payload: WebRemoteControlStatus) => callback(payload);
-    ipcRenderer.on(PlatformChannels.WebRemoteControlStatusChanged, handler);
-    return () =>
-      ipcRenderer.removeListener(PlatformChannels.WebRemoteControlStatusChanged, handler);
-  },
   disposeRemoteSession: (sessionId: string): Promise<void> =>
     ipcRenderer.invoke(PlatformChannels.DisposeRemoteSession, sessionId),
   isDockerAvailable: (): Promise<boolean> => ipcRenderer.invoke(PlatformChannels.IsDockerAvailable),
@@ -380,32 +351,6 @@ contextBridge.exposeInMainWorld("zcode", {
     ipcRenderer.invoke(PlatformChannels.ActivateOrSetWorkspace, path),
   /** 同步当前窗口所有 tab 的 workspace 路径到 main 进程 */
   syncWindowTabs: (paths: string[]) => ipcRenderer.send(PlatformChannels.SyncWindowTabs, paths),
-  /** 同步当前窗口里 Web 远程控制允许切换的 workspace */
-  syncWebRemoteControlWorkspaces: (workspaces: WebRemoteControlWorkspaceTarget[]) =>
-    ipcRenderer.send(PlatformChannels.SyncWebRemoteControlWorkspaces, workspaces),
-  onWebRemoteControlReconnectWorkspace: (
-    callback: (
-      request: WebRemoteControlReconnectWorkspaceRequest,
-    ) => Promise<WebRemoteControlReconnectWorkspaceResult>,
-  ) => {
-    const handler = async (event: Electron.IpcRendererEvent, payload: unknown) => {
-      const request = payload as WebRemoteControlReconnectWorkspaceRequest;
-      try {
-        const result = await callback(request);
-        event.sender.send(PlatformChannels.WebRemoteControlReconnectWorkspace, result);
-      } catch (error) {
-        event.sender.send(PlatformChannels.WebRemoteControlReconnectWorkspace, {
-          requestId: request.requestId,
-          workspaceKey: request.workspaceKey,
-          success: false,
-          error: error instanceof Error ? error.message : String(error),
-        } satisfies WebRemoteControlReconnectWorkspaceResult);
-      }
-    };
-    ipcRenderer.on(PlatformChannels.WebRemoteControlReconnectWorkspace, handler);
-    return () =>
-      ipcRenderer.removeListener(PlatformChannels.WebRemoteControlReconnectWorkspace, handler);
-  },
   /** 同步当前窗口的未读 task 数到 main 进程 */
   syncWindowUnreadCount: (count: number) =>
     ipcRenderer.send(PlatformChannels.SyncWindowUnreadCount, count),
@@ -612,16 +557,6 @@ contextBridge.exposeInMainWorld("zcode", {
     }
     return () => openWorkspacePathCallbacks.delete(callback);
   },
-  onOpenFeedbackDialog: (callback: () => void): (() => void) => {
-    const handler = () => callback();
-    ipcRenderer.on(PlatformChannels.OpenFeedbackDialog, handler);
-    return () => ipcRenderer.removeListener(PlatformChannels.OpenFeedbackDialog, handler);
-  },
-  onOpenTicketsPanel: (callback: () => void): (() => void) => {
-    const handler = () => callback();
-    ipcRenderer.on(PlatformChannels.OpenTicketsPanel, handler);
-    return () => ipcRenderer.removeListener(PlatformChannels.OpenTicketsPanel, handler);
-  },
   /** 注册窗口全屏状态变化回调，返回 disposer */
   onWindowFullscreenChanged: (callback: (isFullscreen: boolean) => void): (() => void) => {
     const handler = (_event: unknown, isFullscreen: boolean) => callback(isFullscreen);
@@ -702,8 +637,6 @@ contextBridge.exposeInMainWorld("zcode", {
   /** 从权限浮窗拖拽 Helper.app 到 macOS 权限列表。必须是 send —— invoke 的往返会错过手势。 */
   startCuaHelperPermissionDrag: () =>
     ipcRenderer.send(PlatformChannels.StartCuaHelperPermissionDrag),
-  notifyWebRemoteControlAuthStateChanged: (change: WebRemoteControlAuthStateChange) =>
-    ipcRenderer.send(PlatformChannels.WebRemoteControlAuthStateChanged, change),
   /** 上报 OAuth state 用于 deep link 路由 */
   registerOAuthState: (payload: OAuthStateRegistration) =>
     ipcRenderer.send(PlatformChannels.OAuthRegisterState, payload),
@@ -720,14 +653,6 @@ contextBridge.exposeInMainWorld("zcode", {
     const handler = (_event: unknown, url: string) => callback(url);
     ipcRenderer.on(PlatformChannels.PaymentCallback, handler);
     return () => ipcRenderer.removeListener(PlatformChannels.PaymentCallback, handler);
-  },
-  onShareImport: (callback: (payload: { shareCode: string }) => void): (() => void) => {
-    shareImportCallbacks.add(callback);
-    while (pendingShareImports.length > 0) {
-      const payload = pendingShareImports.shift();
-      if (payload) callback(payload);
-    }
-    return () => shareImportCallbacks.delete(callback);
   },
   /** 通知 main process renderer 已就绪 */
   notifyRendererReady: () => ipcRenderer.send(PlatformChannels.RendererReady),

@@ -22,12 +22,6 @@ describe("Coding Plan E2E mock env", () => {
       }),
     ).toBe(false);
   });
-  it.each(["off-peak-automations-home-layout.test.ts", "off-peak-limit-pre-gate.test.ts"])(
-    "prepares account model facts for off-peak UI %s",
-    (spec) => {
-      expect(shouldPrepareCodingPlanTeamMock([`./test/e2e/${spec}`])).toBe(true);
-    },
-  );
   it.each([
     "settings/settings-ui-polish.test.ts",
     "ui-shell/side-pane-tabs-responsive-interactions.test.ts",
@@ -85,13 +79,8 @@ describe("Coding Plan E2E mock env", () => {
     "conversation-session-ssh-disconnect-experience.test.ts",
     "conversation-session-ssh-remote-cold-reconnect.test.ts",
     "conversation-session-r3-mixed-entries.test.ts",
-    "conversation-session-r3-mobile.test.ts",
     "conversation-session-create-telemetry.test.ts",
-    "conversation-session-offpeak-create.test.ts",
-    "conversation-session-offpeak-create-existing-session.test.ts",
-    "conversation-session-offpeak-subagent-model-inheritance.test.ts",
-    "conversation-session-off-peak-invalid-ticket.test.ts",
-  ])("prepares account facts as well as the off-peak gateway for %s", (spec) => {
+  ])("prepares account facts for %s", (spec) => {
     expect(
       shouldPrepareCodingPlanTeamMock([
         `./test/e2e/conversation-session/manual-review/pending/${spec}`,
@@ -145,7 +134,7 @@ describe("Coding Plan E2E mock env", () => {
     expect(environment.ZCODE_E2E_CODING_PLAN_MOCK_URL).toBe(upgradeBaseUrl);
   });
 
-  it("prepares the team mock for targeted login, provider transition, and off-peak cases", () => {
+  it("prepares the team mock for targeted login and provider transition cases", () => {
     expect(
       shouldPrepareCodingPlanTeamMock([
         "./test/e2e/subagents/subagent-coding-plan-login-catalog-stale.test.ts",
@@ -154,11 +143,6 @@ describe("Coding Plan E2E mock env", () => {
     expect(
       shouldPrepareCodingPlanTeamMock([
         "./test/e2e/conversation-session/conversation-session-model-provider-settings-transition.test.ts",
-      ]),
-    ).toBe(true);
-    expect(
-      shouldPrepareCodingPlanTeamMock([
-        "./test/e2e/conversation-session/manual-review/pending/conversation-session-off-peak-team-plan.test.ts",
       ]),
     ).toBe(true);
   });

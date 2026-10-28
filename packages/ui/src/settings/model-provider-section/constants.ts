@@ -164,8 +164,6 @@ export type ModelProviderNavItem =
       subscriptionExpireTime?: string | null;
       subscriptionDetails?: UsageEntitlementSubscriptionDetail[];
       quotaLimits?: UsageQuotaLimit[];
-      /** 官方 Server MCP 额度（服务端下发的总额度）。不在 quota.limits[] 里，单独透传给额度卡片。 */
-      mcpQuotaLimit?: UsageQuotaLimit | null;
       purchaseUrl?: string;
       /** 权益查询明确要求重新登录；文案不参与操作分支判定。 */
       accountLoginRequired?: boolean;
@@ -195,8 +193,6 @@ export type ModelProviderNavItem =
       subscriptionExpireTime?: string | null;
       subscriptionDetails?: UsageEntitlementSubscriptionDetail[];
       quotaLimits?: UsageQuotaLimit[];
-      /** 官方 Server MCP 额度（服务端下发的总额度）。不在 quota.limits[] 里，单独透传给额度卡片。 */
-      mcpQuotaLimit?: UsageQuotaLimit | null;
       purchaseUrl?: string;
       statusLabelId?: string;
       statusMessage?: string | null;
