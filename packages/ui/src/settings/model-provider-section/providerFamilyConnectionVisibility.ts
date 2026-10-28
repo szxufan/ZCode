@@ -14,7 +14,6 @@ import {
   MODEL_PROVIDER_FAMILY_SPECS,
   resolveModelProviderFamilySpecByProviderId,
 } from "@zcode/shared";
-import { resolveMcpQuotaLimit } from "@/lib/codingPlanQuotaPresentation.js";
 import { resolveUsageEntitlementOutcome } from "@/lib/codingPlanProvider.js";
 import { formatTeamPlanDisplayName } from "@/lib/teamPlanDisplayName.js";
 import {
@@ -48,11 +47,6 @@ export interface ResolvedCodingPlanEntitlementState {
   subscriptionExpireTime: string | null;
   subscriptionDetails?: UsageEntitlementSubscriptionDetail[];
   quotaLimits: UsageQuotaLimit[];
-  /**
-   * 官方 Server MCP 额度（服务端下发的总额度）。它不在 quota.limits[] 里，只在有套餐快照的分支填充；
-   * 其余分支保持缺省（等价于不展示），避免十余处早退分支都要跟着改。
-   */
-  mcpQuotaLimit?: UsageQuotaLimit | null;
 }
 
 export function resolveCodingPlanEntitlementState({
@@ -194,7 +188,6 @@ export function resolveCodingPlanEntitlementState({
       subscriptionExpireTime,
       subscriptionDetails,
       quotaLimits: snapshot?.quota?.limits ?? [],
-      mcpQuotaLimit: resolveMcpQuotaLimit(snapshot),
     };
   }
 
@@ -240,7 +233,6 @@ export function resolveCodingPlanEntitlementState({
     subscriptionExpireTime,
     subscriptionDetails,
     quotaLimits: snapshot?.quota?.limits ?? [],
-    mcpQuotaLimit: resolveMcpQuotaLimit(snapshot),
   };
 }
 

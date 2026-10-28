@@ -39,7 +39,6 @@ export function startResourceManagerNetwork(
   const sessions = [
     session.defaultSession,
     session.fromPartition("persist:zcode-coding-plan"),
-    session.fromPartition("persist:zcode-rewards"),
   ];
   for (const appSession of sessions) {
     disposers.push(

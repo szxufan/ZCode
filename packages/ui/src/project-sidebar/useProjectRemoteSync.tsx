@@ -33,10 +33,7 @@ interface SyncTarget {
 }
 
 /** 同步菜单只适配已有 workspace attachment；不因展示菜单创建 tab、连接或 Agent。 */
-export function useProjectRemoteSync(
-  props: Pick<ProjectSidebarProps, "isWebRemoteControl">,
-  directory: RemoteProjectDirectory,
-) {
+export function useProjectRemoteSync(directory: RemoteProjectDirectory) {
   const base = useBaseWorkspaceServices();
   const sessions = useRemoteWorkspaceSessionStore((state) => state.sessionsById);
   const tabs = useOptionalTabStore((state) => state.tabs);
@@ -52,10 +49,7 @@ export function useProjectRemoteSync(
     );
   const selectedSession = selection && sessions[selection.sessionId];
   const current =
-    selection &&
-    selectedHost &&
-    selectedSession?.workspaceIdentity === selection.identity &&
-    !props.isWebRemoteControl
+    selection && selectedHost && selectedSession?.workspaceIdentity === selection.identity
       ? selection
       : null;
   useEffect(() => {
@@ -75,7 +69,7 @@ export function useProjectRemoteSync(
           !shouldShowRemoteSyncActions({
             remoteSessionId: session?.sessionId,
             remoteTarget: host.target,
-            clientMode: props.isWebRemoteControl ? "web-remote-replayable" : "desktop-continuous",
+            clientMode: "desktop-continuous",
             hasLocalSourceService,
           }) ||
           !session
@@ -102,7 +96,7 @@ export function useProjectRemoteSync(
         }));
       });
     },
-    [directory.hosts, sessions, props.isWebRemoteControl, hasLocalSourceService, tabs, intl],
+    [directory.hosts, sessions, hasLocalSourceService, tabs, intl],
   );
   return {
     actions,

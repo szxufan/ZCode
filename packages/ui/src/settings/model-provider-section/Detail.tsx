@@ -614,7 +614,6 @@ export function ModelProviderSectionDetail({
           subscriptionExpireTime={selectedNavItem.subscriptionExpireTime}
           subscriptionDetails={selectedNavItem.subscriptionDetails}
           quotaLimits={selectedNavItem.quotaLimits}
-          mcpQuotaLimit={selectedNavItem.mcpQuotaLimit ?? null}
           authError={codingPlanAuthError}
           onOpenRegistration={onOpenBigModelRegistration}
           purchaseUrl={selectedNavItem.purchaseUrl}
@@ -758,7 +757,6 @@ export function ModelProviderSectionDetail({
             subscriptionExpireTime={selectedNavItem.subscriptionExpireTime}
             subscriptionDetails={selectedNavItem.subscriptionDetails}
             quotaLimits={selectedNavItem.quotaLimits}
-            mcpQuotaLimit={selectedNavItem.mcpQuotaLimit ?? null}
             authError={codingPlanAuthError}
             onOpenRegistration={onOpenBigModelRegistration}
             onLogin={(options) => {

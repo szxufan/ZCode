@@ -25,10 +25,9 @@ function readReplayFixture(relativePath: string): ReplayFixtureFile {
 }
 
 describe("model provider E2E replay contract", () => {
-  it.each([
-    "conversation-session-model-provider-effective-selection.test.ts",
-    "off-peak-create-manage.test.ts",
-  ])("isolates account control-plane for %s", (spec) => {
+  it.each(["conversation-session-model-provider-effective-selection.test.ts"])(
+    "isolates account control-plane for %s",
+    (spec) => {
     expect(shouldPrepareCodingPlanTeamMock([`./test/e2e/${spec}`])).toBe(true);
   });
   it("starts the Coding Plan mock for both split Turbo specs", () => {

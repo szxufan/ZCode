@@ -31,14 +31,7 @@ import type {
   ApplicationIconInfo,
   ApplicationIconRequest,
   Locale,
-  WebRemoteControlContext,
-  WebRemoteControlReconnectWorkspaceRequest,
-  WebRemoteControlReconnectWorkspaceResult,
-  WebRemoteControlStartOperationResult,
-  WebRemoteControlStatus,
-  WebRemoteControlWorkspaceTarget,
   OAuthStateRegistration,
-  WebRemoteControlAuthStateChange,
   PostUpdateReleaseNotesPayload,
   RemoteConnectionRuntimeLog,
   RemoteSessionClosedEvent,
@@ -95,18 +88,6 @@ declare global {
         workspacePath: string;
         workspaceIdentity?: string;
       }): Promise<import("@zcode/shared").BindRemoteWorkspaceSessionContextResult>;
-      /** 为当前 workspace 开启 Web 远程控制 */
-      startWebRemoteControl(
-        context: WebRemoteControlContext,
-      ): Promise<WebRemoteControlStartOperationResult>;
-      /** 关闭当前窗口的 Web 远程控制 */
-      stopWebRemoteControl(): Promise<void>;
-      /** 查询当前窗口 Web 远程控制状态 */
-      getWebRemoteControlStatus(): Promise<WebRemoteControlStatus>;
-      /** 订阅当前窗口 Web 远程控制状态变化 */
-      onWebRemoteControlStatusChanged?(
-        handler: (status: WebRemoteControlStatus) => void,
-      ): () => void;
       /** 释放当前窗口里的远程 session */
       disposeRemoteSession(sessionId: string): Promise<void>;
       /** 检查本机 Docker daemon 是否可用 */
@@ -147,15 +128,6 @@ declare global {
       activateOrSetWorkspace?(path: string): Promise<{ activated: boolean }>;
       /** 同步当前窗口所有 tab 的 workspace 路径到 main 进程 */
       syncWindowTabs(paths: string[]): void;
-      /** 同步当前窗口里 Web 远程控制允许切换的 workspace */
-      syncWebRemoteControlWorkspaces?(workspaces: WebRemoteControlWorkspaceTarget[]): void;
-      /** 同步当前窗口里 Web 远程控制可展示的 task 快照 */
-      /** 注册手机端 Web 远控请求重连 workspace 的回调 */
-      onWebRemoteControlReconnectWorkspace?(
-        handler: (
-          request: WebRemoteControlReconnectWorkspaceRequest,
-        ) => Promise<WebRemoteControlReconnectWorkspaceResult>,
-      ): () => void;
       /** 同步当前窗口的未读 task 数到 main 进程 */
       syncWindowUnreadCount(count: number): void;
       syncActiveTaskSession(sessionId: string | null): void;
@@ -270,7 +242,6 @@ declare global {
       startCuaHelperPermissionDrag?(): void;
       /** 上报 OAuth state 用于 deep link 路由 */
       registerOAuthState(payload: OAuthStateRegistration): void;
-      notifyWebRemoteControlAuthStateChanged(change: WebRemoteControlAuthStateChange): void;
       /** 注册 OAuth deep link 回调，返回 disposer */
       onOAuthCallback(cb: (url: string) => void): () => void;
       /** 注册支付 deep link 回调，返回 disposer */

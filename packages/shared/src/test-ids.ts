@@ -726,20 +726,6 @@ export const TID_AUTOMATIONS_STATUS_FILTER = "automations-status-filter";
 export const TID_AUTOMATION_CREATE_MENU = "automation-create-menu";
 export const TID_AUTOMATION_CREATE_MANUALLY = "automation-create-manually";
 export const TID_AUTOMATION_CARD = "automation-card";
-// 闲时任务（off-peak，独立面）
-export const TID_OFFPEAK_CREATE_BUTTON = "offpeak-create-button";
-export const TID_OFFPEAK_CARD = "offpeak-card";
-/** 闲时卡片脚注：绑定会话标题（会话内创建）。 */
-export const TID_OFFPEAK_CARD_SESSION = "offpeak-card-session";
-export const TID_OFFPEAK_CARD_MENU = "offpeak-card-menu";
-export const TID_OFFPEAK_EDIT_VIEW = "offpeak-edit-view";
-export const TID_OFFPEAK_EDIT_SUBMIT = "offpeak-edit-submit";
-export const TID_OFFPEAK_FORM_TITLE = "offpeak-form-title";
-export const TID_OFFPEAK_FORM_INSTRUCTIONS = "offpeak-form-instructions";
-export const TID_OFFPEAK_ACTION_PAUSE = "offpeak-action-pause";
-export const TID_OFFPEAK_ACTION_CONTINUE = "offpeak-action-continue";
-export const TID_OFFPEAK_ACTION_DELETE = "offpeak-action-delete";
-export const TID_OFFPEAK_TAB = "offpeak-tab";
 export const TID_AUTOMATION_CARD_MENU = "automation-card-menu";
 export const TID_AUTOMATION_ACTION_TOGGLE = "automation-action-toggle";
 export const TID_AUTOMATION_ACTION_DELETE = "automation-action-delete";
@@ -767,6 +753,7 @@ export const TID_AUTOMATION_SCHEDULE_ADD = "automation-schedule-add";
 export const TID_AUTOMATION_SCHEDULE_DELETE = "automation-schedule-delete";
 export const TID_CRON_CREATE_CARD = "cron-create-card";
 export const TID_CRON_CREATE_OPEN = "cron-create-open";
+// 旧会话 transcript 中 OffPeakCreate 轮尾卡仍需渲染（工具已下线，仅历史回放）。
 export const TID_OFFPEAK_CREATE_CARD = "offpeak-create-card";
 export const TID_OFFPEAK_CREATE_OPEN = "offpeak-create-open";
 export const TID_CONFIRM_DIALOG_CONFIRM = "confirm-dialog-confirm";
@@ -793,6 +780,3 @@ export const TID_PLUGIN_UI_CARD = "plugin-ui-card";
 export const TID_PLUGIN_UI_OPEN_SIDE_PANE = "plugin-ui-open-side-pane";
 export const TID_PLUGIN_UI_WEBVIEW = "plugin-ui-webview";
 export const TID_START_PLAN_RECOMMENDATION_DIALOG = "start-plan-recommendation-dialog";
-
-/** 用户反馈的诊断日志授权开关 */
-export const TID_FEEDBACK_LOGS_OPT_IN = "feedback-logs-opt-in";

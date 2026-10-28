@@ -7,6 +7,7 @@ import type { ToolCallBlockRenderContext } from "@/ToolCallBlocks/shared.js";
 
 // OffPeakCreate 的静态轮尾卡（cron-create 兄弟实现，样式契约一致）。
 // 位次是创建时快照（取自取号返回），不订阅后续状态——历史回看不产生过期活数据。
+// Off-Peak 任务管理面已下线；此卡只为旧会话 transcript 保留只读展示，「打开」跳自动化主页。
 
 export interface OffPeakCreateTaskSummary {
   offPeakTaskId?: string;
@@ -126,7 +127,7 @@ export function OffPeakCreateTaskCard({
   onOpenAutomationsMain,
 }: {
   task: OffPeakCreateTaskSummary;
-  onOpenAutomationsMain?: (automationId?: string, automationTab?: "scheduled" | "idle") => void;
+  onOpenAutomationsMain?: (automationId?: string) => void;
 }) {
   const { intl } = useZCodeIntl();
   const title = task.title ?? intl.formatMessage({ id: "offPeak.chatCreated.defaultTitle" });
@@ -159,7 +160,7 @@ export function OffPeakCreateTaskCard({
             !canOpenAutomations && "opacity-50",
           )}
           disabled={!canOpenAutomations}
-          onClick={() => onOpenAutomationsMain?.(task.offPeakTaskId, "idle")}
+          onClick={() => onOpenAutomationsMain?.()}
         >
           <span>{intl.formatMessage({ id: "offPeak.chatCreated.open" })}</span>
         </Button>

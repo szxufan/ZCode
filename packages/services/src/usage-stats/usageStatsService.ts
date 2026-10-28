@@ -26,7 +26,6 @@ import {
   type UsageApiAuthorizationRequest,
   type UsageApiAuthorization,
 } from "./providers/bigmodelUsageQuotaProvider.js";
-import type { OfficialMcpCredentialSource } from "./providers/zcodeMcpQuotaProvider.js";
 
 interface UsageStatsServiceDependencies {
   apiClient: ApiClient;
@@ -41,11 +40,6 @@ interface UsageStatsServiceDependencies {
   env?: NodeJS.ProcessEnv;
   /** App Usage 经 ZCode Protocol 读取 agent 数据库真实统计。 */
   zcodeAgentService: Pick<IZCodeAgentService, "getAppUsageStats">;
-  /**
-   * 官方 Server MCP 额度的凭证来源（与 server MCP 调用同一套 5 个身份头）。
-   * 缺省时 entitlement 快照不含 MCP 额度。
-   */
-  officialMcpCredentialSource?: OfficialMcpCredentialSource;
 }
 
 const CODING_PLAN_REGULAR_TPS_CACHE_MS = 5 * 60_000;
@@ -63,9 +57,6 @@ export function createUsageStatsService(
     resolveApiAuthorization: dependencies.resolveApiAuthorization,
     credentialService: dependencies.credentialService,
     env: dependencies.env,
-    ...(dependencies.officialMcpCredentialSource
-      ? { officialMcpCredentialSource: dependencies.officialMcpCredentialSource }
-      : {}),
   });
   const regularTpsCache = new Map<
     string,

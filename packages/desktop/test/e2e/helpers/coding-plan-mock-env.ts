@@ -24,7 +24,6 @@ const CODING_PLAN_TEAM_SPEC_MARKERS = [
   "conversation-session-ssh-disconnect-experience.test.ts",
   "conversation-session-ssh-remote-cold-reconnect.test.ts",
   "conversation-session-r3-mixed-entries.test.ts",
-  "conversation-session-r3-mobile.test.ts",
   // 模拟登录态访问线上账号接口会触发 401 弹窗，遮挡 Logo 的真实 hover 和截图。
   "settings-ui-polish.test.ts",
   "side-pane-tabs-responsive-interactions.test.ts",
@@ -61,17 +60,6 @@ const CODING_PLAN_TEAM_SPEC_MARKERS = [
   // Bug 原因：连续切模回放也播种了模拟登录态；未隔离控制面时，线上 401
   // 会触发登录过期弹窗，遮住第二轮的模型菜单，导致与切模无关的失败。
   "conversation-session-active-model-context.test.ts",
-  "conversation-session-off-peak-team-plan.test.ts",
-  // Bug 原因：只有取票网关 mock，没有账号控制面，当前 Registry 会正确判定无闲时
-  // 模型，导致 OffPeakCreate 不曝光。复用正常账号解析前置，不在产品里塞静态名单。
-  "conversation-session-offpeak-create.test.ts",
-  "conversation-session-offpeak-create-existing-session.test.ts",
-  "conversation-session-offpeak-subagent-model-inheritance.test.ts",
-  "conversation-session-off-peak-invalid-ticket.test.ts",
-  "off-peak-create-manage.test.ts",
-  // 主页布局和额度门禁同样依赖 Registry 的账号模型事实，取号网关不提供这些数据。
-  "off-peak-automations-home-layout.test.ts",
-  "off-peak-limit-pre-gate.test.ts",
 ] as const;
 
 export function shouldPrepareCodingPlanTeamMock(specs: readonly string[]) {

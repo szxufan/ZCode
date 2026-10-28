@@ -15,24 +15,21 @@ async function writeDefaults(name, content) {
   return path;
 }
 
-test("没有私有默认配置也没有环境变量时三项能力都关闭", async () => {
+test("没有私有默认配置也没有环境变量时两项能力都关闭", async () => {
   const config = await resolveBuildTimeConfig({}, { defaultsPath: join(dir, "missing.json") });
   assert.deepEqual(config, {
     armsRumEndpoint: "",
-    telemetryReportEndpoint: "",
     autoUpdateEnabled: false,
   });
 });
 
-test("私有默认配置启用三项能力", async () => {
+test("私有默认配置启用两项能力", async () => {
   const defaultsPath = await writeDefaults("defaults.json", {
     ZCODE_ARMS_RUM_ENDPOINT: " https://rum.example.com/x ",
-    ZCODE_TELEMETRY_REPORT_ENDPOINT: "https://report.example.com/event",
     ZCODE_AUTO_UPDATE: "1",
   });
   assert.deepEqual(await resolveBuildTimeConfig({}, { defaultsPath }), {
     armsRumEndpoint: "https://rum.example.com/x",
-    telemetryReportEndpoint: "https://report.example.com/event",
     autoUpdateEnabled: true,
   });
 });
@@ -40,20 +37,17 @@ test("私有默认配置启用三项能力", async () => {
 test("环境变量优先于私有默认配置，显式空字符串关闭单项能力", async () => {
   const defaultsPath = await writeDefaults("override.json", {
     ZCODE_ARMS_RUM_ENDPOINT: "https://rum.example.com/x",
-    ZCODE_TELEMETRY_REPORT_ENDPOINT: "https://report.example.com/event",
     ZCODE_AUTO_UPDATE: "true",
   });
   const config = await resolveBuildTimeConfig(
     {
       ZCODE_ARMS_RUM_ENDPOINT: "",
-      ZCODE_TELEMETRY_REPORT_ENDPOINT: "https://other.example.com/event",
       ZCODE_AUTO_UPDATE: "0",
     },
     { defaultsPath },
   );
   assert.deepEqual(config, {
     armsRumEndpoint: "",
-    telemetryReportEndpoint: "https://other.example.com/event",
     autoUpdateEnabled: false,
   });
 });
@@ -67,12 +61,10 @@ test("define 以 JSON 字面量注入", () => {
   assert.deepEqual(
     createBuildTimeConfigDefines({
       armsRumEndpoint: "https://rum.example.com/x",
-      telemetryReportEndpoint: "",
       autoUpdateEnabled: true,
     }),
     {
       __ZCODE_ARMS_RUM_ENDPOINT__: '"https://rum.example.com/x"',
-      __ZCODE_TELEMETRY_REPORT_ENDPOINT__: '""',
       __ZCODE_AUTO_UPDATE_ENABLED__: "true",
     },
   );

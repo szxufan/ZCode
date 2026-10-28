@@ -394,8 +394,7 @@ function renderToolbarMarkup(overrides: Partial<V4ComposerModelControlsProps> = 
     mode: "build",
   };
   return renderToStaticMarkup(
-    // HighspeedModelIndicator 走 ControlHintTooltip，缺少 TooltipProvider 会直接抛错，
-    // 所以工具条快照统一包一层 Provider。
+    // 工具条快照统一包一层 TooltipProvider，避免走 ControlHintTooltip 的控件缺 Provider 抛错。
     createElement(
       TooltipProvider,
       null,
@@ -502,35 +501,6 @@ describe("V4ComposerModelControls recovery", () => {
     renderToolbarMarkup({ modelSelectionState: { status: "loading" } });
     expect(captured.modelSelectProps?.disabled).toBe(true);
   });
-  it("Highspeed 卡生效期间隐藏 context token usage 圈圈", () => {
-    const normalHtml = renderToolbarMarkup();
-    const highspeedHtml = renderToolbarMarkup({ modelLocked: true });
-
-    expect(normalHtml).toContain('data-testid="mock-usage"');
-    expect(highspeedHtml).not.toContain('data-testid="mock-usage"');
-  });
-
-  it("把倒计时放在模型和 Think 之间并显示剩余时间", () => {
-    vi.spyOn(Date, "now").mockReturnValue(1_000);
-
-    const html = renderToolbarMarkup({
-      highspeedExpiresAt: 60_000,
-      highspeedModel: "GLM-5.3",
-      highspeedPresented: true,
-    });
-    const modelIndex = html.indexOf('data-highspeed-model-indicator="true"');
-    const countdownIndex = html.indexOf('data-highspeed-countdown="true"');
-    const thoughtIndex = html.indexOf('data-testid="mock-thought"');
-
-    expect(modelIndex).toBeGreaterThanOrEqual(0);
-    expect(countdownIndex).toBeGreaterThan(modelIndex);
-    expect(thoughtIndex).toBeGreaterThan(countdownIndex);
-    expect(html).toContain("00:00:59");
-    expect(html).toMatch(
-      /title="chat.highspeed.remainingTime"[^>]*data-highspeed-countdown="true"/,
-    );
-  });
-
   it("已有会话的 Composer 模型留空时仍能打开模型菜单重选", () => {
     renderToolbarMarkup({
       sessionId: "existing-session",
@@ -791,7 +761,8 @@ describe("V4ComposerModelControls recovery", () => {
     const onSelectThought = vi.fn();
 
     renderToolbarMarkup({ onSelectThought });
-    expect(captured.thoughtControlProps).toBeNull();
+    // Highspeed 删除后独立 Think 控件不再被 highspeedPresented 门控，默认渲染。
+    expect(captured.thoughtControlProps).not.toBeNull();
     expect(captured.modelSelectProps?.composerOptions).toBeDefined();
     captured.modelSelectProps?.composerOptions?.onValueChange("");
     expect(onSelectThought).not.toHaveBeenCalled();

@@ -32,8 +32,6 @@ before(async () => {
             return "export const useOptionalPlatform=()=>null; export const usePlatform=()=>({}); export const useSelectDirectory=()=>async()=>null;";
           if (id.endsWith("/hooks/useConfirmDialog.ts"))
             return "const confirm=async()=>true; export const useConfirmDialog=()=>confirm;";
-          if (id.endsWith("/hooks/useWebRemoteControlStatus.ts"))
-            return "export const useWebRemoteControlStatus=()=>({mobileConnected:false});";
           if (id.endsWith("/v4/useWorkspaceSessionsIndexItems.ts"))
             return "import {useSyncExternalStore} from 'react'; export const useWorkspaceSessionsIndexItems=()=>useSyncExternalStore(window.__renderFixture.activityStore.subscribe,window.__renderFixture.activityStore.getSnapshot);";
           if (id.endsWith("/settings/CodingPlanUpgradeDialogProvider.tsx"))
@@ -72,14 +70,13 @@ after(async () => {
   await server?.close();
 });
 
-for (const mobile of [false, true])
-  for (const theme of ["light", "dark"])
-    test(
-      `SPT03 new task ${mobile ? "mobile" : "desktop"}/${theme}`,
+for (const theme of ["light", "dark"])
+  test(
+      `SPT03 new task desktop/${theme}`,
       { timeout: 60000 },
       async () => {
         const page = await browser.newPage({
-          viewport: { width: mobile ? 430 : 1200, height: 800 },
+          viewport: { width: 1200, height: 800 },
         });
         page.setDefaultTimeout(10000);
         const errors = [];
@@ -110,7 +107,7 @@ for (const mobile of [false, true])
               new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve))),
           );
         try {
-          await page.goto(`${origin}fixture?theme=${theme}&mobile=${mobile ? 1 : 0}`);
+          await page.goto(`${origin}fixture?theme=${theme}`);
           await page.locator('[data-project-id="p43"]').waitFor({ state: "attached" });
           await settle();
           const initial = await page.evaluate(() => window.__projectRenders);
@@ -141,13 +138,13 @@ for (const mobile of [false, true])
           const refreshRenders = await page.evaluate(() => window.__projectRenders);
           await page.getByTestId("rename-project").click();
           await page.getByText("Renamed project", { exact: true }).waitFor();
-          const evidence = { mobile, theme, initial, shellRenders, newTaskRenders, refreshRenders };
+          const evidence = { theme, initial, shellRenders, newTaskRenders, refreshRenders };
           await writeFile(
-            join(artifacts, `${mobile}-${theme}.json`),
+            join(artifacts, `${theme}.json`),
             JSON.stringify(evidence, null, 2),
           );
           console.log(evidence);
-          await page.screenshot({ path: join(artifacts, `${mobile}-${theme}.png`) });
+          await page.screenshot({ path: join(artifacts, `${theme}.png`) });
           assert.deepEqual(errors, []);
           assert.equal(shellRenders, 0, "Unrelated Root render must not redraw projects");
           assert.equal(newTaskRenders, 0, "Local task selection must not redraw project content");
@@ -158,14 +155,13 @@ for (const mobile of [false, true])
       },
     );
 
-for (const mobile of [false, true])
-  for (const theme of ["light", "dark"])
-    test(
-      `SPT06 running activity ${mobile ? "mobile" : "desktop"}/${theme}`,
+for (const theme of ["light", "dark"])
+  test(
+      `SPT06 running activity desktop/${theme}`,
       { timeout: 60000 },
       async () => {
         const page = await browser.newPage({
-          viewport: { width: mobile ? 430 : 1200, height: 800 },
+          viewport: { width: 1200, height: 800 },
         });
         const errors = [];
         page.on("pageerror", (error) => errors.push(String(error)));
@@ -198,7 +194,7 @@ for (const mobile of [false, true])
           };
         });
         try {
-          await page.goto(`${origin}fixture?theme=${theme}&mobile=${mobile ? 1 : 0}&activity=1`);
+          await page.goto(`${origin}fixture?theme=${theme}&activity=1`);
           await page.locator('[data-project-id="p43"]').waitFor({ state: "attached" });
           const project = page.locator('[data-project-id="p0"]');
           await project.locator(".lucide-loader").waitFor();
@@ -247,7 +243,7 @@ for (const mobile of [false, true])
           }
           const styleRecalculations =
             metricsAfter.RecalcStyleCount - metricsBefore.RecalcStyleCount;
-          console.log({ mobile, theme, animationAfter, styleRecalculations });
+          console.log({ theme, animationAfter, styleRecalculations });
           const { root: documentNode } = await cdp.send("DOM.getDocument");
           const { nodeIds } = await cdp.send("DOM.querySelectorAll", {
             nodeId: documentNode.nodeId,
@@ -272,11 +268,11 @@ for (const mobile of [false, true])
             compositorReasons.push(compositingReasonIds);
           }
           await writeFile(
-            join(artifacts, `animation-${mobile}-${theme}.json`),
+            join(artifacts, `animation-${theme}.json`),
             JSON.stringify({ animationAfter, styleRecalculations, compositorReasons }, null, 2),
           );
           await cdp.detach();
-          await page.screenshot({ path: join(artifacts, `loading-${mobile}-${theme}.png`) });
+          await page.screenshot({ path: join(artifacts, `loading-${theme}.png`) });
           await page.waitForFunction(
             () => document.querySelector('[data-testid="activity-version"]').textContent === "1",
           );
@@ -294,10 +290,10 @@ for (const mobile of [false, true])
           }
           const renders = await page.evaluate(() => window.__projectRendersById);
           await writeFile(
-            join(artifacts, `activity-${mobile}-${theme}.json`),
-            JSON.stringify({ mobile, theme, renders }, null, 2),
+            join(artifacts, `activity-${theme}.json`),
+            JSON.stringify({ theme, renders }, null, 2),
           );
-          console.log({ mobile, theme, activityRenders: renders });
+          console.log({ theme, activityRenders: renders });
           assert.ok(renders.p0 >= 6, "Each real activity update reaches the affected project");
           assert.deepEqual(
             Object.keys(renders),
@@ -324,7 +320,7 @@ for (const mobile of [false, true])
           await project
             .locator('[data-testid="virtual-project-toggle"] .lucide-pin')
             .waitFor({ state: "detached" });
-          await page.screenshot({ path: join(artifacts, `activity-${mobile}-${theme}.png`) });
+          await page.screenshot({ path: join(artifacts, `activity-${theme}.png`) });
           assert.deepEqual(errors, []);
         } finally {
           await page.close();

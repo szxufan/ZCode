@@ -72,7 +72,6 @@ describe("desktopWindowLifecycle createWindow", () => {
       syncAutoUpdaterStateToWindow: vi.fn(),
       syncReadyUpdateToWindow: vi.fn(),
       syncPostUpdateReleaseNotesToWindow: vi.fn(),
-      webRemoteControlManager: { disposeWindow: vi.fn(async () => undefined) },
       disposeRemoteWorkspaceSessionsForWindow: vi.fn(),
       reattachRemoteWorkspaceSessionsForWindow: vi.fn(),
       agentWarmupTargets: [
@@ -135,7 +134,6 @@ describe("desktopWindowLifecycle createWindow", () => {
       syncAutoUpdaterStateToWindow: vi.fn(),
       syncReadyUpdateToWindow: vi.fn(),
       syncPostUpdateReleaseNotesToWindow: vi.fn(),
-      webRemoteControlManager: { disposeWindow: vi.fn(async () => undefined) },
       disposeRemoteWorkspaceSessionsForWindow: vi.fn(),
       reattachRemoteWorkspaceSessionsForWindow: vi.fn(),
       agentSpawnFallbackCwd: "/Users/dev/.zcode/workspace/default",
@@ -188,7 +186,6 @@ describe("desktopWindowLifecycle createWindow", () => {
       syncAutoUpdaterStateToWindow: vi.fn(),
       syncReadyUpdateToWindow: vi.fn(),
       syncPostUpdateReleaseNotesToWindow: vi.fn(),
-      webRemoteControlManager: { disposeWindow: vi.fn(async () => undefined) },
       disposeRemoteWorkspaceSessionsForWindow: vi.fn(),
       reattachRemoteWorkspaceSessionsForWindow: vi.fn(),
       agentSpawnFallbackCwd: "/Users/demo/.zcode/workspace/default",
@@ -250,7 +247,6 @@ describe("desktopWindowLifecycle createWindow", () => {
       syncAutoUpdaterStateToWindow,
       syncReadyUpdateToWindow: vi.fn(),
       syncPostUpdateReleaseNotesToWindow: vi.fn(),
-      webRemoteControlManager: { disposeWindow: vi.fn(async () => undefined) },
       disposeRemoteWorkspaceSessionsForWindow: vi.fn(),
       reattachRemoteWorkspaceSessionsForWindow,
       agentSpawnFallbackCwd: "/Users/demo/.zcode/workspace/default",
@@ -314,7 +310,6 @@ describe("desktopWindowLifecycle createWindow", () => {
       syncAutoUpdaterStateToWindow: vi.fn(),
       syncReadyUpdateToWindow: vi.fn(),
       syncPostUpdateReleaseNotesToWindow: vi.fn(),
-      webRemoteControlManager: { disposeWindow: vi.fn(async () => undefined) },
       disposeRemoteWorkspaceSessionsForWindow: vi.fn(),
       reattachRemoteWorkspaceSessionsForWindow: vi.fn(),
       agentSpawnFallbackCwd: "/Users/demo/.zcode/workspace/default",
@@ -372,7 +367,6 @@ describe("desktopWindowLifecycle createWindow", () => {
       syncAutoUpdaterStateToWindow: vi.fn(),
       syncReadyUpdateToWindow: vi.fn(),
       syncPostUpdateReleaseNotesToWindow: vi.fn(),
-      webRemoteControlManager: { disposeWindow: vi.fn(async () => undefined) },
       disposeRemoteWorkspaceSessionsForWindow: vi.fn(),
       reattachRemoteWorkspaceSessionsForWindow: vi.fn(),
       agentSpawnFallbackCwd: "/Users/demo/.zcode/workspace/default",
@@ -393,70 +387,6 @@ describe("desktopWindowLifecycle createWindow", () => {
     );
   });
 
-  it("首个 Local Host 创建前等待灰度裁决门，resolve 后才 spawn", async () => {
-    // CR-01 Local 路径回归：dom-ready 触发后，spawnHostProcess 必须等到
-    // awaitFirstHostSpawnDecision resolve 之后才被调用，确保首个 Host env 写入的是
-    // 服务端裁决真值而非冷启动默认 false。
-    let handleDomReady: (() => void) | undefined;
-    let resolveGate!: () => void;
-    const gatePromise = new Promise<void>((resolve) => {
-      resolveGate = resolve;
-    });
-    const awaitFirstHostSpawnDecision = vi.fn(() => gatePromise);
-    const webContents = {
-      id: 47,
-      on: vi.fn((event: string, listener: () => void) => {
-        if (event === "dom-ready") handleDomReady = listener;
-      }),
-    };
-    const win = {
-      id: 12,
-      webContents,
-      on: vi.fn(),
-      isDestroyed: vi.fn(() => false),
-      show: vi.fn(),
-      focus: vi.fn(),
-    };
-    vi.mocked(createBrowserWindow).mockReturnValue(win as never);
-    const spawnHostProcess = vi.fn(() => ({ pid: 1239 }) as never);
-
-    createWindow({
-      iconPath: "/tmp/icon.png",
-      preloadPath: "/tmp/preload.js",
-      logger: { info: vi.fn(), warn: vi.fn() },
-      forceQuitRef: { current: false },
-      windowHostProcessMap: new Map(),
-      spawnHostProcess,
-      disposeHostProcess: vi.fn(),
-      syncAutoUpdaterStateToWindow: vi.fn(),
-      syncReadyUpdateToWindow: vi.fn(),
-      syncPostUpdateReleaseNotesToWindow: vi.fn(),
-      webRemoteControlManager: { disposeWindow: vi.fn(async () => undefined) },
-      disposeRemoteWorkspaceSessionsForWindow: vi.fn(),
-      reattachRemoteWorkspaceSessionsForWindow: vi.fn(),
-      agentSpawnFallbackCwd: "/Users/demo/.zcode/workspace/default",
-      deviceMid: "device-mid",
-      runtimeProcessEnvFallbackPatch: {},
-      awaitFirstHostSpawnDecision,
-    });
-
-    handleDomReady?.();
-    // 裁决门未 resolve 前，dom-ready handler 在 await 处挂起，绝不创建 Host。
-    expect(awaitFirstHostSpawnDecision).toHaveBeenCalledOnce();
-    expect(spawnHostProcess).not.toHaveBeenCalled();
-
-    resolveGate();
-    // flush microtasks：handler 越过 await，走 sync fallback 路径 spawn。
-    await new Promise((resolve) => {
-      setTimeout(resolve, 0);
-    });
-
-    expect(spawnHostProcess).toHaveBeenCalledWith(
-      win,
-      "local-47",
-      expect.objectContaining({ type: "init-local" }),
-    );
-  });
 });
 
 describe("desktopWindowLifecycle handleDarwinWindowCloseRequest", () => {

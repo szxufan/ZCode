@@ -105,43 +105,6 @@ it("opens pinned task cwd without a tab and never borrows a local remote session
   expect(onOpenFileManager).toHaveBeenCalledTimes(1);
 });
 
-it("a late mobile task switch cannot reopen an unmounted sidebar", async () => {
-  let finish!: () => void;
-  const switchWorkspace = vi.fn(
-    () =>
-      new Promise<void>((resolve) => {
-        finish = resolve;
-      }),
-  );
-  const props = {
-    onOpenFileManager,
-    workspacePath: "/current",
-    webRemoteControlWorkspaceSwitcher: { switchWorkspace },
-  } as unknown as ProjectSidebarProps;
-  const { result, unmount } = renderHook(() =>
-    useProjectFileTree(props, { hosts: [], entries: [] }),
-  );
-  let pending!: Promise<void>;
-  act(() => {
-    pending = result.current.openTaskFiles({
-      workspacePath: "/task-cwd",
-      taskId: "task-cwd",
-      hostId: "local",
-    } as ProjectTask);
-    unmount();
-  });
-  await act(async () => {
-    finish();
-    await pending;
-  });
-  expect(switchWorkspace).toHaveBeenCalledWith("/task-cwd", {
-    taskHostId: "local",
-    fileTreeTaskId: "task-cwd",
-    mobileNavigationIntent: "chat",
-  });
-  expect(onOpenFileManager).not.toHaveBeenCalled();
-});
-
 it("opens only the remote session matching the pinned task identity", async () => {
   useRemoteWorkspaceSessionStore.setState({
     sessionsById: {
@@ -178,38 +141,6 @@ it("opens only the remote session matching the pinned task identity", async () =
     workspaceIdentity: "remote:task",
     workspaceRemoteSessionId: "matching",
   });
-});
-
-it("hands the file request to the new Root after a mobile workspace switch", async () => {
-  const switchWorkspace = vi.fn(async () => {
-    useRemoteWorkspaceSessionStore.setState({
-      sessionsById: {
-        fresh: { sessionId: "fresh", workspaceIdentity: "remote:task" } as RemoteWorkspaceSession,
-      },
-      sessionIdByWorkspaceIdentity: { "remote:task": "fresh" },
-    });
-  });
-  const props = {
-    onOpenFileManager,
-    workspacePath: "/current",
-    webRemoteControlWorkspaceSwitcher: { switchWorkspace },
-  } as unknown as ProjectSidebarProps;
-  const { result } = renderHook(() => useProjectFileTree(props, { hosts: [], entries: [] }));
-  await act(async () => {
-    await result.current.openTaskFiles(
-      {
-        workspacePath: "/task",
-        workspaceIdentity: "remote:task",
-        hostId: "remote-host",
-      } as ProjectTask,
-      "stale",
-    );
-  });
-  expect(onOpenFileManager).not.toHaveBeenCalled();
-  expect(switchWorkspace).toHaveBeenCalledWith(
-    "remote:task",
-    expect.objectContaining({ mobileNavigationIntent: "chat" }),
-  );
 });
 
 it("accepts an identity-bound mobile session without duplicated session metadata", async () => {

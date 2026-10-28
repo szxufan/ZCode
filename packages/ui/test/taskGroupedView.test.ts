@@ -72,9 +72,6 @@ it("localizes only untouched system group names", () => {
   expect(taskGroupTitleMessageId({ id: "zcode-default-group-cron", title: "cron" })).toBe(
     "taskGroup.cron",
   );
-  expect(taskGroupTitleMessageId({ id: "zcode-default-group-off-peak", title: "off-peak" })).toBe(
-    "taskGroup.offPeak",
-  );
   expect(
     taskGroupTitleMessageId({ id: "zcode-default-group-cron", title: "renamed" }),
   ).toBeUndefined();

@@ -421,19 +421,13 @@ describe("assistant preview validation", () => {
 });
 
 describe("assistant HTML open target", () => {
-  it("本地桌面使用 Browser，远程 workspace 和手机远控降级为 Preview Pane", () => {
+  it("本地桌面使用 Browser，远程 workspace 降级为 Preview Pane", () => {
     expect(shouldOpenAssistantHtmlInBrowser({ path: "/workspace/page.html" })).toBe(true);
     expect(
       shouldOpenAssistantHtmlInBrowser({
         path: "/workspace/page.html",
         workspaceIdentity: "remote:ssh:host:/workspace",
         workspaceRemoteSessionId: "remote-1",
-      }),
-    ).toBe(false);
-    expect(
-      shouldOpenAssistantHtmlInBrowser({
-        path: "/workspace/page.html",
-        compactForRemoteControl: true,
       }),
     ).toBe(false);
   });

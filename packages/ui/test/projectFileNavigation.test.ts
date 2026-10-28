@@ -33,27 +33,6 @@ it("uses a matching remote attachment and never borrows the same local path", as
   expect(findSession).toHaveBeenCalledWith(result.workspaceIdentity);
   expect(connect).not.toHaveBeenCalled();
 });
-it("uses only shared-host switching on mobile", async () => {
-  const switchWorkspace = vi.fn(async () => {});
-  const connect = vi.fn();
-  const result = await resolveProjectFileTarget({
-    project: { ...project, hostId: "remote:server:s" },
-    rootPath: "/repo",
-    isRemote: true,
-    props: {
-      workspacePath: "/current",
-      webRemoteControlWorkspaceSwitcher: { switchWorkspace },
-      onConnectRemote: connect,
-    },
-    findSession: () => undefined,
-  } as never);
-  expect(result).toBeNull();
-  expect(switchWorkspace).toHaveBeenCalledWith(expect.stringContaining("s"), {
-    mobileNavigationIntent: "chat",
-    openFileManager: true,
-  });
-  expect(connect).not.toHaveBeenCalled();
-});
 it("rejects a foreign root before any connection side effect", async () => {
   const connect = vi.fn();
   await expect(

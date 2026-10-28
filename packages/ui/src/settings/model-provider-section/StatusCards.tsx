@@ -12,7 +12,6 @@ import {
 import { InfoIcon, Loader2Icon } from "lucide-react";
 import { useState, type ReactNode } from "react";
 import { Button } from "@/components/ui/button.js";
-import { ControlHintTooltip } from "@/ControlHintTooltip.js";
 import { logger } from "@/logger.js";
 import { LocalizedCodingPlanQuotaResetAction } from "@/components/coding-plan-quota-reset/CodingPlanQuotaResetAction.js";
 import { CodingPlanQuotaResetOpportunity } from "@/components/coding-plan-quota-reset/CodingPlanQuotaResetOpportunity.js";
@@ -148,7 +147,6 @@ export function CodingPlanStatusPanel({
   subscriptionExpireTime,
   subscriptionDetails,
   quotaLimits = [],
-  mcpQuotaLimit = null,
   authError,
   onOpenRegistration,
   onLogin,
@@ -185,8 +183,6 @@ export function CodingPlanStatusPanel({
   subscriptionExpireTime?: string | null;
   subscriptionDetails?: UsageEntitlementSubscriptionDetail[];
   quotaLimits?: UsageQuotaLimit[];
-  /** 官方 Server MCP 额度（服务端下发的总额度）。不在 quota.limits[] 里，由 nav item 单独透传。 */
-  mcpQuotaLimit?: UsageQuotaLimit | null;
   authError?: string | null;
   onOpenRegistration?: () => void;
   onLogin?: (options?: CodingPlanLoginOptions) => number | void | Promise<void>;
@@ -424,7 +420,6 @@ export function CodingPlanStatusPanel({
   const inlineDisconnectVisible = canDisconnectProvider && !isPurchased;
   const planTitle = resolveCodingPlanStatusCardTitle({
     isPurchased,
-    isUnavailable,
     isStartPlanProvider,
     inactivePlanTitle,
     rawPlanLevel,
@@ -634,7 +629,6 @@ export function CodingPlanStatusPanel({
                 ) : (
                   <CodingPlanUsageSummaryCards
                     limits={quotaLimits}
-                    mcpQuotaLimit={mcpQuotaLimit}
                     sourceKey={quotaResetSourceKey ?? providerId}
                     preferredProviderId={providerId}
                     accountAccess={quotaResetAccountAccess}
@@ -674,7 +668,6 @@ export function hasStartPlanEntitlementQuota(
 
 export function resolveCodingPlanStatusCardTitle({
   isPurchased,
-  isUnavailable = false,
   isStartPlanProvider,
   inactivePlanTitle,
   rawPlanLevel,
@@ -719,14 +712,12 @@ function isMaxCodingPlanLevel(planLevel: string): boolean {
 
 function CodingPlanUsageSummaryCards({
   limits,
-  mcpQuotaLimit,
   sourceKey,
   preferredProviderId,
   accountAccess,
   onEntitlementRefresh,
 }: {
   limits: UsageQuotaLimit[];
-  mcpQuotaLimit: UsageQuotaLimit | null;
   sourceKey: string;
   preferredProviderId: string;
   accountAccess?: ZCodeProviderAccountAccess | ZCodeAccountAccess;
@@ -774,16 +765,6 @@ function CodingPlanUsageSummaryCards({
       }),
       limit: findUsageLimit(limits, "TIME_LIMIT", 5, 1),
       progressColor: CODING_PLAN_USAGE_SUMMARY_COLORS[2],
-      resetTimeFormat: "date",
-    }),
-    createCodingPlanUsageSummaryCard({
-      key: "serverMcp",
-      label: intl.formatMessage({
-        id: "settings.usage.entitlementServerMcpUsage",
-      }),
-      limit: mcpQuotaLimit ?? undefined,
-      progressColor: "var(--color-usage-chart-5)",
-      // 官方 Server MCP 额度按自然日重置，重置时刻恒为 00:00，与其它额度卡统一用日期口径。
       resetTimeFormat: "date",
     }),
   ].filter((card): card is CodingPlanUsageSummaryCard => card !== null);
@@ -894,13 +875,6 @@ function CodingPlanUsageSummaryCards({
             }
             label={card.label}
             limit={card.limit}
-            infoDescription={
-              card.key === "serverMcp"
-                ? intl.formatMessage({
-                    id: "sidebar.usage.plan.zcodeMcpDescription",
-                  })
-                : undefined
-            }
             progressColor={card.progressColor}
             resetTimeFormat={card.resetTimeFormat}
           />
@@ -975,14 +949,12 @@ function resolveGenericUsageLimitLabel(
 
 function PlanUsageMetricCard({
   action,
-  infoDescription,
   label,
   limit,
   progressColor,
   resetTimeFormat,
 }: {
   action?: ReactNode;
-  infoDescription?: string;
   label?: string;
   limit?: UsageQuotaLimit;
   progressColor: string;
@@ -1005,18 +977,6 @@ function PlanUsageMetricCard({
         // 固定 24px 会让 20px 界面字号的 30px 行盒溢出；最小高度既保持默认对齐，也允许大字号撑高。
         <div className="flex min-h-6 min-w-0 items-center gap-1">
           <span className="min-w-0 truncate text-ui-base font-medium text-foreground">{label}</span>
-          {infoDescription ? (
-            <ControlHintTooltip title={infoDescription} standalone>
-              <button
-                type="button"
-                aria-label={infoDescription}
-                className="inline-flex size-4 shrink-0 items-center justify-center rounded-full text-foreground-subtle transition-colors hover:text-foreground"
-                data-zcode-mcp-info="model-settings"
-              >
-                <InfoIcon className="size-3.5" aria-hidden="true" />
-              </button>
-            </ControlHintTooltip>
-          ) : null}
           {action ? <span className="shrink-0">{action}</span> : null}
         </div>
       ) : null}

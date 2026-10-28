@@ -9,7 +9,7 @@ import { useTaskGroups } from "@/project-sidebar/useTaskGroups.js";
 import { selectSortedProjects } from "@/project-sidebar/view.js";
 
 function useDirectoryState(isDesktop: boolean) {
-  const result = useProjectTree(isDesktop);
+  const result = useProjectTree();
   // 手机有项目目录不代表拥有 Source 管理权限；名称注册表仅在桌面订阅，手机沿用 Host 目录标签。
   const deviceNames = useSourceServerDisplayNames(isDesktop);
   const groups = useTaskGroups(result.factTree);

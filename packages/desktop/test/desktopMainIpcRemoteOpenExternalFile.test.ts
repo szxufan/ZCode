@@ -10,7 +10,6 @@ const h = vi.hoisted(() => ({
   handlers: new Map<string, IpcHandler>(),
   listeners: new Map<string, IpcHandler>(),
   fromWebContents: vi.fn(),
-  registerWebRemoteControlIpcHandlers: vi.fn(),
   shellOpenExternal: vi.fn(),
   shellOpenPath: vi.fn(),
   configureRemoteUsageArmsTelemetry: vi.fn(),
@@ -48,10 +47,6 @@ vi.mock("../src/main/desktopOAuthDeepLink.js", () => ({
 vi.mock("../src/main/desktopArmsCustomEvent.js", () => ({
   createFinalArmsCustomEventE2EController: vi.fn(),
   dispatchFinalArmsCustomEvent: vi.fn(),
-}));
-
-vi.mock("../src/main/desktopWebRemoteControlIpc.js", () => ({
-  registerWebRemoteControlIpcHandlers: h.registerWebRemoteControlIpcHandlers,
 }));
 
 vi.mock("../src/main/desktopRemoteUsageArmsTelemetry.js", () => ({

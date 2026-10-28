@@ -52,18 +52,6 @@ export function findCodingPlanQuotaLimit(
   );
 }
 
-/**
- * 官方 Server MCP 额度（服务端下发的总额度）。
- *
- * 服务端把它放在 entitlement 快照的独立字段而不是 quota.limits[]，因此不能用
- * findCodingPlanQuotaLimit 查询；这里收口成唯一取数入口，避免各展示位各写一遍 `?.` 链路。
- */
-export function resolveMcpQuotaLimit(
-  snapshot: UsageEntitlementSnapshot | null | undefined,
-): UsageQuotaLimit | null {
-  return snapshot?.mcpQuota?.aggregate ?? null;
-}
-
 export function normalizeQuotaPercentage(value: number | undefined): number {
   if (value == null || !Number.isFinite(value)) {
     return 0;

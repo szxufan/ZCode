@@ -76,28 +76,6 @@ describe("E2E agent coverage", () => {
 });
 
 describe("resolveDefaultZCodeAgentCommand", () => {
-  const desktopSurfaceArgsCases = [
-    {
-      name: "separate surface value",
-      input: ["app-server", "--surface", "terminal", "--stdio"],
-      expected: ["app-server", "--stdio", "--surface", "desktop"],
-    },
-    {
-      name: "equals surface value",
-      input: ["app-server", "--surface=terminal", "--stdio"],
-      expected: ["app-server", "--stdio", "--surface", "desktop"],
-    },
-    {
-      name: "orphan surface before another option",
-      input: ["app-server", "--surface", "--stdio"],
-      expected: ["app-server", "--stdio", "--surface", "desktop"],
-    },
-    {
-      name: "trailing orphan surface",
-      input: ["app-server", "--surface"],
-      expected: ["app-server", "--surface", "desktop"],
-    },
-  ] as const;
 
   const originalCwd = process.cwd();
   const originalCommand = process.env.ZCODE_AGENT_SERVER_COMMAND;
@@ -285,24 +263,6 @@ describe("resolveDefaultZCodeAgentCommand", () => {
     ]);
   });
 
-  it.each(desktopSurfaceArgsCases)(
-    "Desktop surface 归一化 $name 时不吞掉无关参数",
-    ({ input, expected }) => {
-      process.env.ZCODE_AGENT_SERVER_COMMAND = "zcode-agent";
-      process.env.ZCODE_AGENT_SERVER_ARGS_JSON = JSON.stringify(input);
-
-      const command = resolveDefaultZCodeAgentCommand({
-        presentationSurface: "desktop",
-        workspacePath: "/repo/workspace",
-        workspaceKey: "/repo/workspace",
-      });
-
-      expect(command).toMatchObject({
-        command: "zcode-agent",
-        args: expected,
-      });
-    },
-  );
 
   it("monorepo 不可达时回退到已部署原生 binary", () => {
     delete process.env.ZCODE_AGENT_SERVER_COMMAND;
@@ -1528,38 +1488,4 @@ require("node:readline").createInterface({ input: process.stdin }).on("line", li
     });
   });
 
-  it.each(desktopSurfaceArgsCases)(
-    "Desktop 自定义命令经 stdio tap proxy 后保留 $name 的参数",
-    ({ input, expected }) => {
-      const sandboxRoot = mkdtempSync(join(tmpdir(), "zcode-agent-stdio-tap-surface-"));
-      createdDirs.push(sandboxRoot);
-      const tapScript = join(sandboxRoot, "scripts", "dev", "zcode-stdio-tap.mjs");
-      mkdirSync(dirname(tapScript), { recursive: true });
-      writeFileSync(tapScript, "#!/usr/bin/env node\n");
-      process.chdir(sandboxRoot);
-      process.env[ZCODE_RUNTIME_ENV_KEY] = "development";
-      process.env.ZCODE_AGENT_SERVER_COMMAND = "zcode-agent";
-      process.env.ZCODE_AGENT_SERVER_ARGS_JSON = JSON.stringify(input);
-      setDataBaseDir(sandboxRoot);
-      setZCodeStdioTapDevEnabled(true);
-
-      const command = resolveDefaultZCodeAgentCommand({
-        presentationSurface: "desktop",
-        workspacePath: "/repo/workspace",
-        workspaceKey: "/repo/workspace",
-      });
-      const wrapped = wrapZCodeAgentCommandWithStdioTapDevProxy(command!, "/repo/workspace");
-
-      expect(wrapped.args).toEqual([
-        realpathSync(tapScript),
-        "--workspace-key",
-        "/repo/workspace",
-        "--log-dir",
-        join(sandboxRoot, ".zcode", "v2", "dev", "stdio-traffic"),
-        "--",
-        "zcode-agent",
-        ...expected,
-      ]);
-    },
-  );
 });

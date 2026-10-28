@@ -1,14 +1,4 @@
-/* OMCP-005/006/009/021/023/024/026/027 —— 官方 MCP 凭证解析与身份头构造（spec §6.1 / §6.2.1 / §6.3.3）。
- *
- * OMCP-025（Off-Peak 零回归，验证 §6.1.1 的隔离）不是本文件的用例，而是一条回归动作：
- *   npx vitest run packages/services/test/offPeakRuntimeModel.test.ts \
- *     packages/services/test/offPeakServerClient.test.ts \
- *     packages/services/test/offPeakTaskService.test.ts \
- *     packages/services/test/offPeakE2eIntegration.test.ts \
- *     packages/services/test/offPeakClientConfig.test.ts \
- *     packages/services/test/offPeakTaskRepo.test.ts
- * 本次实现后为 6 files / 77 tests 全绿，且未修改 offPeakRuntimeModel.ts 的任何导出。
- */
+/* OMCP-005/006/009/021/023/024/026/027 —— 官方 MCP 凭证解析与身份头构造（spec §6.1 / §6.2.1 / §6.3.3）。 */
 import { describe, expect, it, vi } from "vitest";
 import { BUILTIN_MODEL_PROVIDER_IDS, type ZCodeAccountAccess } from "@zcode/shared";
 import type { ModelSelectionView } from "@zcode/provider";

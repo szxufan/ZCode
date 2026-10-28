@@ -6,11 +6,6 @@ import { resolveRemoteConnectionNavigationPresentation } from "@/lib/remoteConne
 import { ArrowLeft, Rocket, type LucideIcon } from "lucide-react";
 import { useStore } from "zustand";
 import {
-  marketingNavigation,
-  finishMarketingNavigation,
-  marketingSettingsSections,
-} from "@/lib/marketingNavigation.js";
-import {
   useCallback,
   useEffect,
   useMemo,
@@ -294,7 +289,6 @@ export function SettingsPage({
   isDesktop,
   isWindowsDesktop,
   isMacDesktop,
-  isWebRemoteControl = false,
   windowsWindowControlsRightPaddingPx: _windowsWindowControlsRightPaddingPx,
   captionWorkspacePath,
   onBack,
@@ -309,7 +303,6 @@ export function SettingsPage({
   isDesktop?: boolean;
   isWindowsDesktop?: boolean;
   isMacDesktop?: boolean;
-  isWebRemoteControl?: boolean;
   windowsWindowControlsRightPaddingPx?: number;
   captionWorkspacePath?: string | null;
   onBack?: () => void;
@@ -386,17 +379,6 @@ export function SettingsPage({
           linuxCloseToTrayCapability.gnomeLikeWithoutTray,
       }
     : undefined;
-  const marketingRequest = useStore(marketingNavigation, (state) => state.request);
-  useEffect(() => {
-    if (marketingRequest?.target.page !== "settings") return;
-    const target = marketingRequest.target;
-    const section = target.section ? marketingSettingsSections[target.section] : activeSection;
-    if (!settingsSections.some((item) => item.id === section)) {
-      finishMarketingNavigation(marketingRequest.id, new Error("marketing_navigation_unavailable"));
-    } else if (activeSection === section && !target.provider_id) {
-      finishMarketingNavigation(marketingRequest.id);
-    }
-  }, [activeSection, marketingRequest, settingsSections]);
   const [pluginNavigationOrigin, setPluginNavigationOrigin] = useState(() =>
     consumePendingSettingsPluginOrigin(),
   );
@@ -2113,7 +2095,6 @@ export function SettingsPage({
                               isDesktop={Boolean(isDesktop)}
                               isMacDesktop={Boolean(isMacDesktop)}
                               isWindowsDesktop={Boolean(isWindowsDesktop)}
-                              isWebRemoteControl={isWebRemoteControl}
                               initialTab={pluginTab}
                               initialScopeKey={pluginScopeKey}
                               workspacePath={activeWorkspacePath}
@@ -2130,7 +2111,6 @@ export function SettingsPage({
                             <PluginsSection
                               key={`mcp:${settingsSectionNavigationVersion}`}
                               mode="mcp"
-                              isWebRemoteControl={isWebRemoteControl}
                               workspacePath={activeWorkspacePath}
                               workspaceIdentity={activeWorkspaceIdentity}
                               onCreateTask={onCreateTask}
@@ -2144,7 +2124,6 @@ export function SettingsPage({
                             <PluginsSection
                               key={`skill:${settingsSectionNavigationVersion}`}
                               mode="skill"
-                              isWebRemoteControl={isWebRemoteControl}
                               workspacePath={activeWorkspacePath}
                               workspaceIdentity={activeWorkspaceIdentity}
                               onCreateTask={onCreateTask}
@@ -2194,7 +2173,6 @@ export function SettingsPage({
                           ) : activeSection === "commands" ? (
                             <PluginsSection
                               mode="command"
-                              isWebRemoteControl={isWebRemoteControl}
                               workspacePath={activeWorkspacePath}
                               workspaceIdentity={activeWorkspaceIdentity}
                               onCreateTask={onCreateTask}

@@ -11,11 +11,7 @@ import {
   shouldEnableModifiedEnterSubmit,
   shouldReverseFollowupDeliveryForPointer,
 } from "@/v4/composer/followupModeSettings.js";
-import {
-  resolveChatEnterShortcut,
-  resolveChatEnterSubmits,
-  shouldAvoidIosInputFocusZoom,
-} from "@/lib/mobileTextInput.js";
+import { resolveChatEnterShortcut, resolveChatEnterSubmits } from "@/lib/mobileTextInput.js";
 
 describe("mobile text input zoom guard", () => {
   it("keeps modified submit on desktop drafts and Windows coarse-pointer viewports", () => {
@@ -29,22 +25,11 @@ describe("mobile text input zoom guard", () => {
     expect(
       shouldEnableModifiedEnterSubmit({
         inputRoutingMode: "enqueue",
-        isMobileTextInputViewport: true,
-        isWebRemoteControl: false,
       }),
     ).toBe(true);
     expect(
       shouldEnableModifiedEnterSubmit({
-        inputRoutingMode: "enqueue",
-        isMobileTextInputViewport: true,
-        isWebRemoteControl: true,
-      }),
-    ).toBe(false);
-    expect(
-      shouldEnableModifiedEnterSubmit({
         inputRoutingMode: "reject",
-        isMobileTextInputViewport: false,
-        isWebRemoteControl: false,
       }),
     ).toBe(false);
   });
@@ -176,30 +161,6 @@ describe("mobile text input zoom guard", () => {
       resolveChatEnterSubmits({
         isMobileTextInputViewport: false,
         preferEnterNewline: true,
-      }),
-    ).toBe(true);
-  });
-
-  it("desktop viewports and non-remote inputs do not enable the zoom guard", () => {
-    expect(
-      shouldAvoidIosInputFocusZoom({
-        isMobileTextInputViewport: false,
-        isWebRemoteControl: true,
-      }),
-    ).toBe(false);
-    expect(
-      shouldAvoidIosInputFocusZoom({
-        isMobileTextInputViewport: true,
-        isWebRemoteControl: false,
-      }),
-    ).toBe(false);
-  });
-
-  it("enables the zoom guard for mobile remote input", () => {
-    expect(
-      shouldAvoidIosInputFocusZoom({
-        isMobileTextInputViewport: true,
-        isWebRemoteControl: true,
       }),
     ).toBe(true);
   });

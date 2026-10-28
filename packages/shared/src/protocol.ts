@@ -422,22 +422,6 @@ export interface AppSettings {
   skippedElectronUpdateVersions?: Partial<Record<ElectronReleaseChannel, string>>;
   /** 首次启动设置同步提示是否已消费；只表示弹窗不再出现，不代表导入成功。 */
   settingsSyncFirstRunPromptHandled?: boolean;
-  /** 外部 Web 远控 relay 的非敏感设备身份；passHash 必须存 credentialService。 */
-  /** V2 非敏感注册身份；JWT 和一次性 token 不持久化于 AppSettings。 */
-  webRemoteControlRelayV2Device?: {
-    deviceSid: string;
-    userId: string;
-    endpointOrigin: string;
-  };
-  webRemoteControlExternalRelayDevice?: {
-    deviceSid: string;
-  };
-  /** 上次成功开启 Web 远控时的目标；缺失表示用户已明确关闭，不自动恢复。 */
-  webRemoteControlLastEnabledContext?: {
-    workspacePath: string;
-    workspaceIdentity?: string;
-    initialTaskId?: string;
-  };
   /** 设置页里的临时 endpoint override；正式/测试默认 base url 由 ZCODE_BASE_URL env 管理。 */
   zcodeEndpointOrigin?: string;
 }

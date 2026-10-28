@@ -41,7 +41,7 @@ type Props = Pick<
 > &
   Pick<
     ProjectSidebarProps,
-    "isDesktop" | "isWebRemoteControl" | "onCreateTask" | "onReconnectRemoteWorkspace"
+    "isDesktop" | "onCreateTask" | "onReconnectRemoteWorkspace"
   > & {
     service?: IProjectService;
     remoteService?: IRemoteProjectService;
@@ -60,7 +60,6 @@ export const ProjectSidebarNode = memo(
     service,
     remoteService,
     isDesktop,
-    isWebRemoteControl,
     onCreateTask,
     onReconnectRemoteWorkspace,
     onExpandedChange,
@@ -129,7 +128,7 @@ export const ProjectSidebarNode = memo(
             onCreateTask({
               projectId: project.id,
               taskGroupId: null,
-              ...(isWebRemoteControl || remoteHost ? { hostId: project.hostId } : {}),
+              ...(remoteHost ? { hostId: project.hostId } : {}),
             });
           })
         }

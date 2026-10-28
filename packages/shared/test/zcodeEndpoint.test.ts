@@ -1,7 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
   DEFAULT_BIGMODEL_API_ORIGIN,
-  DEFAULT_WEB_REMOTE_CONTROL_RELAY_WS_URL,
   DEFAULT_ZAI_BUSINESS_BASE_URL,
   DEFAULT_ZAI_OAUTH_CLIENT_ID,
   DEFAULT_ZAI_OAUTH_ORIGIN,
@@ -22,7 +21,6 @@ import {
   normalizeZCodeEndpointOrigin,
   resolveBigModelApiOrigin,
   resolveRuntimeProductEndpointConfig,
-  resolveWebRemoteControlRelayWsUrl,
   resolveZaiBusinessBaseUrl,
   resolveZaiOAuthClientId,
   resolveZaiOAuthOrigin,
@@ -65,55 +63,15 @@ describe("zcodeEndpoint", () => {
     ).toBe(DEFAULT_ZCODE_ENDPOINT_ORIGIN);
   });
 
-  it("derives http and websocket urls from the same origin", () => {
+  it("derives api urls from the same origin", () => {
     expect(buildZCodeEndpointUrls("http://localhost:3030")).toEqual({
       origin: "http://localhost:3030",
       apiBaseUrl: "http://localhost:3030/api/v1",
-      remoteUrl: "http://localhost:3030/remote/v3",
-      webRemoteCallbackUrl: "http://localhost:3030/remote/v4",
-      webShareCallbackUrl: "http://localhost:3030/cn/share/callback",
-      relayWsUrl: "ws://localhost:3030/api/v1/remote/ws2",
       zcodePlanOpenAiBaseUrl: "http://localhost:3030/api/v1/zcode-plan",
       zcodePlanAnthropicBaseUrl: "http://localhost:3030/api/v1/zcode-plan/anthropic",
       zcodePlanBillingCurrentUrl: "http://localhost:3030/api/v1/zcode-plan/billing/current",
       zcodePlanBillingBalanceUrl: "http://localhost:3030/api/v1/zcode-plan/billing/balance",
     });
-  });
-
-  it("uses remote v3 for app versions below 3.4.0", () => {
-    expect(buildZCodeEndpointUrls("https://zcode.z.ai", { appVersion: "3.3.9" }).remoteUrl).toBe(
-      "https://zcode.z.ai/remote/v3",
-    );
-  });
-
-  it("uses remote v4 for app versions at or above 3.4.0", () => {
-    expect(buildZCodeEndpointUrls("https://zcode.z.ai", { appVersion: "3.4.0" }).remoteUrl).toBe(
-      "https://zcode.z.ai/remote/v4",
-    );
-    expect(buildZCodeEndpointUrls("https://zcode.z.ai", { appVersion: "3.4.1" }).remoteUrl).toBe(
-      "https://zcode.z.ai/remote/v4",
-    );
-    expect(
-      buildZCodeEndpointUrls("https://zcode.z.ai", { appVersion: "3.5.0-beta.1" }).remoteUrl,
-    ).toBe("https://zcode.z.ai/remote/v4");
-  });
-
-  it("keeps prerelease and invalid app versions on remote v3", () => {
-    expect(
-      buildZCodeEndpointUrls("https://zcode.z.ai", { appVersion: "3.4.0-beta.1" }).remoteUrl,
-    ).toBe("https://zcode.z.ai/remote/v3");
-    expect(buildZCodeEndpointUrls("https://zcode.z.ai", { appVersion: "dev" }).remoteUrl).toBe(
-      "https://zcode.z.ai/remote/v3",
-    );
-    expect(buildZCodeEndpointUrls("https://zcode.z.ai", { appVersion: "03.4.0" }).remoteUrl).toBe(
-      "https://zcode.z.ai/remote/v3",
-    );
-    expect(
-      buildZCodeEndpointUrls("https://zcode.z.ai", { appVersion: "3.4.1-alpha..1" }).remoteUrl,
-    ).toBe("https://zcode.z.ai/remote/v3");
-    expect(buildZCodeEndpointUrls("https://zcode.z.ai", { appVersion: "3.4.1-01" }).remoteUrl).toBe(
-      "https://zcode.z.ai/remote/v3",
-    );
   });
 
   it("derives runtime zcode-plan urls from ZCODE_ENV", () => {
@@ -132,33 +90,6 @@ describe("zcodeEndpoint", () => {
         ZCODE_BASE_URL: "https://zcode.z.ai/ignored/path",
       }).zcodePlanAnthropicBaseUrl,
     ).toBe("https://zcode.z.ai/api/v1/zcode-plan/anthropic");
-  });
-
-  it("derives V2 relay from each endpoint origin", () => {
-    expect(
-      resolveWebRemoteControlRelayWsUrl({
-        endpointOrigin: TEST_ZCODE_ENDPOINT_ORIGIN,
-      }),
-    ).toBe("wss://zcode.z.ai/api/v1/remote/ws2");
-    expect(
-      resolveWebRemoteControlRelayWsUrl({
-        endpointOrigin: DEFAULT_ZCODE_ENDPOINT_ORIGIN,
-      }),
-    ).toBe(DEFAULT_WEB_REMOTE_CONTROL_RELAY_WS_URL);
-    expect(
-      resolveWebRemoteControlRelayWsUrl({
-        endpointOrigin: "http://localhost:3030",
-      }),
-    ).toBe("ws://localhost:3030/api/v1/remote/ws2");
-  });
-
-  it("allows an explicit web remote control relay url override", () => {
-    expect(
-      resolveWebRemoteControlRelayWsUrl({
-        endpointOrigin: TEST_ZCODE_ENDPOINT_ORIGIN,
-        overrideUrl: " ws://localhost:8787/api/v1/remote/ws2 ",
-      }),
-    ).toBe("ws://localhost:8787/api/v1/remote/ws2");
   });
 
   it("derives BigModel API origin from ZCODE_ENV", () => {

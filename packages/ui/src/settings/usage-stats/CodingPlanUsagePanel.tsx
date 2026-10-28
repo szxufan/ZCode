@@ -28,7 +28,6 @@ import {
   formatQuotaRemainingPercentage,
   formatQuotaResetTime,
   getQuotaRemainingPercentage,
-  resolveMcpQuotaLimit,
 } from "@/lib/codingPlanQuotaPresentation.js";
 import {
   mergeCodingPlanQuotaResetOpportunityBadges,
@@ -255,7 +254,6 @@ export function CodingPlanUsagePanel({
         <>
           <CodingPlanQuotaCards
             quota={effectiveEntitlementSnapshot?.quota ?? snapshot.quota}
-            mcpQuotaLimit={resolveMcpQuotaLimit(effectiveEntitlementSnapshot)}
             generatedAt={snapshot.generatedAt}
             sourceKey={effectiveSource?.id}
             preferredProviderId={effectiveProviderId}
@@ -317,7 +315,6 @@ function CodingPlanRangeSelector({
 
 function CodingPlanQuotaCards({
   quota,
-  mcpQuotaLimit,
   generatedAt,
   sourceKey,
   preferredProviderId,
@@ -326,8 +323,6 @@ function CodingPlanQuotaCards({
   onUsageStatsRefresh,
 }: {
   quota: UsageQuotaSnapshot | null;
-  /** 官方 Server MCP 额度不在 quota.limits[] 里，由 entitlement 快照的独立字段传入。 */
-  mcpQuotaLimit: UsageQuotaLimit | null;
   generatedAt: number;
   sourceKey: string | undefined;
   preferredProviderId: string | undefined;
@@ -395,14 +390,6 @@ function CodingPlanQuotaCards({
       limit: findCodingPlanQuotaLimit(limits, "TIME_LIMIT", 5, 1),
       progressColor: "var(--color-usage-chart-3)",
     },
-    {
-      key: "serverMcp",
-      label: intl.formatMessage({
-        id: "settings.usage.entitlementServerMcpUsage",
-      }),
-      limit: mcpQuotaLimit,
-      progressColor: "var(--color-usage-chart-5)",
-    },
   ].filter(
     (
       card,
@@ -435,7 +422,7 @@ function CodingPlanQuotaCards({
   });
 
   // Quota remaining 的响应式只允许整组纵向或整组横向。
-  // 额度项（最多 4 个：5 小时 / 每周 / MCP / Server MCP）不能在中间断点排成 n+1，
+  // 额度项（最多 3 个：5 小时 / 每周 / MCP 工具次数）不能在中间断点排成 n+1，
   // 否则信息组会被视觉拆散。
   const quotaCardsLayoutClass = "flex flex-col gap-3 lg:flex-row";
 
@@ -483,25 +470,6 @@ function CodingPlanQuotaCards({
               {/* min-h 与重置动作(h-5)对齐:没有动作的额度卡也保持同高,避免同排数值/进度条错位。 */}
               <div className="flex min-h-5 min-w-0 items-center gap-1">
                 <span className="min-w-0 truncate text-ui-base text-foreground">{card.label}</span>
-                {card.key === "serverMcp" ? (
-                  <ControlHintTooltip
-                    title={intl.formatMessage({
-                      id: "sidebar.usage.plan.zcodeMcpDescription",
-                    })}
-                    standalone
-                  >
-                    <button
-                      type="button"
-                      aria-label={intl.formatMessage({
-                        id: "sidebar.usage.plan.zcodeMcpDescription",
-                      })}
-                      className="inline-flex size-4 shrink-0 items-center justify-center rounded-full text-foreground-subtle transition-colors hover:text-foreground"
-                      data-zcode-mcp-info="usage-stats"
-                    >
-                      <InfoIcon className="size-3.5" aria-hidden="true" />
-                    </button>
-                  </ControlHintTooltip>
-                ) : null}
                 {/* 额度标题旁入口只打开统一弹窗；真正核销由弹窗内对应类型按钮触发。 */}
                 {card.key === "fiveHour" &&
                 resetUi.entry &&

@@ -21,9 +21,6 @@ import {
   type ProviderProvisioningTrigger,
   type WindowHostRemoteWorkspaceDescriptor,
   type WorkspacePurpose,
-  type WebRemoteControlFailure,
-  type HostPreparedProjectWorkspace,
-  type HostProjectWorkspaceNavigationInput,
 } from "@zcode/shared";
 import type {
   RemoteConnectionStats,
@@ -194,30 +191,9 @@ export function createRemoteWorkspaceSessionManager(options: {
     durationMs: number;
   }) => void;
   monotonicNowMs?: () => number;
-  webRemoteControlManagerRef: {
-    current: {
-      failRemoteSession(sessionId: string, reason: string, failure: WebRemoteControlFailure): void;
-      replaceRemoteSession?(event: {
-        previousSessionId: string;
-        sessionId: string;
-        workspacePath: string;
-        workspaceIdentity: string;
-      }): Promise<void>;
-    } | null;
-  };
   providerProvisioningCoordinator?: ProviderProvisioningEnvironmentCoordinator;
 }) {
   const pendingByRequestKey = new Map<string, PendingConnect>();
-  const pendingProjectNavigations = new Map<
-    string,
-    {
-      child: ElectronUtilityProcess;
-      win: BrowserWindow;
-      requestId: string;
-      resolve(value: HostPreparedProjectWorkspace): void;
-      reject(error: Error): void;
-    }
-  >();
   const pendingWorkspaceBindsByRequestKey = new Map<string, PendingWorkspaceBind>();
   const workspaceContextBindFlightsBySessionId = new Map<string, WorkspaceContextBindFlight>();
   const routesBySessionId = new Map<string, RemoteAttachmentRoute>();
@@ -676,20 +652,6 @@ export function createRemoteWorkspaceSessionManager(options: {
           level: "info",
           message: `远程 ${descriptor.target.kind} workspace 已自动重连`,
         });
-        void options.webRemoteControlManagerRef.current
-          ?.replaceRemoteSession?.({
-            previousSessionId: previousRemoteSessionId,
-            sessionId: descriptor.remoteSessionId,
-            workspacePath: descriptor.workspacePath,
-            workspaceIdentity: descriptor.workspaceIdentity,
-          })
-          .catch((error: unknown) => {
-            options.logger.warn("[window-host-remote] mobile bridge recovery failed", {
-              previousRemoteSessionId,
-              remoteSessionId: descriptor.remoteSessionId,
-              error,
-            });
-          });
       })
       .catch((error: unknown) => {
         route.providerProvisioningDispose?.();
@@ -838,16 +800,6 @@ export function createRemoteWorkspaceSessionManager(options: {
     const win = BrowserWindow.getAllWindows().find(
       (candidate) => candidate.webContents.id === webContentsId,
     );
-    if (event.recoverable !== true) {
-      options.webRemoteControlManagerRef.current?.failRemoteSession(
-        event.remoteSessionId,
-        "window-host:connection-offline",
-        {
-          reason: "workspace-closed",
-          message: "远程工作区连接已结束，请在桌面端重新连接。",
-        },
-      );
-    }
     if (win && !win.isDestroyed() && !win.webContents.isDestroyed()) {
       win.webContents.send(PlatformChannels.RemoteSessionClosed, {
         sessionId: event.remoteSessionId,
@@ -872,108 +824,12 @@ export function createRemoteWorkspaceSessionManager(options: {
     }
   }
 
-  function acceptPreparedProjectWorkspace(
-    child: ElectronUtilityProcess,
-    webContentsId: number,
-    requestId: string,
-    result: { ok: true; value: HostPreparedProjectWorkspace } | { ok: false; error: string },
-  ): void {
-    const key = requestKey(webContentsId, requestId);
-    const pending = pendingProjectNavigations.get(key);
-    if (!pending || pending.child !== child) return;
-    if (!result.ok) {
-      pendingProjectNavigations.delete(key);
-      pending.reject(new Error(result.error));
-      return;
-    }
-    const descriptor = result.value.remote;
-    if (!descriptor) {
-      pendingProjectNavigations.delete(key);
-      pending.resolve(result.value);
-      return;
-    }
-    const resolveWhenReady = (route: RemoteAttachmentRoute, ownsRegistration: boolean) => {
-      void (route.providerProvisioningReady ?? Promise.resolve()).then(
-        () => {
-          // 每个 join 都必须等同一屏障，并保留自己的取消资格到成功提交。
-          if (pendingProjectNavigations.get(key) !== pending) return;
-          pendingProjectNavigations.delete(key);
-          if (
-            routesBySessionId.get(descriptor.remoteSessionId) !== route ||
-            route.attachmentState !== "attachable"
-          )
-            pending.reject(new Error("项目导航 scope 已失效"));
-          else pending.resolve(result.value);
-        },
-        (error: unknown) => {
-          if (pendingProjectNavigations.get(key) === pending) pendingProjectNavigations.delete(key);
-          if (
-            ownsRegistration &&
-            routesBySessionId.get(descriptor.remoteSessionId) === route &&
-            route.mobileOnly
-          ) {
-            routesBySessionId.delete(descriptor.remoteSessionId);
-            route.providerProvisioningDispose?.();
-            child.postMessage({
-              type: HostMessageTypes.DisposeRemoteWorkspaceSession,
-              requestId: randomUUID(),
-              remoteSessionId: descriptor.remoteSessionId,
-            });
-          }
-          pending.reject(error instanceof Error ? error : new Error(String(error)));
-        },
-      );
-    };
-    const existing = routesBySessionId.get(descriptor.remoteSessionId);
-    if (existing) {
-      if (
-        existing.webContentsId !== webContentsId ||
-        existing.attachmentState !== "attachable" ||
-        existing.descriptor.workspaceIdentity !== descriptor.workspaceIdentity ||
-        existing.descriptor.workspacePath !== descriptor.workspacePath
-      ) {
-        pendingProjectNavigations.delete(key);
-        pending.reject(new Error("Project navigation scope conflicts with existing route"));
-      } else resolveWhenReady(existing, false);
-      return;
-    }
-    const route: RemoteAttachmentRoute = {
-      webContentsId,
-      descriptor,
-      mobileOnly: true,
-      attachmentState: "attachable",
-      connectedAtMonotonicMs: monotonicNowMs(),
-      connectFinalized: true,
-      remoteUsageTelemetryEligible: false,
-    };
-    routesBySessionId.set(descriptor.remoteSessionId, route);
-    const environmentKey = buildRemoteEnvironmentKey(descriptor.target);
-    const registration = providerProvisioningCoordinator.register(
-      environmentKey,
-      descriptor.remoteSessionId,
-      (trigger) =>
-        executeProviderProvisioning(child, descriptor.remoteSessionId, environmentKey, trigger),
-    );
-    route.providerProvisioningDispose = registration.dispose;
-    route.providerProvisioningReady = registration.initialSync;
-    resolveWhenReady(route, true);
-  }
-
   function ensureHostListener(child: ElectronUtilityProcess, webContentsId: number): void {
     if (listenedHosts.has(child)) return;
     listenedHosts.add(child);
     child.on("message", (message: unknown) => {
       const parsed = hostResponseMessageSchema.safeParse(message);
       if (!parsed.success) return;
-      if (parsed.data.type === HostResponseTypes.ProjectWorkspacePrepared) {
-        acceptPreparedProjectWorkspace(
-          child,
-          webContentsId,
-          parsed.data.requestId,
-          parsed.data.result,
-        );
-        return;
-      }
       if (parsed.data.type === HostResponseTypes.RemoteWorkspaceConnectionLog) {
         const pending = pendingByRequestKey.get(requestKey(webContentsId, parsed.data.requestId));
         if (!pending) return;
@@ -1088,12 +944,6 @@ export function createRemoteWorkspaceSessionManager(options: {
     });
     child.once("exit", () => {
       const error = new Error("窗口 Local Host 已退出");
-      for (const [key, pending] of pendingProjectNavigations) {
-        if (pending.child !== child) continue;
-        pendingProjectNavigations.delete(key);
-        pending.reject(error);
-      }
-
       for (const [requestId, pendingExecution] of pendingProviderProvisioningExecutions) {
         if (pendingExecution.child !== child) continue;
         pendingProviderProvisioningExecutions.delete(requestId);
@@ -1407,12 +1257,6 @@ export function createRemoteWorkspaceSessionManager(options: {
   }
 
   function disposeRemoteWorkspaceSessionsForWindow(webContentsId: number): void {
-    for (const [key, pending] of pendingProjectNavigations) {
-      if (pending.win.webContents.id !== webContentsId) continue;
-      pendingProjectNavigations.delete(key);
-      pending.reject(new Error("窗口已关闭，项目导航已取消"));
-    }
-
     for (const [sessionId, route] of Array.from(routesBySessionId)) {
       if (route.webContentsId !== webContentsId) continue;
       retireActiveRoute(route, "window-closed", () => {
@@ -1444,19 +1288,6 @@ export function createRemoteWorkspaceSessionManager(options: {
   ): void {
     const child = options.windowHostProcessMap.get(webContentsId);
     if (!child) return;
-    for (const [key, pending] of pendingProjectNavigations) {
-      if (
-        pending.win.webContents.id !== webContentsId ||
-        (requestId && pending.requestId !== requestId)
-      )
-        continue;
-      pendingProjectNavigations.delete(key);
-      child.postMessage({
-        type: HostMessageTypes.CancelRemoteWorkspaceConnect,
-        requestId: pending.requestId,
-      });
-      pending.reject(new Error("项目导航已取消"));
-    }
     for (const pending of pendingByRequestKey.values()) {
       if (
         pending.webContentsId === webContentsId &&
@@ -1489,99 +1320,8 @@ export function createRemoteWorkspaceSessionManager(options: {
     );
   }
 
-  function attachRemoteWorkspaceSessionHost(params: {
-    windowId: number;
-    remoteSessionId: string;
-    workspacePath: string;
-    workspaceIdentity: string;
-    workspaceKey: string;
-    clientMode: "web-remote-replayable";
-  }): {
-    process: ElectronUtilityProcess;
-    port: MessagePortMain;
-    remoteKind: RemoteTarget["kind"];
-  } {
-    const route = routesBySessionId.get(params.remoteSessionId);
-    if (!route) {
-      throw Object.assign(
-        new Error(`未找到远程 workspace session，sessionId=${params.remoteSessionId}`),
-        {
-          code: "REMOTE_SESSION_MISSING" as const,
-        },
-      );
-    }
-    if (route.attachmentState !== "attachable") {
-      throw Object.assign(new Error("远程 workspace source 当前离线"), {
-        code: "REMOTE_SESSION_OFFLINE" as const,
-      });
-    }
-    const win = BrowserWindow.fromId(params.windowId);
-    if (!win || win.webContents.id !== route.webContentsId) {
-      throw Object.assign(new Error("远程 workspace session 不属于当前窗口"), {
-        code: "REMOTE_SESSION_WINDOW_MISMATCH" as const,
-      });
-    }
-    const descriptor = route.descriptor;
-    if (
-      descriptor.workspacePath !== params.workspacePath ||
-      descriptor.workspaceIdentity !== params.workspaceIdentity ||
-      params.workspaceKey !== params.workspaceIdentity
-    ) {
-      throw Object.assign(new Error("远程 workspaceKey 与 logical session 不匹配。"), {
-        code: "REMOTE_WORKSPACE_IDENTITY_MISMATCH" as const,
-      });
-    }
-    const process = getWindowHost(win);
-    const { port1, port2 } = createMessageChannel();
-    process.postMessage(
-      {
-        type: HostMessageTypes.AttachServicePort,
-        requestId: randomUUID(),
-        attachmentId: randomUUID(),
-        clientMode: params.clientMode,
-        scope: {
-          kind: "remote",
-          remoteSessionId: params.remoteSessionId,
-          workspacePath: params.workspacePath,
-          workspaceIdentity: params.workspaceIdentity,
-        },
-      },
-      [port2],
-    );
-    return { process, port: port1, remoteKind: descriptor.target.kind };
-  }
-
-  function prepareProjectWorkspace(
-    win: BrowserWindow,
-    request: HostProjectWorkspaceNavigationInput,
-    requestId: string = randomUUID(),
-  ): Promise<HostPreparedProjectWorkspace> {
-    if (appShutdownStarted || win.isDestroyed() || win.webContents.isDestroyed())
-      return Promise.reject(new Error("窗口已关闭，项目导航已取消"));
-    const child = getWindowHost(win);
-    const key = requestKey(win.webContents.id, requestId);
-    if (pendingProjectNavigations.has(key))
-      return Promise.reject(new Error("项目导航 requestId 重复"));
-    return new Promise((resolve, reject) => {
-      pendingProjectNavigations.set(key, { child, win, requestId, resolve, reject });
-      try {
-        child.postMessage({
-          type: HostMessageTypes.PrepareProjectWorkspace,
-          requestId,
-          ...request,
-          clientMode: "web-remote-replayable",
-        });
-      } catch (error) {
-        pendingProjectNavigations.delete(key);
-        reject(error);
-      }
-    });
-  }
-
   return {
-    prepareProjectWorkspace,
     createRemoteWorkspaceSession,
-    attachRemoteWorkspaceSessionHost,
     bindRemoteWorkspaceSessionContext,
     confirmRendererAttachmentReady,
     reattachRemoteWorkspaceSessionsForWindow,
@@ -1592,8 +1332,6 @@ export function createRemoteWorkspaceSessionManager(options: {
     disposeAllAndWaitForAppShutdown: async (_reason: string) => {
       appShutdownStarted = true;
       const error = new Error("应用正在退出，远程连接已取消");
-      for (const pending of pendingProjectNavigations.values()) pending.reject(error);
-      pendingProjectNavigations.clear();
       for (const pending of pendingByRequestKey.values()) pending.reject(error);
       pendingByRequestKey.clear();
       for (const pending of pendingWorkspaceBindsByRequestKey.values()) {

@@ -25,7 +25,6 @@ modules:
       - packages/services/src/session/contract.ts
       - packages/services/src/session/taskIndexRepo.ts
       - packages/services/src/session/automationRepo.ts
-      - packages/services/src/session/offPeakTaskRepo.ts
       - packages/services/src/session/tasksDatabase/migrations.ts
       - packages/services/src/session/tasksDatabase/prepared.ts
     owner: conversation
@@ -49,9 +48,7 @@ modules:
   - id: ui
     roots: [packages/ui/src]
     managed: false
-  - id: web
-    roots: [packages/web/src]
-    managed: false
+
   - id: desktop
     roots: [packages/desktop/src]
     managed: false
@@ -132,7 +129,6 @@ modules:
       - shared
       - ui
       - conversation-workspace-target
-      - web-remote-control-ui
       - remote-connection-flow
     publicEntrypoints:
       - packages/ui/src/project-sidebar/index.tsx
@@ -214,19 +210,7 @@ modules:
       contract: contract.ts
       app: .
     owner: conversation
-  # project-workspace-navigation：由 architecture:adopt 登记
-  - id: project-workspace-navigation
-    roots:
-      - packages/services/src/project-workspace-navigation
-    managed: true
-    requires: [project, project-catalog, remote-projects, shared]
-    publicEntrypoints:
-      - packages/services/src/project-workspace-navigation/index.ts
-      - packages/services/src/project-workspace-navigation/contract.ts
-    layers:
-      contract: contract.ts
-      app: .
-    owner: conversation
+
   # conversation-workspace-target：由 architecture:adopt 登记
   - id: conversation-workspace-target
     roots:
@@ -410,129 +394,10 @@ modules:
     layers:
       app: .
     owner: conversation
-  # web-remote-relay：由 architecture:adopt 登记
-  - id: web-remote-relay
-    roots:
-      - packages/shared/src/web-remote-relay
-    managed: true
-    requires: []
-    publicEntrypoints:
-      - packages/shared/src/web-remote-relay/index.ts
-      - packages/shared/src/web-remote-relay/contract.ts
-    layers:
-      contract: contract.ts
-      domain: domain
-      adapters: .
-    owner: remote
-    layerOrder:
-      - contract
-      - domain
-      - app
-      - adapters
-      - ui
-  # desktop-web-remote-relay：由 architecture:adopt 登记
-  - id: desktop-web-remote-relay
-    roots:
-      - packages/desktop/src/main/web-remote-relay
-    managed: true
-    requires:
-      - client
-      - desktop
-      - shared
-      - web-remote-relay
-    publicEntrypoints:
-      - packages/desktop/src/main/web-remote-relay/index.ts
-      - packages/desktop/src/main/web-remote-relay/contract.ts
-    layers:
-      contract: contract.ts
-      adapters: .
-    owner: remote
-    layerOrder:
-      - contract
-      - domain
-      - app
-      - adapters
-      - ui
-  # mobile-ui：由 architecture:adopt 登记
-  - id: mobile-ui
-    roots:
-      - packages/ui/src/components/mobile-ui
-    managed: true
-    requires:
-      - ui
-    publicEntrypoints:
-      - packages/ui/src/components/mobile-ui/index.ts
-      - packages/ui/src/components/mobile-ui/contract.ts
-      - packages/ui/src/components/mobile-ui/DevicePlatformIcon.tsx
-      - packages/ui/src/components/mobile-ui/ZCodeAppLogo.tsx
-      - packages/ui/src/components/mobile-ui/bottom-sheet.tsx
-    layers:
-      contract: contract.ts
-      ui: .
-    owner: remote
-    layerOrder:
-      - contract
-      - domain
-      - app
-      - adapters
-      - ui
-  # web-remote-control-ui：由 architecture:adopt 登记
-  - id: web-remote-control-ui
-    roots:
-      - packages/ui/src/web-remote-control
-    managed: true
-    requires:
-      - mobile-ui
-      - services
-      - shared
-      - ui
-    publicEntrypoints:
-      - packages/ui/src/web-remote-control/index.ts
-      - packages/ui/src/web-remote-control/contract.ts
-      - packages/ui/src/web-remote-control/WebRemoteControlDeviceHeader.tsx
-      - packages/ui/src/web-remote-control/app/useWebRemoteControlAuthSync.ts
-    layers:
-      contract: contract.ts
-      domain: domain
-      app: app
-      ui: .
-    owner: remote
-    layerOrder:
-      - contract
-      - domain
-      - app
-      - adapters
-      - ui
-  # web-remote-control：由 architecture:adopt 登记
-  - id: web-remote-control
-    roots:
-      - packages/web/src/web-remote-control
-    managed: true
-    requires:
-      - client
-      - mobile-ui
-      - shared
-      - ui
-      - web
-      - web-remote-relay
-    publicEntrypoints:
-      - packages/web/src/web-remote-control/index.ts
-      - packages/web/src/web-remote-control/contract.ts
-      - packages/web/src/web-remote-control/views.ts
-      - packages/web/src/web-remote-control/adapters/webRemoteControlThemeSeed.ts
-    layers:
-      contract: contracts
-      domain: domain
-      app: app
-      adapters: adapters
-      ui: ui
-    owner: remote
-    layerOrder:
-      - contract
-      - domain
-      - app
-      - adapters
-      - ui
+
+
+
+
 
   # 保留既有源码位置；精确登记源文件，不扩大到整个 CLI 或 handlers 目录。
   - id: cli-arguments
@@ -637,28 +502,6 @@ modules:
     layers:
       adapters: .
     owner: conversation
-  # conversation-share-interaction：由 architecture:adopt 登记
-  - id: conversation-share-interaction
-    roots:
-      - packages/ui/src/conversation-share-interaction
-    managed: true
-    requires:
-      - services
-      - shared
-      - ui
-    publicEntrypoints:
-      - packages/ui/src/conversation-share-interaction/index.ts
-      - packages/ui/src/conversation-share-interaction/contract.ts
-      - packages/ui/src/conversation-share-interaction/ConversationSharePopover.tsx
-      - packages/ui/src/conversation-share-interaction/ConversationSharePreflightStatus.tsx
-      - packages/ui/src/conversation-share-interaction/conversationSharePopoverActions.ts
-      - packages/ui/src/conversation-share-interaction/conversationSharePreflightRequest.ts
-      - packages/ui/src/conversation-share-interaction/conversationSharePreflightResponse.ts
-    layers:
-      contract: contract.ts
-      ui: .
-    owner: conversation
-
   # workspace-plugin-preview：由 architecture:adopt 登记
   - id: workspace-plugin-preview
     roots:
@@ -701,22 +544,6 @@ modules:
       - packages/desktop/src/main/embedded-browser-permission-contract/contract.ts
     layers:
       adapters: .
-    owner: desktop
-  # marketing-touch-controller：由 architecture:adopt 登记
-  - id: marketing-touch-controller
-    roots:
-      - packages/ui/src/marketing-touch-contract
-      - packages/ui/src/components/marketing-touch/marketingTouchController.ts
-    managed: true
-    requires:
-      - services
-      - shared
-      - ui
-    publicEntrypoints:
-      - packages/ui/src/components/marketing-touch/marketingTouchController.ts
-      - packages/ui/src/marketing-touch-contract/contract.ts
-    layers:
-      app: .
     owner: desktop
   # side-pane-full-view：由 architecture:adopt 登记
   - id: side-pane-full-view
@@ -833,13 +660,6 @@ exceptions:
   - id: workflow-share-unmanaged-new-files
     rule: unmanaged-new-file
     paths:
-      - packages/services/src/conversation-share/conversationShareInlineImages.ts
-      - packages/services/src/conversation-share/conversationShareWorkflowSnapshot.ts
-      - packages/shared/src/conversation-share-content.ts
-      - packages/shared/src/conversation-share-tool-presentation.ts
-      - packages/ui/src/v4/ConversationShareContent.tsx
-      - packages/ui/src/v4/ConversationShareWorkflow.tsx
-      - packages/ui/src/v4/conversationShareItems.ts
       - packages/ui/src/ToolCallBlocks/ToolPresentation.tsx
       - packages/ui/src/ToolCallBlocks/presentationCapabilities.tsx
       - packages/ui/src/ToolCallBlocks/renderers/list-models.tsx
@@ -849,7 +669,7 @@ exceptions:
       - packages/ui/src/chat-input-toolbar/thoughtLevelLabels.ts
       - packages/ui/src/components/workflow-timeline/subagent-model-label.ts
       - packages/desktop/src/main/fileApplications.ts
-    reason: Feature-branch files admitted path-exact; adopting conversation-share, tool presentation or renderer directories needs a separate module boundary refactor (same pattern as settings-machine-unmanaged-edit).
+    reason: Feature-branch files admitted path-exact; adopting tool presentation or renderer directories needs a separate module boundary refactor (same pattern as settings-machine-unmanaged-edit).
   - id: workflow-notifications-unmanaged-files
     rule: unmanaged-new-file
     paths:

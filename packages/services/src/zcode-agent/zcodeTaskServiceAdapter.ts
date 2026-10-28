@@ -131,10 +131,7 @@ import type {
   ZCodeTaskTerminalOutcome,
 } from "../session/zcodeTaskService.js";
 import { createServiceLogger } from "#src/logger/serviceLogger.js";
-import {
-  AUTOMATION_MUTATION_TOOL_NAMES,
-  OFF_PEAK_MUTATION_TOOL_NAMES,
-} from "#src/zcode-agent/automationToolPolicy.js";
+import { AUTOMATION_MUTATION_TOOL_NAMES } from "#src/zcode-agent/automationToolPolicy.js";
 import type { ISettingService } from "#src/setting/setting.js";
 import type {
   SessionMessageDeliveryResult,
@@ -308,7 +305,6 @@ export function createZCodeTaskServiceAdapter(
 
   function resolvePromptToolDenylist(params: {
     automationId?: string;
-    offPeakTaskId?: string;
     toolDenylist?: string[];
   }): string[] | undefined {
     const toolDenylist = new Set(params.toolDenylist);
@@ -320,12 +316,6 @@ export function createZCodeTaskServiceAdapter(
         toolDenylist.add(toolName);
       }
     }
-    // 闲时派发轮纵深隐藏 OffPeakCreate；不与 automation 分支合并（cron 轮放行）。
-    if (params.offPeakTaskId) {
-      for (const toolName of OFF_PEAK_MUTATION_TOOL_NAMES) {
-        toolDenylist.add(toolName);
-      }
-    }
     return toolDenylist.size > 0 ? [...toolDenylist] : undefined;
   }
 
@@ -333,12 +323,6 @@ export function createZCodeTaskServiceAdapter(
     params: ZCodeBackgroundTurnAttribution,
   ): ZCodeBackgroundTurnAttribution {
     if (params.automationId) return { automationId: params.automationId };
-    if (params.offPeakTaskId) {
-      return {
-        offPeakTaskId: params.offPeakTaskId,
-        ...(params.offPeakRunType ? { offPeakRunType: params.offPeakRunType } : {}),
-      };
-    }
     return {};
   }
 
@@ -1830,8 +1814,6 @@ export function createZCodeTaskServiceAdapter(
       const meta = await updateIndexedPresentation({
         ...baseMeta,
         ...(params.automationId ? { cronAutomationId: params.automationId } : {}),
-        // 闲时派发在创建时即盖章持久归属；月亮图标与后续系统分组归属都只看该标记。
-        ...(params.offPeakTaskId ? { offPeakTaskId: params.offPeakTaskId } : {}),
       });
 
       notifySyncerSession({
@@ -2463,8 +2445,6 @@ export function createZCodeTaskServiceAdapter(
         const meta = await updateIndexedPresentation({
           ...restored.snapshot.meta,
           ...(params.automationId ? { cronAutomationId: params.automationId } : {}),
-          // D48：pre-打点会话被闲时续跑恢复时补写归属；backfill 之外的双保险。
-          ...(params.offPeakTaskId ? { offPeakTaskId: params.offPeakTaskId } : {}),
         });
         // 打开/恢复任务是快照收敛，不涉及归属，与 resumeSession 广播同语义。
         emitWorkspaceTaskListChanged(params, meta, "task_status_changed");
@@ -2473,15 +2453,12 @@ export function createZCodeTaskServiceAdapter(
       const snapshot = restored.snapshot;
       emitWorkspaceConfig(params, snapshot.settings);
       const snapshotMeta = await syncTaskIndexSnapshot(snapshot);
-      const meta =
-        params.automationId || params.offPeakTaskId
-          ? await updateIndexedPresentation({
-              ...snapshotMeta,
-              ...(params.automationId ? { cronAutomationId: params.automationId } : {}),
-              // 续跑时补写闲时归属标记。
-              ...(params.offPeakTaskId ? { offPeakTaskId: params.offPeakTaskId } : {}),
-            })
-          : snapshotMeta;
+      const meta = params.automationId
+        ? await updateIndexedPresentation({
+            ...snapshotMeta,
+            ...(params.automationId ? { cronAutomationId: params.automationId } : {}),
+          })
+        : snapshotMeta;
       notifySyncerSession({
         taskId: meta.taskId,
         workspacePath: meta.workspacePath,

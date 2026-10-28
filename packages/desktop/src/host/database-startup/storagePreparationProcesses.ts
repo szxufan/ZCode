@@ -93,7 +93,6 @@ export async function prepareSessionStorage(options: {
   const command = resolveDefaultZCodeAgentCommand({
     workspacePath: options.cwd,
     workspaceKey: options.cwd,
-    presentationSurface: "desktop",
   });
   if (!command?.supportsStorageStartup || !command.storagePreparationEntry)
     throw statusError("unsupported_runtime");

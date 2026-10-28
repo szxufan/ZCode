@@ -17,7 +17,7 @@ import { createFileService } from "../../services/src/file/fileService.js";
 import { prepareRemoteWorkspaceIdentity } from "../src/host/remoteWorkspacePreparation.js";
 import { createHttpServer } from "@zcode/server";
 import { createTopicResourcePeers, createTopicResourceRelayChannel } from "@zcode/services/node";
-import { connectViaProtocol, connectViaWebSocket } from "@zcode/client";
+import { connectViaProtocol } from "@zcode/client";
 import {
   connectServerRemote,
   connectServerRemoteOverDuplex,
@@ -428,26 +428,6 @@ describe("server remote connection", () => {
       deliveryProfile: "continuous",
     });
     expect(requestedPaths).toEqual(["/api/server-info", "/api/rpc-host-capability"]);
-    let browserSocket: WebSocket | undefined;
-    const browserServices = await connectViaWebSocket(`ws://127.0.0.1:${address.port}/ws`, {
-      onOpenSocket: (socket) => (browserSocket = socket),
-    });
-    await expect(browserServices.zcodeAgentService.helloConversationV4()).resolves.toMatchObject({
-      clientMode: "web-remote-replayable",
-      deliveryProfile: "replayable",
-    });
-    browserSocket?.close();
-
-    const legacyHeaderConnection = await connectNodeRpc(`ws://127.0.0.1:${address.port}/ws`, {
-      "x-zcode-rpc-client-mode": "desktop-continuous",
-    });
-    await expect(
-      legacyHeaderConnection.services.zcodeAgentService.helloConversationV4(),
-    ).resolves.toMatchObject({
-      clientMode: "web-remote-replayable",
-      deliveryProfile: "replayable",
-    });
-    legacyHeaderConnection.socket.close();
     expect(info).toHaveBeenCalledOnce();
   });
 

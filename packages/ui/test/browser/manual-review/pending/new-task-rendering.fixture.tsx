@@ -19,7 +19,6 @@ import "@/styles.css";
 
 const params = new URLSearchParams(location.search);
 const theme = params.get("theme") === "dark" ? "dark" : "light";
-const mobile = params.get("mobile") === "1";
 const activity = params.get("activity") === "1";
 const tooltips = params.get("tooltips") === "1";
 document.documentElement.className = `${theme} theme-zai-${theme}`;
@@ -119,8 +118,7 @@ useZCodeSessionStore.getState().setActiveTaskId("/example", "old-session");
 const common = {
   workspacePath: "/example",
   theme,
-  isDesktop: !mobile,
-  isWebRemoteControl: mobile,
+  isDesktop: true,
   onSelectTask: noop,
   onStartDraftInWorkspace: noop,
   onOpenFolderFromWorkspaceMenu: noop,
@@ -151,13 +149,7 @@ const actions = {
   updateAppSettings: async () => {},
   setOAuthError: noop,
   setUser: noop,
-  workbenchGroupClientMode: mobile
-    ? ("web-remote-replayable" as const)
-    : ("desktop-continuous" as const),
-  // 手机 bridge 只模拟导航完成；Renderer 仍走实际 replayable 分支。
-  openMobileProjectDraft: async () => {
-    useZCodeSessionStore.getState().startDraft("/example");
-  },
+  workbenchGroupClientMode: "desktop-continuous" as const,
 };
 function Controls() {
   const directory = useOptionalProjectDirectory()!;
@@ -227,7 +219,7 @@ function Fixture() {
     services,
     platform: actions.platform,
     supportsSettings: false,
-    isDesktop: !mobile,
+    isDesktop: true,
     allowRemoteWorkspace: false,
     tabStoreApi: actions.tabStoreApi,
     activateTabByPath: activate,
@@ -238,7 +230,7 @@ function Fixture() {
     openRemoteProjectWorkspace: async () => {},
   });
   return (
-    <ProjectDirectoryProvider isDesktop={!mobile}>
+    <ProjectDirectoryProvider isDesktop={true}>
       <div className="flex h-screen bg-background text-foreground">
         <div className="w-64 shrink-0 bg-sidebar">
           <ProjectSidebar

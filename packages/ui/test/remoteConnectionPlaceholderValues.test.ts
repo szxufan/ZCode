@@ -42,9 +42,6 @@ vi.mock("@/hooks/usePlatform.js", () => ({
   usePlatform: () => ({}),
 }));
 
-vi.mock("@/feedback/feedbackStore.js", () => ({
-  useFeedbackStore: (selector: (state: unknown) => unknown) => selector({ openSubmit: vi.fn() }),
-}));
 
 import { RemoteConnectionDirectoryStep } from "@/RemoteConnectionDialogContent.js";
 import { RemoteConnectionConnectingStep } from "@/remote-connection/RemoteConnectionConnectingStep.js";

@@ -26,11 +26,6 @@ it("MRO03 pending与formal保持普通上下文，显式compact用例仍用小�
     ...unrelated,
     `const autoCompactSpec = ${auto}; return ${window};`,
   ) as (specs: string[], override: undefined, ...flags: boolean[]) => number;
-  for (const path of [
-    "./test/e2e/conversation-session/manual-review/pending/conversation-session-web-remote-unread.test.ts",
-    "./test/e2e/conversation-session/conversation-session-web-remote-unread.test.ts",
-  ])
-    expect(readWindow([path], undefined, ...unrelated.map(() => false))).toBe(128000);
   expect(
     readWindow(
       ["./test/e2e/conversation-session/conversation-session-compact-auto.test.ts"],

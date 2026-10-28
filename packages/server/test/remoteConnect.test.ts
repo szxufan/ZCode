@@ -134,17 +134,6 @@ describe("connectRemote", () => {
       connection.dispose();
     }
   });
-  it("透传 Desktop SP 灰度结果到远端 server，但不透传未列入白名单的变量", () => {
-    expect(
-      pickRemoteRuntimeEnv({
-        ZCODE_DESKTOP_CONTEXT_PROMPT_ENABLED: "1",
-        ZCODE_OAUTH_TOKEN: "secret",
-      }),
-    ).toEqual({
-      ZCODE_DESKTOP_CONTEXT_PROMPT_ENABLED: "1",
-    });
-  });
-
   // DWG-06（docs/dynamic-workflow/launch.md「Gray release」）：Dynamic Workflow 的档位由
   // Desktop Main 写定，远端 Host 必须拿到同一个值，preview 包的远程工作区才与本地一致。
   it("透传 Desktop Main 写定的 Dynamic Workflow 灰度档位", () => {

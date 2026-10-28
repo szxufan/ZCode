@@ -81,19 +81,4 @@ it("回调与项目身份变化不能被 memo 忽略，新建始终使用当前�
   fireEvent.click(getByText("Create"));
   expect(props.onCreateTask).not.toHaveBeenCalled();
   expect(latestCreate).toHaveBeenLastCalledWith({ projectId: "p", taskGroupId: null });
-  const project = { ...props.project, id: "remote-p", hostId: "remote:server:example" };
-  rerender(
-    createElement(ProjectSidebarNode, {
-      ...props,
-      project,
-      isWebRemoteControl: true,
-      onCreateTask: latestCreate,
-    }),
-  );
-  fireEvent.click(getByText("Create"));
-  expect(latestCreate).toHaveBeenLastCalledWith({
-    projectId: "remote-p",
-    hostId: "remote:server:example",
-    taskGroupId: null,
-  });
 });

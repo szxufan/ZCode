@@ -526,33 +526,6 @@ describe("desktopWindowChrome", () => {
     expect(windowOptions).not.toHaveProperty("backgroundMaterial");
   });
 
-  it("keeps Rewards navigation inside the trusted page boundary", async () => {
-    const { createBrowserWindow } = await import("../src/main/desktopWindowChrome.js");
-    createBrowserWindow({
-      iconPath: "icon.png",
-      preloadPath: "preload.js",
-      logger: { warn: vi.fn() },
-    });
-    getWebContentsHandler("will-attach-webview")(
-      { preventDefault: vi.fn() },
-      {},
-      { src: "https://zcode.z.ai/en/rewards?embedded=app" },
-    );
-    const guest = {
-      on: vi.fn(),
-      getURL: vi.fn(() => "about:blank"),
-      setWindowOpenHandler: vi.fn(),
-    };
-    getWebContentsHandler("did-attach-webview")({}, guest);
-    const navigate = guest.on.mock.calls.find(([event]) => event === "will-navigate")?.[1];
-    const event = { preventDefault: vi.fn() };
-    navigate(event, "https://zcode.z.ai/cn/rewards?embedded=app");
-    expect(event.preventDefault).not.toHaveBeenCalled();
-    navigate(event, "https://example.com/");
-    expect(event.preventDefault).toHaveBeenCalledOnce();
-    expect(electronMocks.shellOpenExternal).toHaveBeenCalledWith("https://example.com/");
-  });
-
   it("routes normal webview popup requests into an in-app browser tab", async () => {
     const { createBrowserWindow } = await import("../src/main/desktopWindowChrome.js");
 

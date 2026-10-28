@@ -103,12 +103,9 @@ describe("desktop e2e startup credentials", () => {
       }),
     ).toEqual({});
   });
-  it.each([
-    "conversation-session-offpeak-subagent-model-inheritance.test.ts",
-    "conversation-session-off-peak-invalid-ticket.test.ts",
-    "coding-plan-upgrade-webview-refresh-provider.test.ts",
-    "marketing-touch-rewards.test.ts",
-  ])("%s 保留本地 Start 余额/请求鉴权所需 JWT", (spec) => {
+  it.each(["coding-plan-upgrade-webview-refresh-provider.test.ts"])(
+    "%s 保留本地 Start 余额/请求鉴权所需 JWT",
+    (spec) => {
     expect(
       createE2EStartupCredentialSeed({
         specs: [spec],
@@ -155,8 +152,6 @@ describe("desktop e2e startup credentials", () => {
     "conversation-session-project-settings-return.test.ts",
     "conversation-session-background-connection.test.ts",
     "conversation-session-remote-project-handoff.test.ts",
-    "conversation-session-web-remote-project-directory.test.ts",
-    "conversation-session-web-remote-unread.test.ts",
 
     "conversation-session-existing-remote-project.test.ts",
     "conversation-session-chat-device-return.test.ts",
@@ -218,7 +213,7 @@ describe("desktop e2e startup credentials", () => {
   it("Start Plan 手动领取 spec 保留调用 claim API 所需的 zcode JWT", () => {
     expect(
       createE2EStartupCredentialSeed({
-        specs: ["/repo/packages/desktop/test/e2e/ui-shell/marketing-touch-entitlement.test.ts"],
+        specs: ["start-plan-manual-claim-experience.test.ts"],
         legacyAuthToken: "fake-auth-token",
         restoredOAuthCredentials,
       }),
