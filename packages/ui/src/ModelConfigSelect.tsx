@@ -247,11 +247,10 @@ export const ModelConfigSelect = memo(function ModelConfigSelectComponent({
     presentation.current.composerOptions?.providerMenu
   ) {
     // 原因：账号刷新和草稿解析分别到达，混用新选项与旧选中值会让菜单收缩并显示“—”。
-    // loading 期间只冻结展示；回调和 pending/error 仍来自当前 owner，不影响提交事实。
+    // loading 期间只冻结展示；pending/error 仍来自当前 owner，不影响提交事实。
     const previous = presentation.current;
     composerOptions = {
       ...previous.composerOptions!,
-      onValueChange: composerOptions.onValueChange,
       providerMenu: {
         ...composerOptions.providerMenu,
         groups: previous.composerOptions!.providerMenu!.groups,
@@ -674,7 +673,7 @@ export const ModelConfigSelect = memo(function ModelConfigSelectComponent({
         <DropdownMenuContent
           className={cn(
             composerOptions
-              ? // 外层滚动会带走供应商和 Effort；只让 Models 列表收缩，且排除窗口拖拽命中。
+              ? // 外层滚动会带走供应商行和 Models 标题；只让模型列表收缩，且排除窗口拖拽命中。
                 "w-72 overflow-y-hidden [app-region:no-drag] [&>*:not([data-composer-model-list]):not([data-composer-provider-list])]:shrink-0"
               : shouldShowProviderLevel
                 ? "w-max min-w-48 max-w-[calc(100vw-2rem)]"

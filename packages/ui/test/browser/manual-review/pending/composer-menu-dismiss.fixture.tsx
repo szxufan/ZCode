@@ -28,7 +28,6 @@ const groups = [
 
 function Composer() {
   const [model, setModel] = useState("one");
-  const [effort, setEffort] = useState("high");
   const { reportComposerDockHeight } = useConversationPanePresentation();
   useEffect(() => reportComposerDockHeight(56), [reportComposerDockHeight]);
   return (
@@ -48,14 +47,13 @@ function Composer() {
         composerOptions={{
           providerLabel: "Provider",
           modelsLabel: "Models",
-          effortLabel: "Effort",
           selectModelLabel: "Select model",
+          // 触发器档位展示保留；菜单内已无 Effort 设置，档位调整走独立思考控件。
           levels: [
             { value: "low", label: "Low" },
             { value: "high", label: "High" },
           ],
-          value: effort,
-          onValueChange: setEffort,
+          value: "high",
         }}
       />
       <output data-testid="selection" hidden>

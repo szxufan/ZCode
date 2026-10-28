@@ -184,10 +184,6 @@ for (const surface of ["electron", "mobile"])
         await page.getByRole("menuitemradio", { name: "Provider B", exact: true }).click();
         assert.equal(await page.getByTestId("selection").textContent(), "three");
         assert.equal(await trigger.getAttribute("aria-expanded"), "true");
-        await page.getByRole("slider").focus();
-        await page.keyboard.press("Home");
-        assert.equal(await page.getByRole("slider").getAttribute("aria-valuetext"), "Low");
-        assert.equal(await trigger.getAttribute("aria-expanded"), "true");
         await page.screenshot({ path: join(artifacts, `${surface}-${theme}.png`) });
         await page.keyboard.press("Escape");
         await closed();

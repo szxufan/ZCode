@@ -29,6 +29,7 @@ import {
 } from "./helpers/desktop-app.js";
 import { waitForProviderConfigPolling } from "./helpers/provider-config-polling.js";
 import { selectRegistryProviderModelById, UPSTREAM_MODEL } from "./helpers/upstream-provider.js";
+import { selectComposerThoughtLevel } from "./helpers/composer-model-picker.js";
 import { seedPersistedModelSelection } from "./helpers/model-provider-restart.js";
 import { sel } from "./helpers/selectors.js";
 import { skipOccupationOnboardingIfPresent } from "./helpers/occupation-onboarding.js";
@@ -706,27 +707,26 @@ describe("Team Plan 设置与使用统计 E2E", () => {
     await connection.waitForDisplayed({ timeout: 15000 });
     expect(await $('[data-testid="composer-provider-trigger"]').getText()).toContain("BigModel");
     expect(await $('[data-testid="composer-connection-trigger"]').isExisting()).toBe(false);
-    const slider = $('[data-testid="composer-thought-slider"]');
-    await slider.waitForDisplayed({ timeout: 10000 });
-    await slider.click();
-    await browser.keys("Home");
-    await browser.keys("ArrowRight");
+    const modelConfig = $(sel(TID_V4_MODEL_CONFIG));
+    // 思考档位调整已收敛到独立思考控件；连接切换采样前先切到一个非当前档位。
     await browser.waitUntil(
-      async () => Boolean(await $(sel(TID_V4_MODEL_CONFIG)).getAttribute("data-thought")),
-      { timeout: 10000 },
+      async () => ((await modelConfig.getAttribute("data-thought-levels")) ?? "").includes(","),
+      { timeout: 15000, timeoutMsg: "当前模型没有多档思考目录可供切换" },
     );
-    const chosenThought = await $(sel(TID_V4_MODEL_CONFIG)).getAttribute("data-thought");
+    const thoughtLevels = ((await modelConfig.getAttribute("data-thought-levels")) ?? "").split(",");
+    const currentThought = await modelConfig.getAttribute("data-thought");
+    const chosenThought = thoughtLevels.find((level) => level && level !== currentThought);
+    expect(chosenThought).toBeTruthy();
+    expect(await selectComposerThoughtLevel(chosenThought!)).toBe(true);
     await browser.execute(() => {
       const samples: unknown[] = [];
       const record = () => {
         const config = document.querySelector('[data-testid="v4-model-config"]');
-        const slider = document.querySelector('[data-testid="composer-thought-slider"]');
         samples.push({
           at: performance.now(),
           provider: config?.getAttribute("data-provider"),
           thought: config?.getAttribute("data-thought"),
           levels: config?.getAttribute("data-thought-levels"),
-          effort: slider?.getAttribute("aria-valuetext"),
           title: document.querySelector('[data-testid="composer-provider-trigger"]')?.textContent,
           loading: Boolean(document.querySelector('[data-testid="composer-provider-loading"]')),
           busy: document
@@ -861,9 +861,9 @@ describe("Team Plan 设置与使用统计 E2E", () => {
         const read = () =>
           JSON.stringify({
             models: document.querySelector("[data-composer-model-list]")?.textContent,
-            effort: document
-              .querySelector('[data-testid="composer-thought-slider"]')
-              ?.getAttribute("aria-valuetext"),
+            thought: document
+              .querySelector('[data-testid="v4-model-config"]')
+              ?.getAttribute("data-thought"),
           });
         let previous = read();
         const probe = {
@@ -914,9 +914,6 @@ describe("Team Plan 设置与使用统计 E2E", () => {
         { timeout: 15000 },
       );
       expect(await $(sel(TID_V4_MODEL_CONFIG)).getAttribute("data-thought")).not.toBe("");
-      expect(
-        await $('[data-testid="composer-thought-slider"]').getAttribute("aria-valuetext"),
-      ).not.toContain("—");
       const probe = await browser.execute(() => {
         const probe = (window as any).__connectionLoadingProbe;
         probe.stop();
@@ -940,10 +937,6 @@ describe("Team Plan 设置与使用统计 E2E", () => {
   it("CTP-21: 调思考后解析未返回时选模型不能留下空档位", async function () {
     this.timeout(120000);
     await prepareScenario("both", PERSONAL_PLAN_KEY);
-    const trigger = $(sel(TID_CHAT_MODEL_SELECT_TRIGGER));
-    await trigger.waitForClickable({ timeout: 30000 });
-    await trigger.click();
-    await $('[data-testid="composer-thought-slider"]').waitForDisplayed();
     // 挂起真实 Renderer -> Host 的下一次选择读取，确定性覆盖用户连续操作窗口。
     await browser.execute(() => {
       const element = document.querySelector('[data-testid="v4-model-config"]')!;
@@ -975,9 +968,15 @@ describe("Team Plan 设置与使用统计 E2E", () => {
       });
     });
     try {
-      const slider = $('[data-testid="composer-thought-slider"]');
-      await slider.click();
-      await browser.keys("Home");
+      const modelConfig = $(sel(TID_V4_MODEL_CONFIG));
+      const thoughtLevels = ((await modelConfig.getAttribute("data-thought-levels")) ?? "")
+        .split(",")
+        .filter(Boolean);
+      const currentThought = await modelConfig.getAttribute("data-thought");
+      const targetLevel = thoughtLevels.find((level) => level !== currentThought);
+      expect(targetLevel).toBeTruthy();
+      // 调档改写 Selection 输入后读取进入 loading；独立思考控件触发同一链路。
+      expect(await selectComposerThoughtLevel(targetLevel!)).toBe(true);
       expect(await $('[data-testid="composer-provider-loading"]').isExisting()).toBe(false);
       await writeFile(
         join(process.env.ZCODE_E2E_ARTIFACT_DIR!, "reasoning-read-menu.json"),
@@ -991,6 +990,8 @@ describe("Team Plan 设置与使用统计 E2E", () => {
           2,
         ),
       );
+      // 读取挂起期间打开合并菜单并主动选模；completion 必须复用 loading.catalog 保留档位。
+      await $(sel(TID_CHAT_MODEL_SELECT_TRIGGER)).click();
       const flash = (await $$('[data-composer-model-list] [role="menuitemradio"]'))[1]!;
       await flash.click();
       await browser.waitUntil(
@@ -1001,7 +1002,6 @@ describe("Team Plan 设置与使用统计 E2E", () => {
     } finally {
       await browser.execute(() => (window as any).__releaseSelectionRead());
     }
-    await $('[data-testid="composer-thought-slider"]').waitForDisplayed();
     expect(await $(sel(TID_V4_MODEL_CONFIG)).getAttribute("data-thought")).not.toBe("");
     await browser.keys("Escape");
   });

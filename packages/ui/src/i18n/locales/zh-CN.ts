@@ -5407,7 +5407,6 @@ const zhCN: Record<string, string> = {
   "chat.toolbar.connection.switchFailed": "切换连接失败，请重新选择后重试。",
   "chat.toolbar.combined.provider": "供应商",
   "chat.toolbar.combined.models": "模型",
-  "chat.toolbar.combined.effort": "思考强度",
   "chat.toolbar.combined.selectModel": "选择模型",
   "chat.toolbar.model.label": "选择模型",
   "chat.toolbar.draftConfigWriteFailed": "配置修改失败，请重试",

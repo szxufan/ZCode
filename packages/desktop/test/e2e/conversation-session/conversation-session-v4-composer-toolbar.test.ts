@@ -16,7 +16,6 @@ import {
 } from "../helpers/desktop-app.js";
 import {
   UPSTREAM_PROVIDER_ID,
-  UPSTREAM_MODEL,
   UPSTREAM_SECONDARY_MODEL,
   UPSTREAM_ALTERNATE_PROVIDER_ID,
   UPSTREAM_ALTERNATE_MODEL,
@@ -48,9 +47,6 @@ import {
   waitForV4SlashOption,
   waitForV4TimelineContaining,
 } from "../helpers/v4-conversation.js";
-
-import { seedPersonalProviderConfig } from "../helpers/model-provider-restart-config.js";
-import { waitForProviderConfigPolling } from "../helpers/provider-config-polling.js";
 
 const CUSTOM_SLASH_COMMAND_NAME = "e2e-draft-catalog";
 const CUSTOM_SLASH_OPTION_ID = `slash:${CUSTOM_SLASH_COMMAND_NAME}`;
@@ -398,8 +394,10 @@ describe("v4 M5 门禁：composer 工具条与 slash 候选面板", () => {
     );
     await browser.waitUntil(
       async () => {
-        const slider = $('[data-testid="composer-thought-slider"]');
-        const levels = JSON.parse((await slider.getAttribute("data-levels")) ?? "[]") as string[];
+        const levels = (
+          (await $(`[data-testid="${TID_V4_MODEL_CONFIG}"]`).getAttribute("data-thought-levels")) ??
+          ""
+        ).split(",");
         return levels.includes((await getV4ModelConfig()).thought ?? "");
       },
       { timeout: 15000, timeoutMsg: "Provider 切换后 Think 没有同步为有效档位" },
@@ -489,8 +487,9 @@ describe("v4 M5 门禁：composer 工具条与 slash 候选面板", () => {
 
   it("合并模型/思考弹层与模式 picker 互斥", async () => {
     await ensureCompletedTask();
+    // 独立思考控件已恢复渲染并与合并菜单并存；档位调整收敛到该控件（去重后的唯一入口）。
     expect(await $(`[data-testid="${TID_CHAT_THOUGHT_LEVEL_SELECT_TRIGGER}"]`).isExisting()).toBe(
-      false,
+      true,
     );
     await openComposerPicker("mode");
     await waitForOnlyComposerPickerOpen("mode", "打开模式 picker");
@@ -534,38 +533,10 @@ describe("v4 M5 门禁：composer 工具条与 slash 候选面板", () => {
     expect(modelFonts.name).toBe(modelFonts.row);
     expect(await $('[data-testid="composer-thought-endpoints"]').isExisting()).toBe(false);
     expect(await $('[data-slot="dropdown-menu-label"]').getText()).toMatch(/Models|模型/);
-    expect(await $('[data-testid="composer-thought-slider"]').isDisplayed()).toBe(true);
-    const declaredLevels = JSON.parse(
-      (await $('[data-testid="composer-thought-slider"]').getAttribute("data-levels")) ?? "[]",
-    ) as string[];
-    expect(await $$("[data-composer-thought-stop]").length).toBe(declaredLevels.length);
-    expect(await $('[data-testid="composer-thought-track"]').isDisplayed()).toBe(true);
-    const trackGeometry = await browser.execute(() => {
-      const track = document.querySelector<HTMLElement>('[data-testid="composer-thought-track"]')!;
-      const fill = track.querySelector<HTMLElement>(".composer-thought-slider-fill")!;
-      return {
-        trackHeight: track.getBoundingClientRect().height,
-        fillHeight: fill.getBoundingClientRect().height,
-        topOffset: fill.getBoundingClientRect().top - track.getBoundingClientRect().top,
-        border: getComputedStyle(track).borderTopWidth,
-      };
-    });
-    expect(trackGeometry.border).toBe("0px");
-    expect(trackGeometry.topOffset).toBe(0);
-    expect(trackGeometry.fillHeight).toBe(trackGeometry.trackHeight);
-    const motion = await browser.execute(() => {
-      const thumb = document.querySelector(".composer-thought-slider-thumb")!;
-      const fill = document.querySelector(".composer-thought-slider-fill")!;
-      return {
-        reduced: matchMedia("(prefers-reduced-motion: reduce)").matches,
-        thumb: getComputedStyle(thumb).transitionDuration,
-        fill: getComputedStyle(fill).transitionDuration,
-        gradient: getComputedStyle(fill, "::before").transitionDuration,
-        gradientProperty: getComputedStyle(fill, "::before").transitionProperty,
-      };
-    });
-    expect(motion.thumb).toBe(motion.reduced ? "0s" : "0.12s");
-    expect(motion.fill).toBe(motion.thumb);
+    // 菜单内已无思考强度设置：不渲染滑杆、档位圆点或 Effort 快捷键。
+    expect(await $('[data-testid="composer-thought-slider"]').isExisting()).toBe(false);
+    expect(await $('[data-testid="composer-effort-shortcut"]').isExisting()).toBe(false);
+    expect(await $$("[data-composer-thought-stop]").length).toBe(0);
     const menuLayout = await browser.execute(() => {
       const list = document.querySelector<HTMLElement>("[data-composer-model-list]")!;
       const menu = list.closest('[role="menu"]')!;
@@ -615,40 +586,6 @@ describe("v4 M5 门禁：composer 工具条与 slash 候选面板", () => {
     expect(await combinedTrigger.$('[data-composer-trigger-frame="open"]').isExisting()).toBe(true);
     expect(await combinedTrigger.$("[data-composer-open-chevron]").isExisting()).toBe(false);
 
-    const shortcut = await $('[data-testid="composer-effort-shortcut"]');
-    expect(await shortcut.getText()).toMatch(/T/i);
-    const shortcutLayout = await browser.execute(() => {
-      const shortcut = document.querySelector<HTMLElement>(
-        '[data-testid="composer-effort-shortcut"]',
-      )!;
-      const value = document.querySelector<HTMLElement>('[data-testid="composer-thought-value"]')!;
-      const a = shortcut.getBoundingClientRect();
-      const b = value.getBoundingClientRect();
-      const row = shortcut.parentElement!.getBoundingClientRect();
-      return {
-        afterValue: a.left > b.right,
-        rightGap: row.right - a.right,
-        sameRow: Math.abs(a.top + a.height / 2 - (b.top + b.height / 2)) < 2,
-      };
-    });
-    expect(shortcutLayout.afterValue).toBe(true);
-    expect(shortcutLayout.rightGap).toBeLessThan(2);
-    expect(shortcutLayout.sameRow).toBe(true);
-    const shortcutStyle = await browser.execute(() => {
-      const element = document.querySelector('[data-testid="composer-effort-shortcut"]')!;
-      const style = getComputedStyle(element);
-      return {
-        background: style.backgroundColor,
-        radius: style.borderRadius,
-        height: style.height,
-      };
-    });
-    expect(shortcutStyle.background).not.toBe("rgba(0, 0, 0, 0)");
-    expect(shortcutStyle.radius).toBe("6px");
-    expect(shortcutStyle.height).toBe("16px");
-
-    expect(motion.gradient).toBe(motion.reduced ? "0s" : "0.2s");
-    if (!motion.reduced) expect(motion.gradientProperty).toBe("opacity");
     await closeComposerPicker();
     await openComposerPicker("model");
     await openComposerPicker("mode");
@@ -665,152 +602,6 @@ describe("v4 M5 门禁：composer 工具条与 slash 候选面板", () => {
     await closeComposerPicker();
   });
 
-  it("slider dots grow on hover and remain white on the filled track", async () => {
-    // 用命名模型的独立回放声明预期，避免测试复用产品的名称匹配实现。
-    const highspeed = process.env.E2E_COMPOSER_EXPECT_HIGHSPEED === "1";
-    await ensureCompletedTask();
-    if (highspeed) {
-      // 回放请求继续使用录制模型；命名模型只验证展示，不发送请求。
-      const model = process.env.E2E_COMPOSER_ANIMATION_MODEL || "GLM-5.3-FlashX";
-      await seedPersonalProviderConfig(getE2EAppDataPaths().configFile, {
-        id: "e2e-animation-model",
-        label: "Animation Fixture",
-        apiFormat: "anthropic-messages",
-        apiKey: "e2e-fixture-key",
-        baseURL: "http://127.0.0.1:1/v1",
-        models: [{ id: model, reasoningLevel: { values: ["high", "max"], map: "{}" } }],
-      });
-      await waitForProviderConfigPolling();
-      await switchV4Model("e2e-animation-model", model, "high");
-    }
-    await openComposerPicker("model");
-    const slider = $('[data-testid="composer-thought-slider"]');
-    expect(await $(".composer-thought-slider-fill").getAttribute("data-highspeed")).toBe(
-      String(highspeed),
-    );
-    expect(await $('[data-testid="composer-thought-meter"]').getAttribute("data-highspeed")).toBe(
-      String(highspeed),
-    );
-    const filledOpacity = await browser.execute(
-      () =>
-        getComputedStyle(
-          document.querySelector('[data-composer-thought-stop][data-filled="true"]')!,
-        ).opacity,
-    );
-    expect(filledOpacity).toBe("0.3");
-    const sliderSize = await slider.getSize();
-    await slider.moveTo({ xOffset: Math.round(16 - sliderSize.width / 2), yOffset: 0 });
-    await browser.waitUntil(
-      async () =>
-        browser.execute(() => {
-          const dot = document.querySelector<HTMLElement>("[data-composer-thought-stop]")!;
-          return Number.parseFloat(getComputedStyle(dot).scale) > 1.7;
-        }),
-      { timeout: 3000 },
-    );
-    const filledColor = await browser.execute(() => {
-      const dot = document.querySelector<HTMLElement>(
-        '[data-composer-thought-stop][data-filled="true"]',
-      )!;
-      return getComputedStyle(dot).backgroundColor;
-    });
-    expect(filledColor).toBe("rgb(255, 255, 255)");
-    const drag = await browser.execute(() => {
-      const input = document.querySelector<HTMLInputElement>(
-        '[data-testid="composer-thought-slider"]',
-      )!;
-      const rect = input.getBoundingClientRect();
-      return {
-        x: Math.round(
-          rect.left + 14 + ((rect.width - 28) * Number(input.value)) / Number(input.max),
-        ),
-        y: Math.round(rect.top + rect.height / 2),
-        target: Math.round(rect.left + 14),
-      };
-    });
-    await browser.performActions([
-      {
-        type: "pointer",
-        id: "slider-drag",
-        parameters: { pointerType: "mouse" },
-        actions: [
-          { type: "pointerMove", duration: 0, x: drag.x, y: drag.y },
-          { type: "pointerDown", button: 0 },
-          { type: "pointerMove", duration: 150, x: drag.target, y: drag.y },
-        ],
-      },
-    ]);
-    const dragMotion = await browser.execute(() => ({
-      reduced: matchMedia("(prefers-reduced-motion: reduce)").matches,
-      thumb: getComputedStyle(document.querySelector(".composer-thought-slider-thumb")!)
-        .transitionDuration,
-      fill: getComputedStyle(document.querySelector(".composer-thought-slider-fill")!)
-        .transitionDuration,
-    }));
-    await browser.releaseActions();
-    expect(dragMotion.thumb).toBe(dragMotion.reduced ? "0s" : "0.12s");
-    expect(dragMotion.fill).toBe(dragMotion.thumb);
-    await slider.click();
-    await browser.keys("End");
-    await browser.waitUntil(
-      async () =>
-        browser.execute(
-          () =>
-            getComputedStyle(document.querySelector(".composer-thought-slider-fill")!, "::before")
-              .opacity === "1",
-        ),
-      { timeout: 3000 },
-    );
-    const gradientColors = await browser.execute(() => {
-      const fill = document.querySelector<HTMLElement>(".composer-thought-slider-fill")!;
-      const marker = document.createElement("span");
-      marker.style.color = "var(--composer-thought-max-accent)";
-      fill.append(marker);
-      const accent = getComputedStyle(marker).color;
-      marker.style.color = "var(--color-purple-500)";
-      const purple = getComputedStyle(marker).color;
-      marker.remove();
-      return { gradient: getComputedStyle(fill, "::before").backgroundImage, accent, purple };
-    });
-    expect(gradientColors.gradient).toContain(gradientColors.accent);
-    if (highspeed) {
-      // Chromium 序列化默认 OKLab 时省略 in oklab；检查真实紫色端点和无色相插值。
-      expect(gradientColors.gradient).toContain(gradientColors.purple);
-      expect(gradientColors.gradient).not.toContain("in oklch");
-    } else expect(gradientColors.gradient).toContain("in oklch");
-    const bubbles = await browser.execute(() => {
-      const layer = document.querySelector<HTMLElement>(
-        '[data-testid="composer-thought-bubbles"]',
-      )!;
-      return {
-        count: layer.children.length,
-        reduced: matchMedia("(prefers-reduced-motion: reduce)").matches,
-        display: getComputedStyle(layer).display,
-        animation: getComputedStyle(layer.firstElementChild!).animationName,
-        duration: parseFloat(getComputedStyle(layer.firstElementChild!).animationDuration),
-      };
-    });
-    expect(bubbles.count).toBe(highspeed ? 32 : 12);
-    if (highspeed && !bubbles.reduced) {
-      expect(bubbles.duration).toBeGreaterThanOrEqual(0.8);
-      expect(bubbles.duration).toBeLessThanOrEqual(1.2);
-    }
-    expect(bubbles.animation).toBe(bubbles.reduced ? "none" : "composer-thought-bubble-flow");
-    if (bubbles.reduced) expect(bubbles.display).toBe("none");
-    await browser.keys("ArrowLeft");
-    await browser.waitUntil(
-      async () =>
-        browser.execute(
-          () =>
-            getComputedStyle(document.querySelector(".composer-thought-slider-fill")!, "::before")
-              .opacity === "0",
-        ),
-      { timeout: 3000 },
-    );
-    expect(await $('[data-testid="composer-thought-bubbles"]').isExisting()).toBe(false);
-    await closeComposerPicker();
-    if (highspeed) await switchV4Model(UPSTREAM_PROVIDER_ID, UPSTREAM_MODEL, "high");
-  });
 
   it("模型管理入口位于 Provider 子菜单并打开模型设置", async () => {
     await ensureCompletedTask();
@@ -940,117 +731,63 @@ describe("v4 M5 门禁：composer 工具条与 slash 候选面板", () => {
     await tooltip.waitForDisplayed({ reverse: true });
     await closeComposerPicker();
   });
-  it("dismisses with one outside click after using the effort slider", async () => {
+  it("dismisses with one outside click after selecting a model", async () => {
     await ensureCompletedTask();
-    for (const gesture of ["click", "drag"]) {
-      await openComposerPicker("model");
-      try {
-        const slider = $('[data-testid="composer-thought-slider"]');
-        const levels = JSON.parse((await slider.getAttribute("data-levels")) ?? "[]") as string[];
-        expect(levels.length).toBeGreaterThan(1);
-        await slider.click();
-        // 点击本身可能触发目录重读；等真实交互门禁恢复后再发送 Home，避免按键被吞。
-        await browser.waitUntil(
-          async () => (await slider.getAttribute("aria-disabled")) === "false",
-          { timeout: 15000 },
-        );
-        await browser.keys("Home");
-        await browser.waitUntil(async () => (await getV4ModelConfig()).thought === levels[0]);
-        const before = await getV4ModelConfig();
-        const targetIndex = gesture === "click" ? 1 : levels.length - 1;
-        // 中点可能正好落在两个离散档位的分界线上；按目标档位中心点击，避免像素取整歧义。
-        const rect = await browser.execute((target) => {
-          const input = document.querySelector<HTMLInputElement>(
-            '[data-testid="composer-thought-slider"]',
-          )!;
-          const bounds = input.getBoundingClientRect();
-          const position = (index: number) =>
-            Math.round(bounds.left + 14 + ((bounds.width - 28) * index) / Number(input.max));
-          return {
-            x: position(Number(input.value)),
-            y: Math.round(bounds.top + bounds.height / 2),
-            end: position(target),
-          };
-        }, targetIndex);
-        await browser.performActions([
-          {
-            type: "pointer",
-            id: "dismiss-slider",
-            parameters: { pointerType: "mouse" },
-            actions: [
-              {
-                type: "pointerMove",
-                duration: 0,
-                x: gesture === "click" ? rect.end : rect.x,
-                y: rect.y,
-              },
-              { type: "pointerDown", button: 0 },
-              ...(gesture === "drag"
-                ? [{ type: "pointerMove" as const, duration: 150, x: rect.end, y: rect.y }]
-                : []),
-              { type: "pointerUp", button: 0 },
-            ],
-          },
-        ]);
-        await browser.releaseActions();
-        // 先证明真实手势已经调档，避免滑杆失效时仅验证菜单关闭而产生假阳性。
-        await browser.waitUntil(
-          async () =>
-            Number(await slider.getValue()) === targetIndex &&
-            (await getV4ModelConfig()).thought === levels[targetIndex],
-          { timeout: 15000, timeoutMsg: `${gesture} did not commit the target effort` },
-        );
-        expect(await getV4ModelConfig()).toMatchObject({
-          provider: before.provider,
-          model: before.model,
-          thought: levels[targetIndex],
-        });
-        await browser.waitUntil(
-          async () => {
-            const value = await $('[data-testid="composer-thought-value"] [title]');
-            return (await value.getText()) === (await slider.getAttribute("aria-valuetext"));
-          },
-          { timeout: 5000, timeoutMsg: "rolling effort label did not settle on the current level" },
-        );
-        await waitForOnlyComposerPickerOpen("model", "slider interaction");
-        await browser.performActions([
-          {
-            type: "pointer",
-            id: "outside-click",
-            parameters: { pointerType: "mouse" },
-            actions: [
-              { type: "pointerMove", duration: 0, x: 4, y: 100 },
-              { type: "pointerDown", button: 0 },
-              { type: "pointerUp", button: 0 },
-            ],
-          },
-        ]);
-        await browser.releaseActions();
-        await waitForNoComposerPickerOpen(`one outside click after ${gesture}`);
-        expect(await getV4ModelConfig()).toMatchObject({
-          provider: before.provider,
-          model: before.model,
-          thought: levels[targetIndex],
-        });
-      } finally {
-        await browser.releaseActions();
-        if (
-          (await $('[data-testid="chat-model-select-trigger"]').getAttribute("aria-expanded")) ===
-          "true"
-        )
-          await closeComposerPicker();
-      }
+    await openComposerPicker("model");
+    try {
+      const option = $(
+        '[data-testid^="chat-model-select-item-"]:not([data-checked="true"]):not([data-model-option-locked])',
+      );
+      await option.waitForClickable({ timeout: 15000 });
+      const value = (await option.getAttribute("data-testid"))!.slice(
+        "chat-model-select-item-".length,
+      );
+      await option.click();
+      // 选模型后菜单保持打开；思考档位调整已收敛到独立思考控件，菜单内无需二次操作。
+      await waitForOnlyComposerPickerOpen("model", "model selection");
+      await browser.waitUntil(
+        async () =>
+          (await $(`[data-testid="${TID_CHAT_MODEL_SELECT_TRIGGER}"]`).getAttribute(
+            "data-model-current-value",
+          )) === value,
+        { timeout: 15000, timeoutMsg: "模型选择没有提交到合并入口" },
+      );
+      const before = await getV4ModelConfig();
+      await browser.performActions([
+        {
+          type: "pointer",
+          id: "outside-click",
+          parameters: { pointerType: "mouse" },
+          actions: [
+            { type: "pointerMove", duration: 0, x: 4, y: 100 },
+            { type: "pointerDown", button: 0 },
+            { type: "pointerUp", button: 0 },
+          ],
+        },
+      ]);
+      await browser.releaseActions();
+      await waitForNoComposerPickerOpen("one outside click after model selection");
+      // 一次外部点击只关闭菜单，不回退已提交的选择。
+      expect(await getV4ModelConfig()).toMatchObject({
+        provider: before.provider,
+        model: before.model,
+        thought: before.thought,
+      });
+    } finally {
+      await browser.releaseActions();
+      if (
+        (await $('[data-testid="chat-model-select-trigger"]').getAttribute("aria-expanded")) ===
+        "true"
+      )
+        await closeComposerPicker();
     }
   });
   it("keeps the open model picker responsive when the composer shrinks and expands", async () => {
     await ensureCompletedTask();
     await openComposerPicker("model");
     const trigger = await $('[data-testid="chat-model-select-trigger"]');
-    const slider = await $('[data-testid="composer-thought-slider"]');
     const menu = await $('[role="menu"]');
-    const levels = JSON.parse((await slider.getAttribute("data-levels")) ?? "[]") as string[];
-    expect(levels.length).toBeGreaterThan(1);
-    // 鼠标留在菜单内会随浮层移动触发 Radix pointerleave 焦点规则；以键盘场景隔离 resize。
+    // 鼠标留在菜单内会随浮层移动触发 Radix pointerleave 焦点规则；先移开指针隔离 resize。
     await browser.performActions([
       {
         type: "pointer",
@@ -1060,14 +797,7 @@ describe("v4 M5 门禁：composer 工具条与 slash 候选面板", () => {
       },
     ]);
     await browser.releaseActions();
-    await browser.keys("End");
-    await browser.waitUntil(() => slider.isFocused(), {
-      timeout: 5000,
-      timeoutMsg: "keyboard did not focus effort slider",
-    });
-    await browser.keys("Home");
-    await browser.waitUntil(async () => (await getV4ModelConfig()).thought === levels[0]);
-    let expectedConfig = await getV4ModelConfig();
+    const expectedConfig = await getV4ModelConfig();
     const resizeToolbar = async (width: string) =>
       browser.execute((value) => {
         const trigger = document.querySelector<HTMLElement>(
@@ -1116,29 +846,12 @@ describe("v4 M5 门禁：composer 工具条与 slash 候选面板", () => {
             }, Boolean(width)),
           { timeout: 5000, timeoutMsg: `open picker failed to fit ${width || "restored width"}` },
         );
-        // 仅检查 aria-expanded 会漏掉重建菜单或丢焦点；保留 WebDriver 节点身份并验证键盘路径。
+        // 仅检查 aria-expanded 会漏掉重建菜单；保留 WebDriver 节点身份验证同一按钮与菜单实例。
         expect((await $('[data-testid="chat-model-select-trigger"]')).elementId).toBe(
           trigger.elementId,
         );
-        expect((await $('[data-testid="composer-thought-slider"]')).elementId).toBe(
-          slider.elementId,
-        );
         expect((await $('[role="menu"]')).elementId).toBe(menu.elementId);
-        expect(await slider.isFocused()).toBe(true);
         expect(await getV4ModelConfig()).toEqual(expectedConfig);
-        if (width) {
-          await browser.keys("End");
-          await browser.waitUntil(
-            async () =>
-              (await getV4ModelConfig()).thought === levels.at(-1) &&
-              (await $('[data-testid="composer-thought-meter"]').getAttribute("data-progress")) ===
-                "100",
-            { timeout: 15000, timeoutMsg: "compact picker lost keyboard effort updates" },
-          );
-          expect(await $('[data-testid="composer-thought-meter"]').isDisplayed()).toBe(true);
-          expectedConfig = { ...expectedConfig, thought: levels.at(-1)! };
-          expect(await getV4ModelConfig()).toEqual(expectedConfig);
-        }
       }
       await resizeToolbar("240px");
       await closeComposerPicker();

@@ -1110,8 +1110,6 @@ function V4ComposerModelControlsImpl({
       },
       providerLabel: intl.formatMessage({ id: "chat.toolbar.combined.provider" }),
       modelsLabel: intl.formatMessage({ id: "chat.toolbar.combined.models" }),
-      effortLabel: intl.formatMessage({ id: "chat.toolbar.combined.effort" }),
-      effortShortcutLabel: thoughtShortcutLabel,
       selectModelLabel: intl.formatMessage({ id: "chat.toolbar.combined.selectModel" }),
       levels:
         thoughtOption?.options?.map((entry) => ({
@@ -1119,7 +1117,6 @@ function V4ComposerModelControlsImpl({
           label: getThoughtLevelLabel(intl, displayProvider, thoughtOption, entry),
         })) ?? [],
       value: String(thoughtOption?.currentValue ?? ""),
-      onValueChange: handleThoughtValueChange,
     }),
     [
       planGroups,
@@ -1130,10 +1127,8 @@ function V4ComposerModelControlsImpl({
       normalizedModelValue,
       connectionFamily,
       intl,
-      thoughtShortcutLabel,
       thoughtOption,
       displayProvider,
-      handleThoughtValueChange,
     ],
   );
   const isModelOptionLocked = useCallback(() => false, []);

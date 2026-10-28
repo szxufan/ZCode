@@ -1,62 +1,69 @@
-import { TID_CHAT_MODEL_SELECT_TRIGGER, TID_V4_MODEL_CONFIG } from "@zcode/shared/test-ids";
+import {
+  TID_CHAT_THOUGHT_LEVEL_SELECT_ITEM,
+  TID_CHAT_THOUGHT_LEVEL_SELECT_TRIGGER,
+  TID_V4_MODEL_CONFIG,
+  testId,
+} from "@zcode/shared/test-ids";
 
-/** 合并入口与开关由真实点击驱动，滑杆由键盘驱动，不用 DOM 值覆盖伪造 React 状态。 */
-export async function selectCombinedComposerThoughtLevel(value: string): Promise<boolean> {
-  const trigger = $(
-    `[data-testid="${TID_CHAT_MODEL_SELECT_TRIGGER}"][data-composer-combined-model]`,
-  );
-  if (!(await trigger.isExisting())) return false;
-  if ((await trigger.getAttribute("aria-expanded")) !== "true") await trigger.click();
-  const slider = $('[data-testid="composer-thought-slider"]');
-  const toggle = $('[data-testid="composer-thought-switch"]');
-  if (await toggle.isExisting()) {
-    const on = await toggle.getAttribute("data-on-value");
-    const off = await toggle.getAttribute("data-off-value");
-    if (value !== on && value !== off) throw new Error(`思考开关不支持档位 ${value}`);
-    const checked = String(value === on);
-    if ((await toggle.getAttribute("aria-checked")) !== checked) await toggle.click();
-    await browser.waitUntil(async () => (await toggle.getAttribute("aria-checked")) === checked, {
-      timeout: 15000,
-    });
+/**
+ * 合并模型菜单已移除思考强度设置（docs/composer-model-thinking.md）；v4 Composer 的
+ * 思考档位统一由独立思考控件（Radix Select）调整。真实点击展开 trigger，item 聚焦后
+ * 用键盘 Enter 确认——Radix SelectItem 的合成 click 会被手势判定忽略。
+ * 返回 false 表示当前界面没有合并入口或思考控件（旧工具栏形态、无 reasoning 目录），
+ * 交回调用方原有链路兜底。
+ */
+export async function selectComposerThoughtLevel(value: string): Promise<boolean> {
+  // 合并入口锚点只在 v4 Composer 存在；旧工具栏沿用调用方的独立下拉驱动。
+  const combinedTrigger = $("[data-composer-combined-model]");
+  if (!(await combinedTrigger.isExisting())) return false;
+  // 合并菜单打开时外部点击只负责关闭菜单；先恢复到菜单关闭的确定状态，再驱动思考控件。
+  if ((await combinedTrigger.getAttribute("aria-expanded")) === "true") {
     await browser.keys("Escape");
-    return true;
-  }
-  if (!(await slider.isExisting())) {
-    // 仅 Off 的模型没有可调控件；只能接受当前真实投影，不能伪造一次选择。
-    const current = await $(`[data-testid="${TID_V4_MODEL_CONFIG}"]`).getAttribute("data-thought");
-    if (current !== value)
-      throw new Error(`当前模型没有可调思考档位: ${value} (current=${current})`);
-    await browser.keys("Escape");
-    return true;
-  }
-  await slider.waitForExist({ timeout: 15000 });
-  const levels = JSON.parse((await slider.getAttribute("data-levels")) ?? "[]") as string[];
-  const index = levels.indexOf(value);
-  if (index < 0) throw new Error(`合并菜单不支持思考档位 ${value}: ${levels.join(",")}`);
-  if (Number(await slider.getValue()) !== index) {
-    if ((await slider.getAttribute("aria-disabled")) === "true")
-      throw new Error(`思考滑杆不可调整: ${value}`);
-    await browser.execute(() =>
-      document.querySelector<HTMLInputElement>('[data-testid="composer-thought-slider"]')?.focus(),
+    await browser.waitUntil(
+      async () => (await combinedTrigger.getAttribute("aria-expanded")) !== "true",
+      { timeout: 5000, timeoutMsg: "合并模型菜单没有随 Escape 关闭" },
     );
-    const waitForLevel = async (expected: number) => {
-      await browser.waitUntil(
-        async () =>
-          (await slider.getAttribute("aria-disabled")) === "false" &&
-          Number(await slider.getValue()) === expected,
-        { timeout: 15000 },
-      );
-    };
-    await browser.keys("Home");
-    await waitForLevel(0);
-    for (let step = 0; step < index; step++) {
-      await browser.keys("ArrowRight");
-      await waitForLevel(step + 1);
-    }
-    await browser.waitUntil(async () => Number(await slider.getValue()) === index, {
-      timeout: 15000,
-    });
   }
-  await browser.keys("Escape");
+  const trigger = $(`[data-testid="${TID_CHAT_THOUGHT_LEVEL_SELECT_TRIGGER}"]`);
+  if (!(await trigger.isExisting())) return false;
+  const current = await $(`[data-testid="${TID_V4_MODEL_CONFIG}"]`).getAttribute("data-thought");
+  if ((await trigger.getAttribute("data-thought-level-fixed")) === "true") {
+    // 单档模型没有可调状态；只能接受当前真实投影，不能伪造一次选择。
+    if (current !== value) {
+      throw new Error(`当前模型没有可调思考档位: ${value} (current=${current})`);
+    }
+    return true;
+  }
+  if (current === value) return true;
+  await trigger.waitForClickable({ timeout: 30000 });
+  await trigger.click();
+  const itemTestId = testId(TID_CHAT_THOUGHT_LEVEL_SELECT_ITEM, value);
+  const item = $(`[data-testid="${itemTestId}"]`);
+  try {
+    await item.waitForClickable({ timeout: 15000 });
+  } catch (error) {
+    throw new Error(`思考深度选择器没有出现目标档位: ${value}`, { cause: error });
+  }
+  const confirmResult = await browser.execute((currentItemId) => {
+    const element = document.querySelector<HTMLElement>(`[data-testid="${currentItemId}"]`);
+    if (!element) return { ok: false, reason: "item-missing" };
+    element.focus();
+    element.dispatchEvent(
+      new KeyboardEvent("keydown", { key: "Enter", bubbles: true, cancelable: true }),
+    );
+    return { ok: true, focused: document.activeElement === element };
+  }, itemTestId);
+  if (!confirmResult || confirmResult.ok !== true) {
+    throw new Error(`思考档位 ${value} 确认阶段异常: ${JSON.stringify(confirmResult)}`);
+  }
+  // 选择生效 ⇔ SelectContent 卸载（item 消失）；未关闭说明确认未生效。
+  await browser.waitUntil(
+    async () =>
+      browser.execute(
+        (currentItemId) => !document.querySelector(`[data-testid="${currentItemId}"]`),
+        itemTestId,
+      ),
+    { timeout: 5000, timeoutMsg: `思考档位 ${value} 确认后菜单未关闭——选择未生效` },
+  );
   return true;
 }

@@ -83,30 +83,26 @@ describe("模型 Provider Turbo 重启恢复 E2E", () => {
       await selectUpstreamProviderModelById(UPSTREAM_SECONDARY_MODEL);
       await selectUpstreamProviderModelById(UPSTREAM_MODEL);
       await waitForSelectedModel(UPSTREAM_PROVIDER_ID, UPSTREAM_MODEL);
-      const trigger = $('[data-testid="chat-model-select-trigger"]');
-      await trigger.click();
+      // 思考档位调整已收敛到独立思考控件；合并菜单不再提供 Effort 滑杆，无需打开模型菜单。
+      const thoughtTrigger = $('[data-testid="chat-thought-level-select-trigger"]');
       if (binary) {
-        const slider = $('[data-testid="composer-thought-slider"]');
-        await slider.waitForDisplayed();
-        expect(await slider.getAttribute("max")).toBe("1");
-        await slider.click();
-        await browser.keys("Home");
-        await browser.waitUntil(async () => (await slider.getValue()) === "0");
-        expect(await slider.getAttribute("aria-valuetext")).toMatch(/Off|关闭/);
-        await browser.keys("End");
-        await browser.waitUntil(async () => (await slider.getValue()) === "1");
-        expect(await slider.getAttribute("aria-valuetext")).toMatch(/On|开启/);
+        // 二态目录：独立思考控件以 Select 承载 disabled/enabled，逐档真实切换。
+        await thoughtTrigger.waitForClickable({ timeout: 30000 });
+        expect(await thoughtTrigger.getAttribute("data-thought-level-fixed")).toBeNull();
+        for (const target of ["disabled", "enabled"] as const) {
+          await selectUpstreamThoughtLevelValue(target);
+          await waitForDraftThoughtLevelState({
+            current: target,
+            values: ["disabled", "enabled"],
+          });
+        }
       } else {
-        await $('[data-testid="composer-thought-value"]').waitForDisplayed();
-        expect(await $('[data-testid="composer-thought-value"]').getText()).toMatch(/On|开启/);
-        expect(await $('[data-testid="composer-thought-slider"]').isExisting()).toBe(false);
-        expect(await $('[data-testid="composer-effort-shortcut"]').isExisting()).toBe(false);
+        // 单一 enabled 档：控件为固定展示，无 Select 候选，也不制造可调状态。
+        await thoughtTrigger.waitForDisplayed({ timeout: 30000 });
+        expect(await thoughtTrigger.getAttribute("data-thought-level-fixed")).toBe("true");
+        expect(await thoughtTrigger.getText()).toMatch(/On|开启/);
       }
       expect(await $('[data-testid="composer-thought-switch"]').isExisting()).toBe(false);
-      await browser.keys("Escape");
-      await browser.waitUntil(
-        async () => (await trigger.getAttribute("aria-expanded")) === "false",
-      );
       await waitForSelectedModel(UPSTREAM_PROVIDER_ID, UPSTREAM_MODEL);
     });
   }
@@ -140,39 +136,15 @@ describe("模型 Provider Turbo 重启恢复 E2E", () => {
     this.timeout(180000);
     await prepareTurboDraft("disabled");
     for (const thoughtLevel of ["enabled", "disabled"] as const) {
-      const trigger = $('[data-testid="chat-model-select-trigger"]');
-      await trigger.click();
-      const slider = $('[data-testid="composer-thought-slider"]');
-      await slider.waitForDisplayed();
+      // 档位调整统一走独立思考控件；不需要为调档打开合并模型菜单。
       expect(await $('[data-testid="composer-thought-switch"]').isExisting()).toBe(false);
       expect(await $('[data-testid="composer-thought-endpoints"]').isExisting()).toBe(false);
-      await slider.click();
-      await browser.keys(thoughtLevel === "enabled" ? "End" : "Home");
-      await browser.waitUntil(
-        async () => (await slider.getValue()) === (thoughtLevel === "enabled" ? "1" : "0"),
-      );
-      expect(await trigger.getAttribute("aria-expanded")).toBe("true");
+      await selectUpstreamThoughtLevelValue(thoughtLevel);
       await waitForSelectedModel(E2E_BIGMODEL_PLAN_PROVIDER_ID, E2E_PLAN_TURBO_MODEL);
       await waitForDraftThoughtLevelState({
         current: thoughtLevel,
         values: ["disabled", "enabled"],
       });
-      await browser.performActions([
-        {
-          type: "pointer",
-          id: "effort-outside",
-          parameters: { pointerType: "mouse" },
-          actions: [
-            { type: "pointerMove", duration: 0, x: 4, y: 100 },
-            { type: "pointerDown", button: 0 },
-            { type: "pointerUp", button: 0 },
-          ],
-        },
-      ]);
-      await browser.releaseActions();
-      await browser.waitUntil(
-        async () => (await trigger.getAttribute("aria-expanded")) === "false",
-      );
     }
   });
 });
