@@ -1279,8 +1279,8 @@ describe("AgentRuntime session persistence", () => {
       messages.map((message) => String(message.content)).join("\n"),
     );
     expect(requestTexts[0]).not.toContain("The date has changed.");
-    expect(requestTexts[1]).toContain("The date has changed. Today's date is now 2026-06-04.");
-    expect(requestTexts[1]).toContain("DO NOT mention this to the user explicitly");
+    expect(requestTexts[1]).toContain("日期已变化。今天是 2026-06-04。");
+    expect(requestTexts[1]).toContain("不要向用户明确提及这一点");
   });
 
   it("resumes compact history even when persisted rewind metadata points before compact", async () => {
@@ -2386,7 +2386,7 @@ describe("AgentRuntime session persistence", () => {
         { type: "text", text: `[Image: source: ${attachedPath}]` },
       ],
     });
-    expect(providerMessagesToText(capturedMessages)).toContain("Plan mode is active.");
+    expect(providerMessagesToText(capturedMessages)).toContain("计划模式已激活。");
 
     const filePart = store.savedParts.find((part) => part.type === "file");
     expect(filePart).toMatchObject({
@@ -2573,7 +2573,7 @@ describe("AgentRuntime session persistence", () => {
     expect(providerContentToText(promptAttachmentResultReminder?.content)).toContain(
       "1\t# Notes\n2\tRemember SR6.",
     );
-    expect(providerMessagesToText(capturedMessages)).toContain("Plan mode is active.");
+    expect(providerMessagesToText(capturedMessages)).toContain("计划模式已激活。");
 
     const filePart = store.savedParts.find((part) => part.type === "file");
     expect(filePart).toMatchObject({
@@ -2891,7 +2891,7 @@ describe("AgentRuntime session persistence", () => {
         { type: "text", text: `[Image: source: ${attachedPath}]` },
       ],
     });
-    expect(providerMessagesToText(capturedMessages)).toContain("Plan mode is active.");
+    expect(providerMessagesToText(capturedMessages)).toContain("计划模式已激活。");
 
     const filePart = store.savedParts.find((part) => part.type === "file");
     expect(filePart).toMatchObject({

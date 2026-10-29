@@ -89,6 +89,8 @@ export interface ZCodeProtocolSessionRecord {
   nativeSearchEnhancementsEnabled: boolean;
   toolSearchMode: AppToolSearchMode;
   modelContextBudgetStrategy: ZCodeModelContextBudgetStrategy;
+  /** 设置页配置档解析后的系统提示词覆盖；缺省 = 内置中文提示词。子会话经 inherit 继承。 */
+  agentSystemPromptOverride?: string;
   createdAt: number;
   deliveryKind?: ZCodeDeliveryKind;
   /**

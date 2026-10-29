@@ -4,6 +4,13 @@
 
 import { join } from "node:path";
 
+import {
+  AGENT_AGENTSMD_HEADING,
+  AGENT_AGENTSMD_INTRO,
+  agentFileTruncatedNotice,
+  agentInstructionSourceHeading,
+  agentMemoryIndexHeading,
+} from "@zcode/shared";
 import { formatProjectMemoryIndexContent } from "../../memory/index-content.js";
 import type {
   ContextSection,
@@ -62,9 +69,8 @@ function buildRequestUserContextContent(input: {
 
   return [
     // 聚合字段标题不能绑定到 AGENTS.md，否则仅有 Project Memory 时缺少标题。
-
-    "# agentsMd",
-    "Codebase and user instructions are shown below. Be sure to adhere to these instructions. IMPORTANT: These instructions OVERRIDE any default behavior and you MUST follow them exactly as written.",
+    AGENT_AGENTSMD_HEADING,
+    AGENT_AGENTSMD_INTRO,
     "",
     sections.join("\n\n"),
   ].join("\n");
@@ -79,7 +85,7 @@ function buildProjectMemoryIndexContent(
   if (!formatted) return null;
 
   return [
-    `Contents of ${join(memoryRoot, "MEMORY.md")} (user's auto-memory, persists across conversations):`,
+    agentMemoryIndexHeading(join(memoryRoot, "MEMORY.md")),
     "",
     formatted,
   ].join("\n");
@@ -115,7 +121,7 @@ function normalizedInstructionSources(
 
 function buildInstructionSourceContent(source: ResolvedUserInstructionSource): string | null {
   const body = source.truncated
-    ? `${source.content}\n\n[File truncated: ${source.fileName}]`
+    ? `${source.content}\n\n${agentFileTruncatedNotice(source.fileName)}`
     : source.content;
   const trimmedBody = body.trim();
   if (!trimmedBody) {
@@ -123,12 +129,8 @@ function buildInstructionSourceContent(source: ResolvedUserInstructionSource): s
   }
 
   return [
-    `Contents of ${source.filePath} (${formatInstructionSourceScope(source.scope)}):`,
+    agentInstructionSourceHeading(source.filePath, source.scope),
     "",
     trimmedBody,
   ].join("\n");
-}
-
-function formatInstructionSourceScope(scope: ResolvedUserInstructionSource["scope"]): string {
-  return scope === "user" ? "user default instructions" : "workspace instructions";
 }

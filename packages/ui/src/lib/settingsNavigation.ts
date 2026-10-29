@@ -9,6 +9,7 @@ export type SettingsSectionId =
   | "modelProvider"
   | "remoteDevices"
   | "memory"
+  | "agentPrompt"
   | "plugin"
   | "mcp"
   | "skill"

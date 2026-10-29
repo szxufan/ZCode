@@ -37,7 +37,7 @@ const DENIED_WRITE_FILE_PATH = resolveE2EToolPath(
 
 const TITLE_REQUEST_SENTINEL = "Generate a concise title";
 const COMPACT_REQUEST_SENTINEL = "CRITICAL: Respond with TEXT ONLY";
-const PLAN_MODE_REMINDER = "Plan mode is active";
+const PLAN_MODE_REMINDER = "计划模式已激活";
 const PLAN_MODE_NO_EDIT_REMINDER = "MUST NOT make any edits";
 const PLAN_MODE_DENIAL_REASON =
   "Plan mode only allows read-only, non-destructive tools";

@@ -145,7 +145,7 @@ describe("v4 Plan picker action", () => {
       {
         lastUserMessageIncludes: [TASK_ONE, "e2e-plan-picker.png"],
         lastUserMessageExcludes: ["/plan"],
-        includes: ["Plan mode is active."],
+        includes: ["计划模式已激活。"],
       },
       "标准 Plan 请求没有保留正文与附件",
       60000,

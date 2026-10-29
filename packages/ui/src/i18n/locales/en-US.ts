@@ -3042,6 +3042,33 @@ const enUS: Record<string, string> = {
   "settings.nativeSearchEnhancementsDescription":
     "Use enhanced Find and Grep in new sessions and sessions restored after an app restart. Active sessions keep their current setting; Find remains unchanged on Windows.",
   "settings.memory": "Memory",
+  "settings.agentPrompt.title": "System Prompt",
+  "settings.agentPrompt.description":
+    "Manage system prompt profiles for the main agent. Switching applies to new sessions immediately and to active sessions after the current turn.",
+  "settings.agentPrompt.builtin.name": "Built-in default",
+  "settings.agentPrompt.builtin.description": "The built-in Chinese system prompt shipped with ZCode.",
+  "settings.agentPrompt.activeBadge": "Active",
+  "settings.agentPrompt.activate": "Activate",
+  "settings.agentPrompt.profile.summary": "Custom prompt · {chars} chars",
+  "settings.agentPrompt.create.title": "New profile",
+  "settings.agentPrompt.create.description": "{count}/{max} profiles created.",
+  "settings.agentPrompt.action.create": "New",
+  "settings.agentPrompt.action.edit": "Edit",
+  "settings.agentPrompt.action.delete": "Delete",
+  "settings.agentPrompt.action.confirmDelete": "Confirm delete",
+  "settings.agentPrompt.action.save": "Save",
+  "settings.agentPrompt.action.cancel": "Cancel",
+  "settings.agentPrompt.action.loadBuiltin": "Load built-in prompt",
+  "settings.agentPrompt.loadBuiltin.hint":
+    "Fill the editor with the current built-in prompt so you can edit on top of it",
+  "settings.agentPrompt.field.name": "Profile name",
+  "settings.agentPrompt.field.content": "Prompt content",
+  "settings.agentPrompt.error.nameRequired": "Please enter a profile name.",
+  "settings.agentPrompt.activeHint":
+    "This profile applies to all sessions on this machine; running turns finish with the previous prompt.",
+  "chat.toolbar.promptProfile.label": "Prompt",
+  "chat.toolbar.promptProfile.builtin": "Built-in default",
+  "chat.toolbar.promptProfile.manage": "Manage prompts…",
   "settings.memory.workspaceMemory": "Workspace Memory",
   "settings.memoryDescription":
     "Save and reuse long-term context in workspaces. Applies to new sessions and may increase model requests and token costs.",

@@ -2,7 +2,11 @@
  * useSettingService —— 设置服务 hooks
  */
 import { useState, useEffect, useCallback } from "react";
-import { APP_RUNTIME_PREFERENCES_CHANGED_BROADCAST_CHANNEL, type AppSettings } from "@zcode/shared";
+import {
+  APP_RUNTIME_PREFERENCES_CHANGED_BROADCAST_CHANNEL,
+  resolveAgentPromptOverride,
+  type AppSettings,
+} from "@zcode/shared";
 import type { IServiceAccessor, ISettingService } from "@zcode/services";
 import { useServices } from "./useServices.js";
 import { usePlatform } from "./usePlatform.js";
@@ -157,6 +161,27 @@ export function useSettings(options: { cacheKey?: string; services?: IServiceAcc
       }
       platform.syncAppSettings?.(patch);
       await refresh();
+      // 系统提示词配置档：active id 或配置档列表变化后，把解析后的覆盖文本（含回落内置的
+      // null）推给活跃会话。内置/悬空 active 解析为 undefined，统一按 null（回落内置）同步。
+      if ("agentPromptActiveProfileId" in patch || "agentPromptProfiles" in patch) {
+        const currentSettings = getSettingsSnapshot(cacheKey).settings;
+        const preferences = {
+          askUserQuestionAutoResolutionEnabled:
+            currentSettings?.askUserQuestionAutoResolutionEnabled !== false,
+          modelIoFullRetentionEnabled: currentSettings?.modelIoFullRetentionEnabled === true,
+          agentSystemPromptOverride: resolveAgentPromptOverride(currentSettings ?? {}) ?? null,
+        };
+        const syncResults = await Promise.allSettled([
+          zcodeAgentService.syncAppRuntimePreferences(preferences),
+          botsService.syncAppRuntimePreferences(preferences),
+        ]);
+        const syncError = syncResults.find(
+          (result): result is PromiseRejectedResult => result.status === "rejected",
+        )?.reason;
+        if (syncError) {
+          throw syncError;
+        }
+      }
       if (
         typeof patch.askUserQuestionAutoResolutionEnabled === "boolean" ||
         typeof patch.modelIoFullRetentionEnabled === "boolean"

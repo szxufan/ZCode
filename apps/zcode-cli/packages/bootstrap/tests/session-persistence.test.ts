@@ -1559,7 +1559,7 @@ describe("session persistence", () => {
                 (message) =>
                   message.role === "user" &&
                   message.content.includes(
-                    `Contents of ${join(workspace, "AGENTS.md")} (workspace instructions):`,
+                    `Contents of ${join(workspace, "AGENTS.md")} （工作区指令）：`,
                   ),
               )?.content ?? "";
             return {
@@ -1588,9 +1588,9 @@ describe("session persistence", () => {
       expect(capturedMetaUser).toContain("# agentsMd");
       expect(capturedMetaUser).not.toContain("# claudeMd");
       expect(capturedMetaUser).not.toContain("# user_instructions");
-      expect(capturedMetaUser).toContain("Codebase and user instructions are shown below.");
+      expect(capturedMetaUser).toContain("以下是代码库与用户指令。");
       expect(capturedMetaUser).toContain(
-        `Contents of ${join(workspace, "AGENTS.md")} (workspace instructions):`,
+        `Contents of ${join(workspace, "AGENTS.md")} （工作区指令）：`,
       );
       expect(capturedMetaUser).toContain("project-rule-314");
     } finally {
@@ -2419,7 +2419,7 @@ describe("session persistence", () => {
         // 修复原因：resume 使用现行 static # Harness + dynamic # Environment prompt 布局。
         expect.stringContaining("# Harness"),
         expect.stringContaining("# Environment"),
-        expect.stringContaining("The following skills are available"),
+        expect.stringContaining("以下技能可通过 Skill 工具使用"),
         expect.stringContaining("<system-reminder>"),
         expect.stringContaining("Available agent types for the Agent tool:"),
         "first prompt",
@@ -2512,8 +2512,8 @@ describe("session persistence", () => {
       expect(capturedMessages.map((message) => message.content)).toEqual([
         expect.stringContaining("You are ZCode"),
         expect.stringContaining("# Harness"),
-        expect.stringContaining("# Communicating with the user"),
-        expect.stringContaining("The following skills are available"),
+        expect.stringContaining("# 与用户沟通"),
+        expect.stringContaining("以下技能可通过 Skill 工具使用"),
         expect.stringContaining("<system-reminder>"),
         expect.stringContaining("Available agent types for the Agent tool:"),
         "first prompt",
@@ -2836,7 +2836,7 @@ describe("session persistence", () => {
 
       const dynamicSystem = capturedMessages[2]?.content ?? "";
       // 冷恢复保留首次会话保存的模型，不用启动参数覆盖；模型说明随实际恢复的 Model 渲染。
-      expect(dynamicSystem).toContain("- You are powered by the model named zai/glm-4.6.");
+      expect(dynamicSystem).toContain("- 你由名为 zai/glm-4.6 的模型驱动。");
       expect(dynamicSystem).not.toContain("legacy/persisted-model");
       // 修复原因：原始 git snapshot 现在与环境信息一起保存在 dynamic system[2]。
       expect(dynamicSystem).toContain("gitStatus:");

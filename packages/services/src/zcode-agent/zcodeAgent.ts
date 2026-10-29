@@ -602,6 +602,12 @@ export type ZCodeAgentServiceEvent =
 export interface ZCodeAgentAppRuntimePreferences {
   askUserQuestionAutoResolutionEnabled: boolean;
   modelIoFullRetentionEnabled?: boolean;
+  /**
+   * 系统提示词覆盖（设置页配置档解析后的文本）。键的**在场与否**有语义：
+   * 缺席 = 本次同步不涉及提示词；string = 应用覆盖；null = 回落内置中文提示词。
+   * 消费方用 `"agentSystemPromptOverride" in preferences` 判断。
+   */
+  agentSystemPromptOverride?: string | null;
 }
 
 export interface ZCodeAgentLocalRuntimeChildProcesses {

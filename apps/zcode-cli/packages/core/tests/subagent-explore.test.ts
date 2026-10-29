@@ -90,7 +90,7 @@ OS Version: Darwin 24.3.0
 You are powered by the model named anthropic/claude-haiku-4-5-20251001-cc.`;
 
 const exploreSystemMessages = [
-  "You are ZCode, an interactive coding agent",
+  "你是 ZCode，一个交互式编码智能体",
   // 正文已合并为一段；保留原 prompt、Notes、环境及换行顺序的逐字校验。
   `\n${exploreAgentPrompt}\n\n${subagentCommonNotes}\n\n${subagentEnvironmentContext}`,
 ];
@@ -569,7 +569,7 @@ describe("Explore subagent", () => {
     expect(childRequestText).not.toContain("Project context:");
     expect(childRequestText).not.toContain("- Package manager: pnpm");
     expect(childRequestText).toContain("# currentDate");
-    expect(childRequestText).toContain("Today's date is 2026-06-04.");
+    expect(childRequestText).toContain("今天是 2026-06-04。");
     expect(childObservations[0].model).toMatchObject({
       providerId: modelSelection.providerId,
       modelId: modelSelection.modelId,

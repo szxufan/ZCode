@@ -23,59 +23,59 @@ export const RUNTIME_MODE_REMINDER_CONFIG = Object.freeze({
 const planResearchAgentCount = 3;
 
 function buildPlanWorkflow() {
-  return `## Plan Workflow
+  return `## 计划工作流（Plan Workflow）
 
-### Phase 1: Initial Understanding
-Goal: Gain a comprehensive understanding of the user's request by reading through code and asking them questions. Critical: In this phase you should only use the ${EXPLORE_AGENT_TYPE} subagent type.
+### 阶段 1：初步理解
+目标：通过阅读代码和向用户提问，全面理解用户的需求。关键：本阶段只允许使用 ${EXPLORE_AGENT_TYPE} 子代理类型。
 
-1. Focus on understanding the user's request and the code associated with their request. Actively search for existing functions, utilities, and patterns that can be reused \u2014 avoid proposing new code when suitable implementations already exist.
+1. 专注于理解用户的请求和相关代码。主动寻找可复用的现有函数、工具与模式——已有合适实现时不要另起炉灶。
 
-2. **Launch up to ${planResearchAgentCount} ${EXPLORE_AGENT_TYPE} agents IN PARALLEL** (single message, multiple tool calls) to efficiently explore the codebase.
-   - Use 1 agent when the task is isolated to known files, the user provided specific file paths, or you're making a small targeted change.
-   - Use multiple agents when: the scope is uncertain, multiple areas of the codebase are involved, or you need to understand existing patterns before planning.
-   - Quality over quantity - ${planResearchAgentCount} agents maximum, but you should try to use the minimum number of agents necessary (usually just 1)
-   - If using multiple agents: Provide each agent with a specific search focus or area to explore. Example: One agent searches for existing implementations, another explores related components, a third investigating testing patterns
+2. **并行启动最多 ${planResearchAgentCount} 个 ${EXPLORE_AGENT_TYPE} 子代理**（单条消息、多个工具调用）来高效探索代码库。
+   - 任务局限于已知文件、用户给了具体文件路径、或只做小改动时，用 1 个即可。
+   - 范围不确定、涉及代码库多个区域、或需要先理解现有模式时，用多个。
+   - 重质不重量——最多 ${planResearchAgentCount} 个，但应尽量用最少的必要数量（通常 1 个就够）
+   - 使用多个子代理时：给每个子代理明确的搜索重点或探索区域。例如：一个找现有实现，另一个调查测试模式
 
-### Phase 2: Design
-Goal: Design an implementation approach.
+### 阶段 2：设计
+目标：设计实现方案。
 
-**Guidelines:**
-- Use the context gathered in Phase 1, including relevant files and code paths.
-- Account for the user's requirements and constraints.
-- Produce a concrete implementation plan that is detailed enough to execute.
-- Consider useful perspectives for the task type:
-  - New feature: simplicity vs performance vs maintainability
-  - Bug fix: root cause vs workaround vs prevention
-  - Refactoring: minimal change vs clean architecture
+**准则：**
+- 使用阶段 1 收集的上下文，包括相关文件与代码路径。
+- 考虑用户的需求与约束。
+- 产出具体、足以直接执行的实现计划。
+- 按任务类型考虑相应视角：
+  - 新功能：简单性 vs 性能 vs 可维护性
+  - Bug 修复：根因 vs 绕过 vs 预防
+  - 重构：最小改动 vs 干净架构
 
-### Phase 3: Review
-Goal: Review the plan(s) from Phase 2 and ensure alignment with the user's intentions.
-1. Read the critical files to deepen your understanding
-2. Ensure that the plans align with the user's original request
-3. Use ${ASK_USER_QUESTION_TOOL_NAME} to clarify any remaining questions with the user
+### 阶段 3：评审
+目标：评审阶段 2 的计划，确保与用户意图一致。
+1. 阅读关键文件加深理解
+2. 确认计划符合用户的原始请求
+3. 用 ${ASK_USER_QUESTION_TOOL_NAME} 与用户澄清遗留问题
 
-### Phase 4: Call ${EXIT_PLAN_MODE_TOOL_NAME}
-At the very end of your turn, once you have asked the user questions and are happy with your final plan - you should always call ${EXIT_PLAN_MODE_TOOL_NAME} to indicate to the user that you are done planning.
-This is critical - your turn should only end with either using the ${ASK_USER_QUESTION_TOOL_NAME} tool OR calling ${EXIT_PLAN_MODE_TOOL_NAME}. Do not stop unless it's for these 2 reasons
+### 阶段 4：调用 ${EXIT_PLAN_MODE_TOOL_NAME}
+在回合的最后——问完用户的问题、对最终计划满意之后——必须调用 ${EXIT_PLAN_MODE_TOOL_NAME} 告知用户你已完成规划。
+关键：回合只能以使用 ${ASK_USER_QUESTION_TOOL_NAME} 工具或调用 ${EXIT_PLAN_MODE_TOOL_NAME} 结束。除非因为这两个原因，不要停下来。
 
-**Important:** Use ${ASK_USER_QUESTION_TOOL_NAME} ONLY to clarify requirements or choose between approaches. Use ${EXIT_PLAN_MODE_TOOL_NAME} to request plan approval. Do NOT ask about plan approval in any other way - no text questions, no AskUserQuestion. Phrases like "Is this plan okay?", "Should I proceed?", "How does this plan look?", "Any changes before we start?", or similar MUST use ${EXIT_PLAN_MODE_TOOL_NAME}.
+**重要：** ${ASK_USER_QUESTION_TOOL_NAME} 只用于澄清需求或在方案之间做选择；${EXIT_PLAN_MODE_TOOL_NAME} 用于请求计划批准。绝不要用文本提问、也绝不要用 AskUserQuestion 询问计划是否批准。“这样 plan 可以吗？”“要不要继续？”“看起来如何？”“开始前还有什么要改的吗？”之类的话必须换成 ${EXIT_PLAN_MODE_TOOL_NAME}。
 
-NOTE: At any point in time through this workflow you should feel free to ask the user questions or clarifications using the ${ASK_USER_QUESTION_TOOL_NAME} tool. Don't make large assumptions about user intent. The goal is to present a well researched plan to the user, and tie any loose ends before implementation begins.`;
+注意：整个流程中的任何时点都可以用 ${ASK_USER_QUESTION_TOOL_NAME} 向用户提问或澄清。不要对用户意图做大假设。目标是提交一份调研充分的计划，并在动手实现前收口所有悬而未决的问题。`;
 }
 
 const PLAN_MODE_FULL_REMINDER = [
-  "Plan mode is active. The user indicated that they do not want you to execute yet -- you MUST NOT make any edits, run any non-readonly tools (including changing configs or making commits), or otherwise make any changes to the system. This supercedes any other instructions you have received.",
+  "计划模式已激活。用户表示暂不执行——你必须不做任何编辑、不运行任何非只读工具（包括修改配置或提交），也不以其他方式改动系统。本指令优先于你收到的其他一切指令。",
   buildPlanWorkflow(),
 ];
 
 const PLAN_MODE_SPARSE_REMINDER = [
-  `Plan mode still active (see full instructions earlier in conversation). Read-only. Follow 4-phase workflow. End turns with ${ASK_USER_QUESTION_TOOL_NAME} (for clarifications) or ${EXIT_PLAN_MODE_TOOL_NAME} (for plan approval). Never ask about plan approval via text or AskUserQuestion.`,
+  `计划模式仍然生效（完整说明见会话前文）。只读。遵循四阶段工作流。回合以 ${ASK_USER_QUESTION_TOOL_NAME}（澄清）或 ${EXIT_PLAN_MODE_TOOL_NAME}（请求计划批准）结束。绝不通过文本或 AskUserQuestion 询问计划是否批准。`,
 ];
 
 const PLAN_MODE_EXIT_REMINDER = [
-  "## Exited Plan Mode",
+  "## 已退出计划模式",
   "",
-  `You have exited plan mode. You can now make edits, run tools, and take actions.`,
+  "你已退出计划模式。现在可以进行编辑、运行工具和执行操作。",
 ];
 
 export const TODO_REMINDER_CONFIG = Object.freeze({
@@ -89,7 +89,7 @@ export interface TodoReminderTurnCounts {
 }
 
 export function buildDateChangeReminderBody(_previousDate: string, currentDate: string): string {
-  return `The date has changed. Today's date is now ${currentDate}. DO NOT mention this to the user explicitly because they are already aware.`;
+  return `日期已变化。今天是 ${currentDate}。不要向用户明确提及这一点，他们已经知道。`;
 }
 
 export function runtimeMetadataForSyntheticUserMessageSource(
@@ -174,11 +174,11 @@ export function shouldBuildTodoReminder(entries: readonly RuntimeMessageEntry[])
 
 export function buildTodoReminderBody(todos: readonly TodoItem[]): string {
   const lines = [
-    "The TodoWrite tool hasn't been used recently. If you're working on tasks that would benefit from tracking progress, consider using the TodoWrite tool to track progress. Also consider cleaning up the todo list if has become stale and no longer matches what you are working on. Only use it if it's relevant to the current work. This is just a gentle reminder - ignore if not applicable.",
+    "最近没有使用 TodoWrite 工具。如果你正在处理适合跟踪进度的任务，可以考虑用 TodoWrite 记录；如果现有清单已过时、与你当前的工作不符，也可以顺手清理。仅在与当前工作相关时使用，无关请忽略——这只是温和提醒。",
   ];
   if (todos.length > 0) {
     const currentTodos = `[${formatTodoListForReminder(todos).join("\n")}]`;
-    lines.push("", "Here are the existing contents of your todo list:", "", currentTodos);
+    lines.push("", "以下是你当前 todo 清单的内容：", "", currentTodos);
   }
   return lines.join("\n");
 }
@@ -219,7 +219,7 @@ export function buildRuntimeOutputStyleReminderBody(
     return null;
   }
 
-  return `${outputStyle.name} output style is active. Remember to follow the specific guidelines for this style.`;
+  return `${outputStyle.name} 输出风格已生效。请继续遵循该风格的具体指引。`;
 }
 
 function formatTodoListForReminder(todos: readonly TodoItem[]): string[] {

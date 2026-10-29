@@ -90,7 +90,7 @@ it.each(["off", "on"] as const)(
           ).toHaveLength(10);
           expect(
             requests.filter((r) =>
-              JSON.stringify(r.messages).includes("The TodoWrite tool hasn't been used recently."),
+              JSON.stringify(r.messages).includes("最近没有使用 TodoWrite 工具。"),
             ),
           ).toEqual([]);
           expect(

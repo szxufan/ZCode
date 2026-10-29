@@ -82,6 +82,7 @@ import { PluginsSection } from "@/settings/PluginsSection.js";
 import { HooksSection } from "@/settings/HooksSection.js";
 import { WorkspaceFileSearchSection } from "@/settings/WorkspaceFileSearchSection.js";
 import { MemorySettingsSection } from "@/settings/MemorySettingsSection.js";
+import { AgentPromptSection } from "@/settings/AgentPromptSection.js";
 import { BrowserSettingsSection } from "@/settings/BrowserSettingsSection.js";
 import { ComputerUseSection } from "@/settings/ComputerUseSection.js";
 import { ShortcutSettingsSection } from "@/settings/ShortcutSettingsSection.js";
@@ -2089,6 +2090,19 @@ export function SettingsPage({
                                 workspaceDisplayNames={memoryWorkspaceDisplayNames}
                               />
                             </ServiceProvider>
+                          ) : activeSection === "agentPrompt" ? (
+                            // 共享设置固定走本机 Host（与上方 useSettings({services: localHostServices}) 同边界），
+                            // 避免远端 workspace 上下文把提示词配置档写进远端 setting。
+                            <AgentPromptSection
+                              profiles={sharedSettings?.agentPromptProfiles ?? []}
+                              activeProfileId={sharedSettings?.agentPromptActiveProfileId}
+                              onUpdateProfiles={(profiles) =>
+                                updateSharedSettings({ agentPromptProfiles: profiles })
+                              }
+                              onUpdateActiveProfileId={(profileId) =>
+                                updateSharedSettings({ agentPromptActiveProfileId: profileId })
+                              }
+                            />
                           ) : activeSection === "plugin" ? (
                             <PluginsSection
                               key={`plugin:${settingsSectionNavigationVersion}`}

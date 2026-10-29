@@ -168,6 +168,8 @@ interface SessionStartupPreferences {
   modelContextBudgetStrategy: ZCodeModelContextBudgetStrategy;
   nativeSearchEnhancementsEnabled: boolean;
   toolSearchMode: AppToolSearchMode;
+  /** 设置页配置档解析后的系统提示词覆盖；缺省 = 使用内置中文提示词。 */
+  agentSystemPromptOverride?: string;
   resolveInitialBashShellSelection: () => Promise<ExecutionShellSelection | undefined>;
 }
 
@@ -3373,6 +3375,7 @@ async function resolveSessionStartupPreferences(
       modelContextBudgetStrategy: DEFAULT_ZCODE_MODEL_CONTEXT_BUDGET_STRATEGY,
       nativeSearchEnhancementsEnabled: source.parent.nativeSearchEnhancementsEnabled,
       toolSearchMode: source.parent.toolSearchMode,
+      agentSystemPromptOverride: source.parent.agentSystemPromptOverride,
       resolveInitialBashShellSelection: async () => inheritedShellSelection,
     };
   }
@@ -3394,6 +3397,7 @@ async function resolveSessionStartupPreferences(
     modelContextBudgetStrategy: DEFAULT_ZCODE_MODEL_CONTEXT_BUDGET_STRATEGY,
     nativeSearchEnhancementsEnabled: runtimePreferences.nativeSearchEnhancementsEnabled,
     toolSearchMode: runtimePreferences.toolSearchMode,
+    agentSystemPromptOverride: runtimePreferences.agentSystemPromptOverride,
     resolveInitialBashShellSelection: async () => {
       const executionPreferences = await requestSessionRuntimePreferences(
         context,
@@ -3490,6 +3494,11 @@ async function createRecord(
       nativeSearchEnhancementsEnabled: startupPreferences.nativeSearchEnhancementsEnabled,
       toolSearch: { mode: startupPreferences.toolSearchMode },
       modelContextBudgetStrategy: startupPreferences.modelContextBudgetStrategy,
+      // 设置页配置档解析后的系统提示词覆盖；缺省 = 内置中文提示词（spec：
+      // docs/specs/agent-system-prompt-chinese-and-profiles.md §2.1）。
+      ...(startupPreferences.agentSystemPromptOverride
+        ? { systemPromptOverride: startupPreferences.agentSystemPromptOverride }
+        : {}),
       // Memory Settings 是现有 CLI features.memory/use 之外的总开关。只在关闭时
       // 写入 override，避免开启值反向覆盖用户已有的 CLI 禁用配置。
       ...(startupPreferences.memoryEnabled ? {} : { memory: { enabled: false } }),
@@ -3574,6 +3583,10 @@ async function createRecord(
     modelContextBudgetStrategy: startupPreferences.modelContextBudgetStrategy,
     nativeSearchEnhancementsEnabled: startupPreferences.nativeSearchEnhancementsEnabled,
     toolSearchMode: startupPreferences.toolSearchMode,
+    // 子会话继承父会话的提示词覆盖；热更新由 updateAgentPromptPreferences 直接写 runtime。
+    ...(startupPreferences.agentSystemPromptOverride
+      ? { agentSystemPromptOverride: startupPreferences.agentSystemPromptOverride }
+      : {}),
     ...(parentSessionId ? { parentSessionId } : {}),
     persistence: "persistence" in params ? (params.persistence ?? "immediate") : "immediate",
     protocolEventSequences: new Map(),

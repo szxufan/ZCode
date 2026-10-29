@@ -7,6 +7,7 @@ import type { WorkspacePurpose } from "./workspacePurpose.js";
 import type { DynamicWorkflowMode } from "./dynamic-workflow-feature.js";
 import type { EmbeddedBrowserViewportPreference } from "./browser-use/command-metadata.js";
 import type { AppToolSearchMode } from "./app-runtime-preferences.js";
+import type { AgentPromptProfile } from "./agent-prompt/index.js";
 
 // ── Domain types ──
 
@@ -358,6 +359,13 @@ export interface AppSettings {
   toolSearchMode?: AppToolSearchMode;
   /** 新建或冷恢复 Session 是否启用 Memory；默认关闭。 */
   memoryEnabled?: boolean;
+  /**
+   * 主 Agent 系统提示词的用户自建配置档（规格见 docs/specs/agent-system-prompt-chinese-and-profiles.md）。
+   * 内置中文提示词不在此存储；`agentPromptActiveProfileId` 缺省或 "default" 即使用内置。
+   */
+  agentPromptProfiles?: AgentPromptProfile[];
+  /** 当前生效的提示词配置档 id；缺省 / "default" / 指向已删除配置档时回落内置。 */
+  agentPromptActiveProfileId?: string;
   onboardingOccupation?:
     | "office"
     | "developer"
