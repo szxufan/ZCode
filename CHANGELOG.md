@@ -1,5 +1,21 @@
 # Changelog
 
+## [3.19.0](https://github.com/szxufan/ZCode/compare/v3.18.0...v3.19.0) (2026-10-29)
+
+### Features
+
+* **agent-prompt:** 系统提示词配置档 AI 生成/修改并收口草稿状态时序 ([6ba9a17](https://github.com/szxufan/ZCode/commit/6ba9a17a628f7ecefa52e068460d675b6b64df6f))
+  * 执行上下文复用 resolveModelProviderConnectivityWorkspacePath 过滤远端
+  * AI pending 期间锁定正文与取消按钮，完成时校验草稿未被切换，撤销点与
+  * 遥测超时显式覆盖 catalog 默认 30s（取 deadline + 取消缓冲），长请求不
+  * 无工作区/无模型/空输出只抛稳定错误码，UI 侧按码映射 i18n 文案
+  * 同步 spec §6、trace catalog、双语 i18n 与架构策略未受管文件例外
+
+
+### Bug Fixes
+
+* **plugins:** 移除官方 image-search 搜图插件并同步文档与测试 ([36ad71e](https://github.com/szxufan/ZCode/commit/36ad71e59de2e1e7724115202bd5f22d3e87586f))
+
 ## [3.18.0](https://github.com/szxufan/ZCode/compare/v3.17.0...v3.18.0) (2026-10-29)
 
 ### Features
