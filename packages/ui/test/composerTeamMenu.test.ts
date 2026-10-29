@@ -47,11 +47,6 @@ function Harness({ pending = false, error = null }: { pending?: boolean; error?:
           providerLabel: "Provider",
           modelsLabel: "Models",
           selectModelLabel: "Select model",
-          levels: [
-            { value: "low", label: "Low" },
-            { value: "high", label: "High" },
-          ],
-          value: "low",
           providerMenu: {
             groups,
             selectedKey: selected,
@@ -110,9 +105,7 @@ describe("Composer direct team provider menu", () => {
       // 连接切换 pending 期间模型列表 inert，不再提供可交互的模型或档位入口。
       expect(screen.queryByRole("slider")).toBeNull();
       expect(
-        document
-          .querySelector<HTMLElement>("[data-composer-model-list]")
-          ?.getAttribute("inert"),
+        document.querySelector<HTMLElement>("[data-composer-model-list]")?.getAttribute("inert"),
       ).not.toBeNull();
       rerender(createElement(Harness, { error: "Switch failed; retry" }));
       expect(screen.queryByRole("status", { name: "Loading..." })).toBeNull();
@@ -164,13 +157,6 @@ it("连接 loading 期间固定原菜单展示，完成后一次采用新目录"
             providerLabel: "Provider",
             modelsLabel: "Models",
             selectModelLabel: "Select model",
-            levels: target
-              ? []
-              : [
-                  { value: "low", label: "Low" },
-                  { value: "high", label: "High" },
-                ],
-            value: target ? "" : "low",
             providerMenu: {
               groups: target ? [groups[3]!] : groups,
               selectedKey: target ? "api" : "personal",

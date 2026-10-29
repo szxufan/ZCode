@@ -48,12 +48,6 @@ function Composer() {
           providerLabel: "Provider",
           modelsLabel: "Models",
           selectModelLabel: "Select model",
-          // 触发器档位展示保留；菜单内已无 Effort 设置，档位调整走独立思考控件。
-          levels: [
-            { value: "low", label: "Low" },
-            { value: "high", label: "High" },
-          ],
-          value: "high",
         }}
       />
       <output data-testid="selection" hidden>

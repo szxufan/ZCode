@@ -298,8 +298,16 @@ OAuth 连接初始化冲突后不再执行自动连接校正：该登录操作�
 - 弹层结构收敛为：供应商行 → 分割线 → Models 标题与模型列表（→ Manage models）。本文此前描述的 Effort 标题、当前档位文字、`cycleThoughtLevel` 快捷键徽标、离散滑杆、渐变、档位圆点、最高档气泡及其前置分割线一并移除，不再保留占位空间。
 - 「按档位数量统一展示」「单一档位仅显示标题与当前值」「Off 单档隐藏整个 Effort 区域」「无能力目录隐藏 Effort」等菜单内展示规则由「菜单内一律不渲染 Effort 区域」取代；无论模型声明多少档位，菜单结构一致。
 - 思考档位的唯一调整入口是工具栏独立思考控件及 `cycleThoughtLevel` 快捷键（Ctrl+T）。调档期间的焦点保护、目录重读门禁等滑杆专有规则随滑杆一并失效；独立思考控件沿用其自身 Select 交互。
-- 合并入口触发器的档位展示（文字、压缩态竖条、Highspeed 配色、`aria-label` 档位拼接、打开态「选择模型 + 档位」）保持不变，仅展示不可调。「整体压缩优先级」各级维持原状。
 - 选择模型后菜单保持打开、Provider 切换保持打开、一次外部点击关闭等菜单关闭规则不变；「便于继续调整思考档位」不再是保持打开的理由，仅为保留浏览与对比模型的现状行为。
 - 桌面 E2E 的合并菜单调档 helper（原滑杆键盘驱动）改为驱动独立思考控件；档位目录断言走 `TID_V4_MODEL_CONFIG` 的 `data-thought-levels` 投影。供应商子菜单布局、Models 滚动遮罩、安全边距等规则不受影响。
 
-验证记录（2026-10-29，Windows 工作区）：composerOptions 不再携带 `onValueChange`/`effortLabel`/`effortShortcutLabel`，`ComposerEffortHeading` 与 `composer-thought-slider.css` 删除，滑杆样式收敛为 `composer-thought-meter.css`（仅保留 Highspeed 竖条蓝色规则）。组件测试 composerModelThinking 22 条、composerTeamMenu 5 条重写通过；按引用图选取的 14 个相关测试文件批跑 204 条中 199 条通过，5 条失败经干净 HEAD stash 对照确认全部为既有失败或批跑抖动（modelConfigSelectRenderStability 4 条在基线同样失败，subagentsSection 批跑抖动在基线同样复现），单文件复跑全部通过；v4ComposerToolbarRecovery 的空 thought 事件用例改经独立思考控件驱动。typecheck、lint（128 条既有 warning、0 error）、architecture:check --changed 通过；`test:unit:affected --files` 因别名导入返回 0 选中，push 范围要求干净工作区，故以引用图直接选择执行。knip 与 fmt:check 在干净 HEAD 上同样失败（本地工具链版本与仓库基线不一致），非本次引入。桌面 Electron E2E（工具栏、turbo recovery、team-usage、subagent catalog 断言已同步改写）与浏览器 manual-review 套件需要 Electron/Playwright 环境，本机未执行；手机 Web 与真实模型请求未验证。
+### 合并入口触发器不再显示思考档位（2026-10-29）
+
+独立思考控件已稳定渲染在合并入口旁并自带档位文字与竖条，合并入口触发器上的思考档位展示（「High」文字、压缩态竖条、Highspeed 配色）与它重复。自本小节起，合并入口触发器不再显示任何思考档位信息：
+
+- 关闭态触发器只显示模型名（或压缩末级的模型图标）与下箭头；打开态仍为居中「选择模型」加图标，不再渲染档位文字、竖条及 `data-composer-open-thought` 挂载点。本文前文「High 使用次要文字色」「绿条始终是同一按钮内的展示」「模型图标态绿条保留」等触发器档位描述一并失效；文档顶部的 `[ 模型名 档位 ▾ ]` 示意图按当前实现理解为 `[ 模型名 ▾ ] → [ 模型图标 ]`。
+- `aria-label` 只保留模型与操作文案，不再拼接当前档位；Highspeed/FlashX 专用竖条配色（`composer-thought-meter.css`）随竖条一并删除，`isGlmHighspeedModel` 判定与 `ComposerThoughtIndicator` 一并移除。Highspeed 锁定模型的既有专用指示器（会话工具栏）不受影响。
+- `ComposerModelOptions` 不再携带 `levels`/`value`；触发器档位展示的收缩优先级（第 4、5 级）由独立思考控件自身的文字/竖条收缩承担，`fitComposerToolbar` 对合并入口只保留「模型名 → 图标」最后一级。
+- 思考档位仍然只在独立思考控件展示与调整；`TID_V4_MODEL_CONFIG` 的 `data-thought` 投影与协议不变。
+
+验证记录（2026-10-29，Windows 工作区）：composerOptions 不再携带 `onValueChange`/`effortLabel`/`effortShortcutLabel`，`ComposerEffortHeading` 与 `composer-thought-slider.css` 删除。按引用图选取的 14 个相关测试文件批跑 204 条中 199 条通过，5 条失败经干净 HEAD stash 对照确认全部为既有失败或批跑抖动（modelConfigSelectRenderStability 4 条在基线同样失败，subagentsSection 批跑抖动在基线同样复现），单文件复跑全部通过；v4ComposerToolbarRecovery 的空 thought 事件用例改经独立思考控件驱动。typecheck、lint（128 条既有 warning、0 error）、architecture:check --changed 通过；`test:unit:affected --files` 因别名导入返回 0 选中，push 范围要求干净工作区，故以引用图直接选择执行。knip 与 fmt:check 在干净 HEAD 上同样失败（本地工具链版本与仓库基线不一致），非本次引入。桌面 Electron E2E（工具栏、turbo recovery、team-usage、subagent catalog 断言已同步改写）与浏览器 manual-review 套件需要 Electron/Playwright 环境，本机未执行；手机 Web 与真实模型请求未验证。

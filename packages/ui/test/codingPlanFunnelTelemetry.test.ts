@@ -1,7 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import type { ProviderSettingsProviderView, ProviderSettingsView } from "@zcode/services";
 import { BUILTIN_MODEL_PROVIDER_IDS, type IPlatformService } from "@zcode/shared";
-import { reportPresetSubscriptionSuccess } from "@/settings/model-provider-section/oauthActions.js";
 import { buildCodingPlanEmbeddedReportContext } from "@/settings/model-provider-section/codingPlanEmbeddedWebview.js";
 import {
   createIdleTimeCodingPlanFunnelContext,
@@ -64,14 +63,7 @@ describe("codingPlanFunnelTelemetry", () => {
     async (presetId) => {
       const reportTelemetryEvent = vi.fn(async () => {});
       const platform = { reportTelemetryEvent } as unknown as IPlatformService;
-      await reportPresetSubscriptionSuccess({ platform, presetId });
       const family = presetId.includes("bigmodel") ? "bigmodel" : "zai";
-      expect(reportTelemetryEvent).toHaveBeenCalledTimes(1);
-      expect(reportTelemetryEvent.mock.calls[0][0]).toMatchObject({
-        elementName: "add_model_success",
-        eventExtraDetail: { model_provider: family === "zai" ? "z.ai" : "bigmodel" },
-      });
-      reportTelemetryEvent.mockClear();
       const context = createCodingPlanFunnelContext({
         providerId: presetId,
         upgradeSource: "setting_team_plan_banner",

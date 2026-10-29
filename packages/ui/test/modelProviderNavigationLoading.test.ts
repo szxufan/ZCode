@@ -25,12 +25,8 @@ describe("model provider navigation loading indicator", () => {
   it("没有 Personal Provider 时不渲染空分组", () => {
     const html = renderWithTooltipProvider(
       createElement(ModelProviderSectionNavigation, {
-        navigationGroups: [
-          { id: "preset", title: "Preset", items: [] },
-          { id: "custom", title: "Custom Providers", items: [] },
-        ],
+        navigationGroups: [{ id: "custom", title: "Custom Providers", items: [] }],
         selectedNodeKey: null,
-        presetLoading: false,
         customLoading: false,
         onSelectNavItem: vi.fn(),
       }),
@@ -70,16 +66,14 @@ describe("model provider navigation loading indicator", () => {
   it("按分组返回对应 loading 状态", () => {
     expect(
       shouldShowModelProviderGroupLoadingIndicator({
-        groupId: "preset",
-        presetLoading: true,
-        customLoading: false,
+        groupId: "custom",
+        customLoading: true,
       }),
     ).toBe(true);
 
     expect(
       shouldShowModelProviderGroupLoadingIndicator({
         groupId: "custom",
-        presetLoading: true,
         customLoading: false,
       }),
     ).toBe(false);
@@ -131,7 +125,6 @@ describe("model provider navigation loading indicator", () => {
           },
         ],
         selectedNodeKey: null,
-        presetLoading: false,
         customLoading: false,
         onSelectNavItem: vi.fn(),
         reorderableProviderIds: new Set(["provider-a"]),

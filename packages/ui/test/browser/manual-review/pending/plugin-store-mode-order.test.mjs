@@ -353,7 +353,7 @@ for (const width of [1200, 390]) {
             page.locator(`[data-testid="plugin-store-card"][data-plugin-id="${name}@${official}"]`);
           await card("documents").waitFor();
           assert.equal(await card("document-skills").count(), 0);
-          for (const name of ["documents", "pdf", "presentations", "spreadsheets", "image-search"])
+          for (const name of ["documents", "pdf", "presentations", "spreadsheets"])
             assert.equal(await card(name).count(), 1, name);
           assert.equal(
             await card("repairable")
@@ -367,7 +367,6 @@ for (const width of [1200, 390]) {
             ["pdf", "pdf.png"],
             ["presentations", "presentations.png"],
             ["spreadsheets", "spreadsheets.png"],
-            ["image-search", "image-search.png"],
           ];
           await Promise.all(bundledIcons.map(([name]) => card(name).locator("img").waitFor()));
           await page.waitForFunction(() => {

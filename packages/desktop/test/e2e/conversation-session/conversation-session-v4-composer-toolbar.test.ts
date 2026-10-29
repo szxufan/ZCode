@@ -602,7 +602,6 @@ describe("v4 M5 门禁：composer 工具条与 slash 候选面板", () => {
     await closeComposerPicker();
   });
 
-
   it("模型管理入口位于 Provider 子菜单并打开模型设置", async () => {
     await ensureCompletedTask();
     await openComposerPicker("model");
@@ -835,9 +834,8 @@ describe("v4 M5 门禁：composer 工具条与 slash 候选面板", () => {
                   ? trigger.getBoundingClientRect().width < 128 &&
                     getComputedStyle(label).display === "none" &&
                     getComputedStyle(icon).display !== "none" &&
-                    getComputedStyle(
-                      trigger.querySelector<HTMLElement>("[data-composer-open-thought]")!,
-                    ).display !== "none" &&
+                    // 合并入口已不显示思考档位；图标态不允许残留档位挂载点。
+                    !trigger.querySelector("[data-composer-open-thought]") &&
                     !trigger.querySelector("[data-composer-open-chevron]")
                   : trigger.getBoundingClientRect().width >= 128 &&
                     getComputedStyle(label).display !== "none" &&
@@ -858,7 +856,8 @@ describe("v4 M5 门禁：composer 工具条与 slash 候选面板", () => {
       await openComposerPicker("model");
       await waitForOnlyComposerPickerOpen("model", "reopen at compact width");
       expect(await $("[data-composer-open-icon]").isDisplayed()).toBe(true);
-      expect(await $('[data-testid="composer-thought-meter"]').isDisplayed()).toBe(true);
+      // 档位展示收敛到独立思考控件；合并入口图标态不再渲染思考竖条。
+      expect(await $('[data-testid="composer-thought-meter"]').isExisting()).toBe(false);
       expect(await $("[data-composer-open-chevron]").isExisting()).toBe(false);
       expect(await $("[data-composer-open-label]").isDisplayed()).toBe(false);
       expect((await trigger.getSize()).width).toBeLessThan(128);

@@ -176,7 +176,7 @@ describe("official MCP trust: host and agent must agree on the ZCode API origin"
     registry: ReturnType<typeof createOfficialMcpTrustedOriginRegistry>,
     origin: string,
   ) {
-    return (await registry.isTrusted({ mcpKey: "image_search", origin, pluginId: PLUGIN_ID }))
+    return (await registry.isTrusted({ mcpKey: "example_search", origin, pluginId: PLUGIN_ID }))
       .trusted;
   }
 

@@ -16,7 +16,7 @@ import {
 } from "../src/mcp/official-auth.js";
 
 const PLUGIN_ID = "zcode-tools@zcode-plugins-official";
-const MCP_KEY = "image-search";
+const MCP_KEY = "example-search";
 const JWT_HEADERS = {
   Authorization: "Bearer jwt-current",
   "Bigmodel-Target-Type": "PERSONAL",

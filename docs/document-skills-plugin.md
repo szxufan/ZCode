@@ -1,6 +1,8 @@
 # 文档类官方插件
 
-原 `document-skills` 按格式拆为四个独立内容插件，并内置独立 `image-search` 搜图插件，随客户端默认启用：
+原 `document-skills` 按格式拆为四个独立内容插件，随客户端默认启用：
+
+> 变更记录（2026-10-29）：曾随拆分内置的 `image-search` 搜图插件（`image_search` 官方 MCP）已从内置插件中下线，本仓库不再携带其源码与 seed 定义；官方市场与本地既有安装不受影响。
 
 | 插件          | Skill | 源码目录                                       |
 | ------------- | ----- | ---------------------------------------------- |
@@ -14,9 +16,9 @@
 四个内置发布版本均为 `0.1.8`（高于旧聚合插件 `0.1.5`）。导入目录逐字节对齐上游，
 仅允许 package.json 与 .zcode-plugin/plugin.json 的内置版本字段差异；本次内容差异均来自上游导出，版本字段按内置发布序列升版。
 
-许可证：四个文档插件与搜图插件均为 Apache-2.0（2026-10-08 起，文档插件原为非商业许可，随开源改为 Apache-2.0，0.1.8 起生效；上游插件仓库需同步修改许可，否则下次同步会把旧许可带回）。
+许可证：四个文档插件均为 Apache-2.0（2026-10-08 起，文档插件原为非商业许可，随开源改为 Apache-2.0，0.1.8 起生效；上游插件仓库需同步修改许可，否则下次同步会把旧许可带回）。
 
-展示名对应：Documents / Word文档、Presentations / 演示文档、PDF / PDF、Spreadsheets / 电子表格、Image Search / 搜图。
+展示名对应：Documents / Word文档、Presentations / 演示文档、PDF / PDF、Spreadsheets / 电子表格。
 
 ## 发现、启用与升级
 
@@ -28,14 +30,12 @@ Bootstrap 官方 definition 是内置目录与默认启用的权威来源；Sett
 用户另行安装的市场插件仍按既有安装与启用配置处理，不自动改写或卸载。
 
 每个插件提供 `agents/visual-judge.md`，使用 `<插件名>:visual-judge` 限定名。
-原 `judge` 名称不再由内置插件提供。每个插件只携带自己的格式 skill；四个插件本身不再声明
-`image_search` MCP，图片搜索由默认启用的 `image-search` 插件提供，版本为 `0.1.1`，通过既有官方 JWT 认证访问 `${ZCODE_BASE_URL}/api/v1/mcp/server/image_search`；不新增本地 MCP runtime。
-`image-search` 缓存路径为 `~/.zcode/cli/plugins/cache/zcode-plugins-official/image-search/0.1.1/`。
+原 `judge` 名称不再由内置插件提供。每个插件只携带自己的格式 skill，不声明任何 MCP server。
 
 ## 打包与验收
 
 filesystem seed、SEA、Electron Node bundle、remote prebuild、server remote 部署与容器评测
-必须使用五个目录，保留 `agents/`。每个发布单元必须校验自己的 `skills/<格式>/SKILL.md`
+必须使用四个目录，保留 `agents/`。每个发布单元必须校验自己的 `skills/<格式>/SKILL.md`
 与 `agents/visual-judge.md`；缺少任意必需资产不得标记成完整缓存。
 所有版本权威（package、manifest、Bootstrap、SEA）与缓存路径必须一致，内容变化必须升版。
 

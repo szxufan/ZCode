@@ -69,7 +69,7 @@ export function writeOfficialPluginRuntimeManifest(input: OfficialRuntimeManifes
   // 不会进入这个分支，也不会生成独立的 CUA MCP server。
   for (const [serverKey, serverRaw] of Object.entries(mcpServers)) {
     const mcpServer = asRecord(serverRaw);
-    // HTTP/SSE 插件没有本地入口；按 stdio 校验会让 image-search 阻断整个会话初始化。
+    // HTTP/SSE 插件没有本地入口；按 stdio 校验会阻断整个会话初始化。
     if (mcpServer.type !== undefined && mcpServer.type !== "stdio") continue;
     const mcpServerEnv = isRecord(mcpServer.env) ? mcpServer.env : {};
     const serverArgs =

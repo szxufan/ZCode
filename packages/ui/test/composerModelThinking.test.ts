@@ -27,34 +27,19 @@ const groups = [
 
 function Harness({
   modelName,
-  invalid = false,
   loading = false,
   locked = [],
   onManageModels,
   empty = false,
-  levelsOverride,
-  initialThought,
 }: {
   modelName?: string;
-  invalid?: boolean;
   loading?: boolean;
   locked?: string[];
   onManageModels?: () => void;
   empty?: boolean;
-  levelsOverride?: { value: string; label: string }[];
-  initialThought?: string;
 }) {
   const [model, setModel] = useState(empty ? "" : "a/flash");
-  const [thought, setThought] = useState(initialThought ?? (invalid ? "missing" : "high"));
   const [open, setOpen] = useState(true);
-  const levels =
-    model === "b/fixed"
-      ? [{ value: "disabled", label: "Off" }]
-      : [
-          { value: "disabled", label: "Off" },
-          { value: "medium", label: "Medium" },
-          { value: "high", label: "High" },
-        ];
   return createElement(
     ZCodeIntlProvider,
     { initialLocale: "en-US" },
@@ -82,10 +67,7 @@ function Harness({
         onManageModels,
         lockReasonMessage: "",
         isItemLocked: (value: string) => locked.includes(value),
-        onValueChange: (value: string) => {
-          setModel(value);
-          setThought(value === "b/fixed" ? "disabled" : "high");
-        },
+        onValueChange: setModel,
         open,
         onOpenChange: setOpen,
         focusSelectorOnClose: null,
@@ -93,8 +75,6 @@ function Harness({
           providerLabel: "Provider",
           modelsLabel: "Models",
           selectModelLabel: "Select model",
-          levels: loading ? [] : (levelsOverride ?? levels),
-          value: thought,
         },
       }),
     ),
@@ -130,28 +110,25 @@ describe("composer combined model picker", () => {
       expect(trigger.querySelector('[data-composer-trigger-frame="closed"]')).toBeNull(),
     );
     expect(trigger.querySelector('[data-composer-trigger-frame="open"]')?.textContent).toBe(
-      "Select modelHigh",
+      "Select model",
     );
 
     expect(screen.getByTestId("chat-model-select-trigger")).toBe(trigger);
   });
 
-  it("never renders an effort setting in the model menu regardless of level count", () => {
-    for (const levelsOverride of [
-      undefined,
-      [{ value: "disabled", label: "Off" }],
-      [],
-    ]) {
-      render(createElement(Harness, { levelsOverride }));
-      // 合并入口的思考档位展示保留，但菜单内不再提供任何调整设置。
-      expect(screen.getByTestId("composer-thought-meter")).toBeTruthy();
-      expect(screen.queryByText("Effort")).toBeNull();
-      expect(screen.queryByRole("slider")).toBeNull();
-      expect(screen.queryByRole("switch")).toBeNull();
-      expect(screen.queryByTestId("composer-thought-slider")).toBeNull();
-      expect(screen.queryByTestId("composer-effort-shortcut")).toBeNull();
-      cleanup();
-    }
+  it("never renders a thought level display on the trigger or in the menu", () => {
+    render(createElement(Harness));
+    const trigger = screen.getByTestId("chat-model-select-trigger");
+    // 档位展示与调整都收敛到独立思考控件；合并入口不再携带任何思考强度信息。
+    expect(screen.queryByTestId("composer-thought-meter")).toBeNull();
+    expect(trigger.querySelector("[data-composer-open-thought]")).toBeNull();
+    expect(trigger.querySelector("[data-composer-thought-label]")).toBeNull();
+    expect(trigger.textContent).not.toContain("High");
+    expect(screen.queryByText("Effort")).toBeNull();
+    expect(screen.queryByRole("slider")).toBeNull();
+    expect(screen.queryByRole("switch")).toBeNull();
+    expect(screen.queryByTestId("composer-thought-slider")).toBeNull();
+    expect(screen.queryByTestId("composer-effort-shortcut")).toBeNull();
   });
 
   it("keeps an empty selection secondary without a phantom effort or effort placeholder", () => {
@@ -206,7 +183,7 @@ describe("composer combined model picker", () => {
     },
   );
 
-  it("selects the provider model and synchronizes the thought display without a second model click", () => {
+  it("selects the provider model without a second model click", () => {
     render(createElement(Harness));
     const providerTrigger = screen.getByTestId("composer-provider-trigger");
     fireEvent.keyDown(providerTrigger, { key: "ArrowRight" });
@@ -218,12 +195,6 @@ describe("composer combined model picker", () => {
       screen.getByRole("menuitemradio", { name: "Fixed model" }).getAttribute("aria-checked"),
     ).toBe("true");
     expect(screen.getAllByRole("menu")).toHaveLength(1);
-
-    // 固定模型只有 Off：触发器竖条归零，不制造默认选择。
-    expect(screen.getByTestId("composer-thought-meter").getAttribute("data-progress")).toBe("0");
-    fireEvent.keyDown(screen.getByTestId("composer-provider-trigger"), { key: "ArrowRight" });
-    fireEvent.click(screen.getByRole("menuitemradio", { name: "Provider A Individual" }));
-    expect(screen.getByTestId("composer-thought-meter").getAttribute("data-progress")).toBe("100");
   });
 
   it("preserves the selected model when selecting the current provider again", () => {
@@ -259,11 +230,6 @@ describe("composer combined model picker", () => {
       "GLM-5.3-Flash",
     );
   });
-
-  it("does not project an invalid effort as a selected level on the trigger", () => {
-    render(createElement(Harness, { invalid: true }));
-    expect(screen.getByTestId("composer-thought-meter").getAttribute("data-progress")).toBe("0");
-  });
 });
 
 describe("narrow provider navigation", () => {
@@ -289,31 +255,4 @@ describe("narrow provider navigation", () => {
       window.matchMedia = original;
     }
   });
-});
-
-describe("GLM Highspeed trigger meter", () => {
-  it.each([
-    ["GLM-5.3-Highspeed", true],
-    ["glm-5.3-HIGHSPEED", true],
-    ["GLM-5.3-FlashX", true],
-    ["glm-5.3-FLASHx", true],
-    ["FlashX", false],
-    ["DeepSeek-FlashX", false],
-    ["GLM-5.3", false],
-    ["DeepSeek-Highspeed", false],
-  ])("derives the effect from model name %s", (modelName, enabled) => {
-    render(createElement(Harness, { modelName }));
-
-    expect(screen.getByTestId("composer-thought-meter").getAttribute("data-highspeed")).toBe(
-      String(enabled),
-    );
-  });
-});
-
-it("hides the effort area when a selected model has no effort capability", () => {
-  render(createElement(Harness, { levelsOverride: [] }));
-  expect(screen.getByRole("menuitemradio", { name: "GLM-5.3", exact: true })).toBeTruthy();
-  expect(screen.queryByText("Effort")).toBeNull();
-  expect(screen.queryByRole("slider")).toBeNull();
-  expect(screen.queryByRole("switch")).toBeNull();
 });

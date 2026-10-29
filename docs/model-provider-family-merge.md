@@ -6,6 +6,10 @@
 > Provider Key 缓存及自动改会话选择的段落不可作为恢复旧架构的依据。
 > 本轮保留的产品行为是 Family 连接菜单、独立查询 Start 权益和数量快捷入口。
 > 具体适配与未决行为见 [Todo 85 审计表](working-memory/provider-refactor/plan/staging-conflict-restoration-audit.md)。
+>
+> 2026-10-29：模型设置已整体移除 Family 导航（品牌入口、Start Plan / Coding Plan / Team Plan
+> 条目、连接方式切换），`providerFamilyDomain` / `providerFamilyConnectionSelections` 在模型
+> 设置内不再被 UI 消费（既有 logout 链路仍会写入 domain）。本文仅作历史设计存档。
 
 ## Goal
 

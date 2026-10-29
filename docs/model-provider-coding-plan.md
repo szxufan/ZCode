@@ -1,41 +1,10 @@
 # Model Provider Coding Plan
 
-Model Providers now separate manual API Key access from account-based Coding Plan access.
+> 2026-10-29 起模型设置已移除全部智谱账号类条目（`Z.AI` / `BigModel` 品牌供应商入口、Start Plan、个人/团队 Coding Plan、Team Plan 及其详情页）。模型设置只剩 API Key / 模板接入；本文仅保留仍存在的购买面板（Coding Plan Upgrade Dialog，由侧栏与聊天链路打开）相关约定，其余章节描述的模型设置行为已成为历史。
 
-## Entries
+## Purchase Panel（仍存在）
 
-- `Z.AI - API Key` and `BigModel - API Key` keep the existing provider form, including API Key, endpoints, models, and model mappings.
-- `Z.AI - Coding Plan` and `BigModel - Coding Plan` are independent entries. They use their own `*-coding-plan` provider credential to query the usage quota entitlement API, then derive whether the account has Coding Plan access.
-- Provider ids are intentionally separate:
-  - `builtin:zai` => `Z.AI - API Key`
-  - `builtin:zai-coding-plan` => `Z.AI - Coding Plan`
-  - `builtin:bigmodel` => `BigModel - API Key`
-  - `builtin:bigmodel-coding-plan` => `BigModel - Coding Plan`
-- The provider sidebar groups preset entries into provider cards:
-  - `Z.AI`: `Coding Plan`, `API Key`
-  - `BigModel`: `Coding Plan`, `API Key`
-
-## Coding Plan States
-
-- Not connected: the matching Coding Plan provider is not configured. The page shows the lightweight account connection card and vertical Lite / Pro / Max plan cards.
-- Connected but not subscribed: the matching Coding Plan provider is configured, but the quota entitlement API returns `no_plan` or no usable plan data. The page keeps the plan cards and shows only the subscribe action.
-- Subscribed: the matching Coding Plan provider is configured and the quota entitlement API returns subscription or quota data. The page shows the normal provider configuration in this order: name, Coding Plan status card, endpoints, models, and model mapping. It does not show API Key or Connection Mode fields.
-
-The Coding Plan status is refreshed after provider load, manual refresh, and saving `builtin:zai-coding-plan` or `builtin:bigmodel-coding-plan`. Users who need to paste a key manually should use the API Key entries instead.
-
-When an entitlement refresh is in flight, the settings page keeps displaying an existing valid paid Coding Plan quota snapshot for the same provider. This matches the sidebar usage entry: cached valid entitlement is treated as the current visible state until the background refresh returns, instead of temporarily falling back to Start Plan or an empty checking state.
-
-Manual refresh in Model Provider settings is an account entitlement refresh, not
-only a provider catalog refresh. It must refresh OAuth-derived Coding Plan API
-keys, personal Coding/Start entitlement snapshots, and authenticated Team Plan
-pricing/customer project data. This covers users being added to a team, removed
-from a team, and team purchases completed while the app is already open.
-
-The purchase success page keeps a single `Done` action. It must not show a
-separate immediate refresh button. Clicking `Done` completes the purchase flow
-by running the outer purchase-complete refresh chain first, then closing the
-panel. That refresh chain is responsible for making the new personal or Team
-Plan entitlement visible in Model Provider settings.
+购买升级弹窗（`CodingPlanUpgradeDialog`）仍由侧栏/会话内的账号态入口打开，其商品目录、价格展示与购买流程约定继续生效：
 
 ## Pricing Cards
 
