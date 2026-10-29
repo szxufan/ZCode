@@ -83,3 +83,12 @@ UI（设置页选中配置档 / composer 切换器）
 6. "载入内置提示词"得到的文本与运行时内置正文一致（同一 `composeDefaultAgentPromptBody()`）。
 7. `customSystemPrompt`（工作流子代理）路径输出与改动前语义等价（其文案仍英文，不受配置档影响）。
 8. debug analyzer 能从落盘 system prompt 识别中文 section 头。
+
+## 6. AI 生成 / 修改提示词（设置页）
+
+- 入口：`agentPrompt` 分区编辑器顶部的 AI 助手区——指令输入框 + 「AI 生成」（全新生成）与「按指令修改正文」（修改模式，正文为空时禁用）。
+- 通路：renderer → `IZcodeAgentService.generateAgentPromptDraft`（Host）→ `generateWorkspaceText`（`workspace/generateText`；CLI 侧无活跃会话时临时建 ZCodeApp，用完即关）。prompt 构造与输出规整在 `packages/services/src/zcode-agent/agentPromptDraft.ts`，与 commit message 生成同一先例。
+- 执行上下文：AI 生成由本机 Host 启动 CLI，只能使用本地工作区——与模型连通性探测同源，复用 `resolveModelProviderConnectivityWorkspacePath` 过滤远端 tab（远端激活时取任一本地 tab，无本地 tab 时回退进入设置页前的本地工作区）；无任何可用本地工作区时按钮禁用。模型：本机 `modelSelectionService.getView().preferredSelection`（与 commit message 同源），缺失时报“未配置默认模型”。
+- `querySource = "agent_prompt_draft"`（自由字符串，无协议改动）；`requestTimeoutMs = 150_000`（协议 client 默认 3 分钟，必须透传自身 deadline）；`maxOutputTokens = 8192`。遥测超时必须显式覆盖 catalog 默认 30s（取 deadline + 取消缓冲），否则长请求会被记为 abandoned。不做流式与取消（后续项）。
+- 结果语义：AI 输出**只回填编辑器草稿**，不写设置、不落盘；覆盖前值保留为「撤销 AI 结果」，手动编辑或载入内置会清除撤销点；撤销点与草稿同生命周期（新建/编辑/关闭草稿时经由单一重置点清空），pending 期间正文与取消按钮锁定、完成后校验草稿未被切换，防止异步结果覆盖编辑或撤销点跨档泄漏。是否保存仍由用户点击「保存」决定。
+- 失败语义：指令为空在 UI 侧拦截；无工作区（`agent-prompt-draft.workspace-required`）、无默认模型（`agent-prompt-draft.model-missing`）、空输出（`agent-prompt-draft.empty-output`）等失败只抛稳定错误码（服务层与注入回调都不携文案），UI 侧按码映射 i18n 文案后走分区现有 error 展示，不打断编辑；未知错误（如 RPC 原始异常）原样透出。

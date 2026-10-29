@@ -2872,6 +2872,17 @@ const zhCN: Record<string, string> = {
   "chat.toolbar.promptProfile.label": "提示词",
   "chat.toolbar.promptProfile.builtin": "内置默认",
   "chat.toolbar.promptProfile.manage": "管理提示词…",
+  "settings.agentPrompt.ai.title": "AI 助手",
+  "settings.agentPrompt.ai.instructionPlaceholder":
+    "描述你对提示词的要求，如：更简洁、强调测试优先、主动运行验证…",
+  "settings.agentPrompt.ai.generate": "AI 生成",
+  "settings.agentPrompt.ai.revise": "按指令修改正文",
+  "settings.agentPrompt.ai.pending": "AI 正在生成，可能需要一到两分钟…",
+  "settings.agentPrompt.ai.undo": "撤销 AI 结果",
+  "settings.agentPrompt.ai.workspaceRequired": "需要先打开一个工作区才能使用 AI 生成。",
+  "settings.agentPrompt.ai.instructionRequired": "请先填写 AI 指令。",
+  "settings.agentPrompt.ai.modelMissing": "未配置默认模型，请先在模型设置中选择。",
+  "settings.agentPrompt.ai.emptyOutput": "AI 未返回可用内容，请调整指令后重试。",
   "settings.memory.workspaceMemory": "工作区记忆",
   "settings.memoryDescription":
     "在工作区中保存并复用长期上下文，新会话生效。开启后可能增加模型调用和 Token 成本。",

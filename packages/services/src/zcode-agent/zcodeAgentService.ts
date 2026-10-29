@@ -164,6 +164,13 @@ import type {
   IAccountRequestAuthService,
 } from "#src/model-provider/accountRequestAuthService.js";
 import { mergeAutomationMutationToolDenylist } from "#src/zcode-agent/automationToolPolicy.js";
+import {
+  AGENT_PROMPT_DRAFT_MAX_OUTPUT_TOKENS,
+  AGENT_PROMPT_DRAFT_QUERY_SOURCE,
+  AGENT_PROMPT_DRAFT_REQUEST_TIMEOUT_MS,
+  buildAgentPromptDraftMessages,
+  extractAgentPromptDraftText,
+} from "./agentPromptDraft.js";
 import { ZCODE_AGENT_RUNTIME_UNAVAILABLE_CODE } from "./zcodeAgent.js";
 import type {
   ZCodeProtocolRequestId,
@@ -192,6 +199,7 @@ import type {
   ZCodeAgentCreateSessionParams,
   ZCodeAgentInstallPluginParams,
   ZCodeAgentGenerateWorkspaceTextParams,
+  ZCodeAgentGenerateAgentPromptDraftParams,
   ZCodeAgentTestModelConnectivityParams,
   ZCodeAgentGoalParams,
   ZCodeAgentGrantWorkspaceHookTrustParams,
@@ -4963,6 +4971,24 @@ export function createZCodeAgentService(
         zcodeProviderTestModelConnectivityResultSchema,
         { signal: params.signal },
       );
+    },
+
+    async generateAgentPromptDraft(params: ZCodeAgentGenerateAgentPromptDraftParams) {
+      const result = await this.generateWorkspaceText({
+        workspacePath: params.workspacePath,
+        ...(params.workspaceIdentity ? { workspaceIdentity: params.workspaceIdentity } : {}),
+        selection: params.selection,
+        messages: buildAgentPromptDraftMessages({
+          instruction: params.instruction,
+          ...(params.baseContent !== undefined ? { baseContent: params.baseContent } : {}),
+        }),
+        querySource: AGENT_PROMPT_DRAFT_QUERY_SOURCE,
+        maxOutputTokens: AGENT_PROMPT_DRAFT_MAX_OUTPUT_TOKENS,
+        // 生成正文可能超过协议 client 默认 3 分钟（thinking 模型）；必须透传自身 deadline，
+        // 否则默认超时先触发并被误判 stale 杀进程。
+        requestTimeoutMs: AGENT_PROMPT_DRAFT_REQUEST_TIMEOUT_MS,
+      });
+      return { text: extractAgentPromptDraftText(result.text) };
     },
 
     async sendPrompt(params: ZCodeAgentSendPromptParams) {

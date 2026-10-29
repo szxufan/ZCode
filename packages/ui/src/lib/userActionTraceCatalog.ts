@@ -89,6 +89,8 @@ export const SETTINGS_USER_ACTION_FEATURES = {
     "save_profile",
     "delete_profile",
     "activate_profile",
+    "ai_generate",
+    "ai_revise",
   ],
   "settings.browser": [
     "toggle_browser_use",

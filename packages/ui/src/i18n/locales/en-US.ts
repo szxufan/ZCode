@@ -3046,7 +3046,8 @@ const enUS: Record<string, string> = {
   "settings.agentPrompt.description":
     "Manage system prompt profiles for the main agent. Switching applies to new sessions immediately and to active sessions after the current turn.",
   "settings.agentPrompt.builtin.name": "Built-in default",
-  "settings.agentPrompt.builtin.description": "The built-in Chinese system prompt shipped with ZCode.",
+  "settings.agentPrompt.builtin.description":
+    "The built-in Chinese system prompt shipped with ZCode.",
   "settings.agentPrompt.activeBadge": "Active",
   "settings.agentPrompt.activate": "Activate",
   "settings.agentPrompt.profile.summary": "Custom prompt · {chars} chars",
@@ -3069,6 +3070,19 @@ const enUS: Record<string, string> = {
   "chat.toolbar.promptProfile.label": "Prompt",
   "chat.toolbar.promptProfile.builtin": "Built-in default",
   "chat.toolbar.promptProfile.manage": "Manage prompts…",
+  "settings.agentPrompt.ai.title": "AI assistant",
+  "settings.agentPrompt.ai.instructionPlaceholder":
+    "Describe what you want, e.g. be concise, test-first, verify changes proactively…",
+  "settings.agentPrompt.ai.generate": "Generate with AI",
+  "settings.agentPrompt.ai.revise": "Revise with instruction",
+  "settings.agentPrompt.ai.pending": "Generating, this may take a minute or two…",
+  "settings.agentPrompt.ai.undo": "Undo AI result",
+  "settings.agentPrompt.ai.workspaceRequired": "Open a workspace first to use AI generation.",
+  "settings.agentPrompt.ai.instructionRequired": "Enter an instruction first.",
+  "settings.agentPrompt.ai.modelMissing":
+    "No default model configured. Pick one in model settings.",
+  "settings.agentPrompt.ai.emptyOutput":
+    "AI returned no usable content. Adjust the instruction and retry.",
   "settings.memory.workspaceMemory": "Workspace Memory",
   "settings.memoryDescription":
     "Save and reuse long-term context in workspaces. Applies to new sessions and may increase model requests and token costs.",
