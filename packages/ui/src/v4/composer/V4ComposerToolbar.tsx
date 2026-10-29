@@ -49,10 +49,7 @@ import {
   type ChatStartPlanBalanceConfig,
 } from "@/chat-input-toolbar/StartPlanContextBalance.js";
 import { ThoughtLevelCycleControl } from "@/chat-input-toolbar/ThoughtLevelCycleControl.js";
-import {
-  getNextThoughtLevelValue,
-  getThoughtLevelLabel,
-} from "@/chat-input-toolbar/thoughtLevelOptions.js";
+import { getNextThoughtLevelValue } from "@/chat-input-toolbar/thoughtLevelOptions.js";
 import type { V4ComposerConfigPicker } from "@/v4/composer/configPickerState.js";
 import { useToolbarShortcutBindings } from "@/v4/composer/toolbarShortcuts.js";
 import {
@@ -1111,12 +1108,6 @@ function V4ComposerModelControlsImpl({
       providerLabel: intl.formatMessage({ id: "chat.toolbar.combined.provider" }),
       modelsLabel: intl.formatMessage({ id: "chat.toolbar.combined.models" }),
       selectModelLabel: intl.formatMessage({ id: "chat.toolbar.combined.selectModel" }),
-      levels:
-        thoughtOption?.options?.map((entry) => ({
-          value: entry.value,
-          label: getThoughtLevelLabel(intl, displayProvider, thoughtOption, entry),
-        })) ?? [],
-      value: String(thoughtOption?.currentValue ?? ""),
     }),
     [
       planGroups,
@@ -1127,8 +1118,6 @@ function V4ComposerModelControlsImpl({
       normalizedModelValue,
       connectionFamily,
       intl,
-      thoughtOption,
-      displayProvider,
     ],
   );
   const isModelOptionLocked = useCallback(() => false, []);
@@ -1144,8 +1133,7 @@ function V4ComposerModelControlsImpl({
   useToolbarShortcutBindings({
     hasAnyOption: Boolean(modelOption) || Boolean(thoughtOption),
     toolbarDisabled: disabled || recoveryPending || connectionSwitch.pending,
-    modelMenuDisabled:
-      disabled || recoveryPending || connectionSwitch.pending || !modelMenuVisible,
+    modelMenuDisabled: disabled || recoveryPending || connectionSwitch.pending || !modelMenuVisible,
     modelOption,
     thoughtOption: thoughtOption ?? undefined,
     onOpenModelMenu: handleOpenModelMenuShortcut,

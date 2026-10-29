@@ -806,7 +806,8 @@ describe("V4ComposerModelControls recovery", () => {
       },
     });
 
-    expect(captured.modelSelectProps?.composerOptions?.levels.map(({ value }) => value)).toEqual([
+    // 合并入口不再携带档位展示；候选档位断言走独立思考控件的 option。
+    expect(captured.thoughtControlProps?.option.options?.map(({ value }) => value)).toEqual([
       "low",
       "high",
       "max",
@@ -826,7 +827,8 @@ describe("V4ComposerModelControls recovery", () => {
           mode: "build",
         },
       });
-      expect(captured.modelSelectProps?.composerOptions?.value).toBe("");
+      // 控件未渲染（无档位可展示）或渲染为空占位，都不允许目录补出默认档位。
+      expect(captured.thoughtControlProps?.option.currentValue ?? "").toBe("");
     },
   );
 
@@ -851,9 +853,10 @@ describe("V4ComposerModelControls recovery", () => {
       },
     });
 
-    expect(captured.modelSelectProps?.composerOptions).toMatchObject({
-      value: "disabled",
-      levels: [{ value: "disabled" }],
+    // 草稿选择只进独立思考控件的展示投影，不再有第二份档位展示状态。
+    expect(captured.thoughtControlProps?.option).toMatchObject({
+      currentValue: "disabled",
+      options: [{ value: "disabled" }],
     });
   });
 

@@ -8,7 +8,7 @@ import {
 } from "../src/zcode-protocol/index.js";
 
 const VALID_REQUEST = {
-  mcpKey: "image-search",
+  mcpKey: "example-search",
   pluginId: "zcode-tools@zcode-plugins-official",
   requestId: "mcp-auth-1",
   targetOrigin: "https://mcp.zcode.example",
@@ -24,7 +24,7 @@ describe("official mcp auth headers protocol", () => {
 
   it("accepts a minimal request and a remote workspace identity", () => {
     expect(zcodeOfficialMcpAuthHeadersRequestParamsSchema.parse(VALID_REQUEST)).toMatchObject({
-      mcpKey: "image-search",
+      mcpKey: "example-search",
       targetOrigin: "https://mcp.zcode.example",
     });
     expect(

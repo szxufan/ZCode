@@ -34,15 +34,8 @@ const CODING_PLAN_TEAM_SPEC_MARKERS = [
   // 创建埋点回归复用本地账号控制面，避免初始化/发送访问真实套餐与登录服务。
   "conversation-session-create-telemetry.test.ts",
   "conversation-session-automation-run-title-stable.test.ts",
-  "coding-plan-team-usage.test.ts",
-  "coding-plan-entitlement-presentation.test.ts",
-  "provider-family-responsive.test.ts",
   "provider-builtin-refresh-failure.test.ts",
-  // Bugfix：登录后刷新子代理 catalog 的 case 与套餐用量 case 共用 team mock。
-  // 抽取 spec 判定时必须保留该入口，否则单跑时 worker 会在业务断言前缺少 mock。
-  "subagent-coding-plan-login-catalog-stale.test.ts",
   "conversation-session-model-provider-restart-recovery.test.ts",
-  "conversation-session-model-provider-settings-transition.test.ts",
   "conversation-session-model-provider-effective-selection.test.ts",
   "conversation-session-worker-effective-selection.test.ts",
   "conversation-session-model-provider-turbo-recovery.test.ts",

@@ -2,13 +2,8 @@ import { useState, type ReactNode } from "react";
 import { ScrollFadeViewport } from "@/components/ui/scroll-fade-viewport.js";
 import type { ComposerPlanGroup } from "@/lib/composerPlanGroups.js";
 import type { ModelSelectGroup } from "@/ModelConfigSelect.js";
-import { isNoThoughtLevel } from "@/chat-input-toolbar/thoughtLevelOptions.js";
 import { ComposerProviderMenu } from "@/chat-input-toolbar/ComposerProviderMenu.js";
-import {
-  DropdownMenuLabel,
-  DropdownMenuSeparator,
-} from "@/components/ui/dropdown-menu.js";
-import "@/chat-input-toolbar/composer-thought-meter.css";
+import { DropdownMenuLabel, DropdownMenuSeparator } from "@/components/ui/dropdown-menu.js";
 
 export interface ComposerModelOptions {
   providerMenu?: {
@@ -21,56 +16,6 @@ export interface ComposerModelOptions {
   providerLabel: string;
   modelsLabel: string;
   selectModelLabel: string;
-  /** 仅用于触发器展示当前档位；调整入口是独立思考控件，不在合并菜单内写入。 */
-  levels: readonly { value: string; label: string }[];
-  value: string;
-}
-
-export function getComposerThoughtDisplay(options: ComposerModelOptions) {
-  const current = options.levels.find((level) => level.value === options.value);
-  const thinking = options.levels.filter((level) => !isNoThoughtLevel(level));
-  const progress =
-    current && !isNoThoughtLevel(current)
-      ? ((thinking.findIndex((level) => level.value === current.value) + 1) / thinking.length) * 100
-      : 0;
-  return { label: current?.label ?? "—", progress };
-}
-
-export function isGlmHighspeedModel(name: string) {
-  // GLM FlashX 与 Highspeed 共用视觉；只按显示名称判定，避免误命中其他品牌。
-  return /glm/i.test(name) && /highspeed|flashx/i.test(name);
-}
-
-export function ComposerThoughtIndicator({
-  options,
-  highspeed = false,
-}: {
-  options: ComposerModelOptions;
-  highspeed?: boolean;
-}) {
-  const { label, progress } = getComposerThoughtDisplay(options);
-  return (
-    <>
-      <span
-        className="shrink-0 text-foreground-subtle group-data-[composer-compact=true]/combined:hidden"
-        data-composer-thought-label
-      >
-        {label}
-      </span>
-      <span
-        aria-hidden="true"
-        data-testid="composer-thought-meter"
-        data-highspeed={highspeed}
-        data-progress={progress}
-        className="relative hidden h-4 w-1 shrink-0 overflow-hidden rounded-full bg-foreground/10 group-data-[composer-compact=true]/combined:block"
-      >
-        <span
-          className="composer-thought-meter-fill absolute bottom-0 left-0 w-full rounded-full bg-success"
-          style={{ height: `${progress}%` }}
-        />
-      </span>
-    </>
-  );
 }
 
 export function ComposerModelMenu({
@@ -104,8 +49,8 @@ export function ComposerModelMenu({
       : undefined) ??
     selected ??
     menuGroups[0];
-  // 思考档位调整已收敛到独立思考控件；合并菜单只负责供应商与模型选择，
-  // 触发器上的档位文字/竖条仅展示当前值（docs/composer-model-thinking.md）。
+  // 思考档位展示与调整都收敛到独立思考控件；合并菜单只负责供应商与模型选择
+  // （docs/composer-model-thinking.md「合并入口触发器不再显示思考档位」）。
   return (
     <ComposerProviderMenu
       groups={menuGroups}

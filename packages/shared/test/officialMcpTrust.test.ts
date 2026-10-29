@@ -34,7 +34,7 @@ describe("isOfficialMcpOriginTrusted", () => {
   it("trusts the current ZCode API origin", () => {
     expect(check({ origin: ZCODE_ORIGIN })).toEqual({ detail: "ok", trusted: true });
     // 带路径的 URL 归一化到同一 origin（真实端点形态：POST /api/v1/mcp/server/:mcp_group）
-    expect(check({ origin: `${ZCODE_ORIGIN}/api/v1/mcp/server/image_search` })).toMatchObject({
+    expect(check({ origin: `${ZCODE_ORIGIN}/api/v1/mcp/server/example_search` })).toMatchObject({
       trusted: true,
     });
   });
@@ -160,7 +160,7 @@ describe("createOfficialMcpTrustedOriginRegistry", () => {
     });
     await expect(
       registry.isTrusted({
-        mcpKey: "image-search",
+        mcpKey: "example-search",
         origin: ZCODE_ORIGIN,
         pluginId: OFFICIAL_PLUGIN,
       }),
@@ -170,14 +170,14 @@ describe("createOfficialMcpTrustedOriginRegistry", () => {
     origin = "https://zcode-test.z.ai";
     await expect(
       registry.isTrusted({
-        mcpKey: "image-search",
+        mcpKey: "example-search",
         origin: ZCODE_ORIGIN,
         pluginId: OFFICIAL_PLUGIN,
       }),
     ).resolves.toMatchObject({ trusted: false });
     await expect(
       registry.isTrusted({
-        mcpKey: "image-search",
+        mcpKey: "example-search",
         origin: "https://zcode-test.z.ai",
         pluginId: OFFICIAL_PLUGIN,
       }),
@@ -192,7 +192,7 @@ describe("createOfficialMcpTrustedOriginRegistry", () => {
     });
     await expect(
       registry.isTrusted({
-        mcpKey: "image-search",
+        mcpKey: "example-search",
         origin: ZCODE_ORIGIN,
         pluginId: OFFICIAL_PLUGIN,
       }),
@@ -205,7 +205,7 @@ describe("createOfficialMcpTrustedOriginRegistry", () => {
     });
     await expect(
       registry.isTrusted({
-        mcpKey: "image-search",
+        mcpKey: "example-search",
         origin: ZCODE_ORIGIN,
         pluginId: OFFICIAL_PLUGIN,
       }),
@@ -216,7 +216,7 @@ describe("createOfficialMcpTrustedOriginRegistry", () => {
     const registry = createOfficialMcpTrustedOriginRegistry({
       resolveZCodeApiOrigin: () => ZCODE_ORIGIN,
     });
-    for (const mcpKey of ["image-search", "brand-new-mcp", ""]) {
+    for (const mcpKey of ["example-search", "brand-new-mcp", ""]) {
       await expect(
         registry.isTrusted({ mcpKey, origin: ZCODE_ORIGIN, pluginId: OFFICIAL_PLUGIN }),
       ).resolves.toMatchObject({ trusted: true });

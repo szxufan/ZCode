@@ -43,7 +43,7 @@ export function fitComposerToolbar(root: HTMLElement, { iconOnly = false } = {})
     }
   }
   if (overflow() <= 0) return;
-  // 合并入口在最后一级仍保留绿条，不进入旧版独立 Think 的去绿条阶段。
+  // 合并入口已不显示思考档位，最后一级只把模型名替换为图标；绿条属于独立思考控件。
   if (root.querySelector("[data-composer-combined-model]")) {
     root.dataset.composerModelIcon = "true";
     return;

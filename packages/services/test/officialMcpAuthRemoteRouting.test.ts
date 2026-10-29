@@ -174,7 +174,7 @@ function officialMcpAuthRequest(
     id,
     method: zcodeProtocolMethods.interactionRequestOfficialMcpAuthHeaders,
     params: {
-      mcpKey: "image-search",
+      mcpKey: "example-search",
       pluginId: "zcode-tools@zcode-plugins-official",
       requestId: `official-mcp-auth:${id}`,
       targetOrigin: "https://mcp.zcode.example",
@@ -363,7 +363,7 @@ describe("official mcp auth headers over desktop-attached remote", () => {
           return {
             trusted:
               input.pluginId === "zcode-tools@zcode-plugins-official" &&
-              input.mcpKey === "image-search" &&
+              input.mcpKey === "example-search" &&
               input.origin === "https://mcp.zcode.example",
           };
         },
@@ -418,7 +418,7 @@ describe("official mcp auth headers over desktop-attached remote", () => {
       });
       expect(resolveHeaders).toHaveBeenCalledWith(
         expect.objectContaining({
-          mcpKey: "image-search",
+          mcpKey: "example-search",
           pluginId: "zcode-tools@zcode-plugins-official",
           targetOrigin: "https://mcp.zcode.example",
           workspace: expect.objectContaining({
@@ -449,7 +449,7 @@ describe("official mcp auth headers over desktop-attached remote", () => {
         // 走私凭证字段 + 缺 targetOrigin：strict schema 必须拒绝
         params: {
           jwt: "leaked",
-          mcpKey: "image-search",
+          mcpKey: "example-search",
           pluginId: "zcode-tools@zcode-plugins-official",
           requestId: "official-mcp-auth:bad",
           workspace: REMOTE_WORKSPACE,

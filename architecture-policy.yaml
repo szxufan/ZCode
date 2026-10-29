@@ -716,3 +716,8 @@ exceptions:
       - packages/ui/src/settings/AgentPromptSection.tsx
       - packages/ui/src/chat-input-toolbar/PromptProfileSwitchControl.tsx
     reason: 主 Agent 系统提示词中文化与多配置档（docs/specs/agent-system-prompt-chinese-and-profiles.md）新增的提示词文案唯一来源与设置/切换器组件；agent-prompt 是纯文案数据模块，UI 两个组件沿用了 shared/ui 既有未受管目录的组织方式，接管整个 shared/ui 需要独立的模块边界重构。
+  - id: remove-image-search-plugin-icon-mapping-unmanaged-edit
+    rule: unmanaged-new-file
+    paths:
+      - packages/ui/src/lib/pluginIconSource.ts
+    reason: 下线内置 image-search 插件时仅从该存量图标映射表删除一条映射与对应 import；映射表结构、图标信任判定与模块边界不变，接管整个 ui lib 目录不在本次范围内。

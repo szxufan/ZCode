@@ -51,8 +51,6 @@ import { ComposerTriggerTransition } from "@/chat-input-toolbar/ComposerTriggerT
 import { RollingToolbarLabel } from "@/chat-input-toolbar/RollingToolbarLabel.js";
 import {
   ComposerModelMenu,
-  ComposerThoughtIndicator,
-  isGlmHighspeedModel,
   type ComposerModelOptions,
 } from "@/chat-input-toolbar/ComposerModelMenu.js";
 import { ModelInputCapabilityBadge } from "@/components/ModelInputCapabilityBadge.js";
@@ -267,10 +265,6 @@ export const ModelConfigSelect = memo(function ModelConfigSelectComponent({
   const [expandedWidth, setExpandedWidth] = useState<number | null>(null);
   const hasSelectedModel = Boolean(normalizedValue.trim());
   const showSelectionLabel = Boolean(composerOptions && open && hasSelectedModel);
-  // 未选模型不代表缺失思考档位；空态不应显示横线、绿条或 Tooltip 的伪档位。
-  const selectedThoughtLabel = hasSelectedModel
-    ? composerOptions?.levels.find((level) => level.value === composerOptions.value)?.label
-    : undefined;
   const lastOpenRequestKeyRef = useRef(openRequestKey);
   const hasSelectableModel = modelGroups.length > 0;
   // 闲时任务白名单只有一层模型值；只要存在 group 就强制展示 provider 层的话，
@@ -530,10 +524,6 @@ export const ModelConfigSelect = memo(function ModelConfigSelectComponent({
     return actions;
   }, [composerOptions, footerActions, manageModelsLabel, onManageModels, showManageModelsAction]);
 
-  const highspeed = isGlmHighspeedModel(
-    modelGroups.flatMap((group) => group.items).find((item) => item.value === normalizedValue)
-      ?.name ?? "",
-  );
   const triggerContents = showSelectionLabel ? (
     <>
       <span
@@ -548,12 +538,6 @@ export const ModelConfigSelect = memo(function ModelConfigSelectComponent({
         className="hidden size-4 shrink-0 items-center text-foreground-subtle group-data-[composer-model-icon=true]/toolbar:inline-flex"
       >
         {triggerIcon ?? <PackageIcon className="size-4" />}
-      </span>
-      <span
-        data-composer-open-thought
-        className="hidden group-data-[composer-model-icon=true]/toolbar:inline-flex"
-      >
-        <ComposerThoughtIndicator options={composerOptions!} highspeed={highspeed} />
       </span>
     </>
   ) : (
@@ -572,9 +556,6 @@ export const ModelConfigSelect = memo(function ModelConfigSelectComponent({
           value={pending ? undefined : triggerLabelValue}
         />
       </span>
-      {composerOptions && hasSelectedModel ? (
-        <ComposerThoughtIndicator options={composerOptions} highspeed={highspeed} />
-      ) : null}
       {triggerBadge}
       {pending ? (
         <LoaderIcon className="pointer-events-none size-3.5 animate-spin text-foreground" />
@@ -610,9 +591,7 @@ export const ModelConfigSelect = memo(function ModelConfigSelectComponent({
         data-chat-toolbar-popover-trigger="true"
         data-testid={triggerTestId}
         data-model-current-value={normalizedValue}
-        aria-label={
-          selectedThoughtLabel ? `${triggerAriaLabel} ${selectedThoughtLabel}` : triggerAriaLabel
-        }
+        aria-label={triggerAriaLabel}
         data-composer-combined-model={composerOptions ? "true" : undefined}
         data-composer-collapse-priority={composerOptions ? "3" : undefined}
         onClick={guideTooltipOpen ? onGuideTooltipDismiss : undefined}

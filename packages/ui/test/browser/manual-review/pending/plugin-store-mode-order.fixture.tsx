@@ -53,7 +53,6 @@ const defaultItems =
             "pdf",
             "presentations",
             "spreadsheets",
-            "image-search",
             "repairable",
           ].map((name) => ({
             id: `${name}@${official}`,

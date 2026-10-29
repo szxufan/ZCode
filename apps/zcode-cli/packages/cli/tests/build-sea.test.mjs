@@ -1300,8 +1300,6 @@ async function writeDocumentPluginFixtures(root) {
       await writeTestFile(root, `packages/${name}-plugin/${runtimePath}`, "");
     }
   }
-  await writeTestFile(root, "packages/image-search-plugin/.zcode-plugin/plugin.json", "{}");
-  await writeTestFile(root, "packages/image-search-plugin/.mcp.json", "{}");
 }
 
 async function writeVisualizePluginFixture(root) {

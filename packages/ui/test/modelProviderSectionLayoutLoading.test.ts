@@ -12,26 +12,17 @@ vi.mock("@/ControlHintTooltip.js", () => ({
 }));
 
 describe("model provider section refresh button loading", () => {
-  it("preset 或 custom 分组加载中时，刷新按钮应显示 loading", () => {
+  it("custom 分组加载中时，刷新按钮应显示 loading", () => {
     expect(
       shouldShowModelProviderRefreshLoading({
-        presetLoading: true,
-        customLoading: false,
-      }),
-    ).toBe(true);
-
-    expect(
-      shouldShowModelProviderRefreshLoading({
-        presetLoading: false,
         customLoading: true,
       }),
     ).toBe(true);
   });
 
-  it("全部分组都不在加载时，刷新按钮不显示 loading", () => {
+  it("不在加载时，刷新按钮不显示 loading", () => {
     expect(
       shouldShowModelProviderRefreshLoading({
-        presetLoading: false,
         customLoading: false,
       }),
     ).toBe(false);
