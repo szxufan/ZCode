@@ -304,6 +304,7 @@ export * from "./intranetDefaults.js";
 export * from "./hooks.js";
 export * from "./memory.js";
 export * from "./output-style.js";
+export * from "./agent-prompt/index.js";
 export * from "./openrouter-attribution.js";
 export * from "./workspaceSessionRestore.js";
 export * from "./skill-scan-policy.js";

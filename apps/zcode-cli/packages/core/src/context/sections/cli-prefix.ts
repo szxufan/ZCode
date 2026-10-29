@@ -2,13 +2,12 @@
 // CLI Prefix Section Builder
 // ============================================================
 
+import { AGENT_CLI_PREFIX_PROMPT } from "@zcode/shared";
 import type { ContextSection } from "../types.js";
 import { estimateTokens } from "../utils.js";
 
-const CLI_PREFIX_PROMPT = "You are ZCode, an interactive coding agent";
-
 export function buildCliPrefixSection(): ContextSection {
-  const content = CLI_PREFIX_PROMPT;
+  const content = AGENT_CLI_PREFIX_PROMPT;
 
   return {
     name: "CLI Prefix",

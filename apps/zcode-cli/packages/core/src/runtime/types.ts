@@ -230,6 +230,12 @@ export interface AgentRuntimeConfig {
   // Context Builder config
   systemPrompt?: string;
   /**
+   * 用户自定义的系统提示词覆盖（设置页配置档，主 Agent 专用）。只替换交互身份与行为
+   * 规范段，保留 Environment/Git/Memory 等运行时事实段；与 `systemPrompt`（工作流子
+   * 代理整段替换）语义不同。规格见 docs/specs/agent-system-prompt-chinese-and-profiles.md。
+   */
+  systemPromptOverride?: string;
+  /**
    * 动态工作流子代理的身份输入：在场即让
    * context builder 走「基座 + 工作流子代理契约 + persona 叠加」路径，而不是把 persona 当
    * `systemPrompt` 整段替换。与 `systemPrompt` 互斥（builder 抛错）。

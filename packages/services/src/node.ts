@@ -529,6 +529,7 @@ import { HELPER_APP_NAME } from "@zcode/zcode-cua/broker/helperConstants";
 import { resolveBrokerSocketPath } from "@zcode/zcode-cua/broker/socketPath";
 import {
   DEFAULT_ZCODE_MODEL_CONTEXT_BUDGET_STRATEGY,
+  resolveAgentPromptOverride,
   ZCODE_JWT_INVALID_BROADCAST_CHANNEL,
   formatLogPrefix,
   isCredentialDecryptError,
@@ -2273,6 +2274,11 @@ export function createLocalServices(options: {
               toolSearchMode: settings.toolSearchMode ?? "off",
               memoryEnabled: settings.memoryEnabled === true,
               modelContextBudgetStrategy,
+              // 系统提示词覆盖：设置页配置档解析后的文本；内置/缺省/悬空 active 时为
+              // undefined，协议字段缺省 = CLI 使用内置中文提示词。
+              ...(resolveAgentPromptOverride(settings)
+                ? { agentSystemPromptOverride: resolveAgentPromptOverride(settings) }
+                : {}),
               // user-execution 只消费 Shell；共享默认策略是统一 result schema 的兼容占位，
               // 不会覆盖 runtime-materialization 阶段已经固定的 strategy。
               ...(scope === "user-execution" && settings.integratedTerminalShell

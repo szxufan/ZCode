@@ -427,6 +427,14 @@ export const TID_RESOURCE_MANAGER_STORAGE_CONFIRM_CANCEL =
   "resource-manager-storage-confirm-cancel";
 /** Memory 设置模块中的总开关 */
 export const TID_SETTINGS_MEMORY_SWITCH = "settings-memory-switch";
+/** 系统提示词配置档分区根节点 */
+export const TID_SETTINGS_AGENT_PROMPT_SECTION = "settings-agent-prompt-section";
+/** 系统提示词配置档列表项（data-profile-id 携带配置档 id 或内置 "default"） */
+export const TID_SETTINGS_AGENT_PROMPT_PROFILE_ITEM = "settings-agent-prompt-profile-item";
+/** 系统提示词配置档「设为当前」按钮 */
+export const TID_SETTINGS_AGENT_PROMPT_ACTIVATE = "settings-agent-prompt-activate";
+/** composer 提示词配置档快速切换器触发器 */
+export const TID_CHAT_PROMPT_PROFILE_SWITCH = "chat-prompt-profile-switch";
 /** Memory 设置模块刷新按钮 */
 export const TID_SETTINGS_MEMORY_REFRESH = "settings-memory-refresh";
 /** Memory Workspace Scope 菜单触发器 */

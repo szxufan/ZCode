@@ -2,6 +2,7 @@
 // Skills Section Builder
 // ============================================================
 
+import { AGENT_SKILLS_INTRO, agentSkillAliasSuffix, agentSkillFileSuffix } from "@zcode/shared";
 import type { SkillLoadOutcome, SkillMetadata } from "@zcode/contracts";
 import type { ContextSection } from "../types.js";
 import { estimateTokens } from "../utils.js";
@@ -37,10 +38,7 @@ export function buildSkillsSection(options: SkillsSectionOptions): ContextSectio
 }
 
 function buildSkillsContent(skills: SkillMetadata[], budget: number): string {
-  const lines = [
-    "The following skills are available for use with the Skill tool:",
-    "",
-  ];
+  const lines = [AGENT_SKILLS_INTRO, ""];
 
   const sortedSkills = [...skills].sort((a, b) =>
     skillDisplayName(a).localeCompare(skillDisplayName(b)),
@@ -52,7 +50,8 @@ function buildSkillsContent(skills: SkillMetadata[], budget: number): string {
   }
 
   const namesOnly = sortedSkills.map(
-    (skill) => `- ${skillDisplayName(skill)}${bareAliasSuffix(skill)} (file: ${skill.path})`,
+    (skill) =>
+      `- ${skillDisplayName(skill)}${bareAliasSuffix(skill)}${agentSkillFileSuffix(skill.path)}`,
   );
   return [...lines, ...namesOnly].join("\n");
 }
@@ -65,7 +64,7 @@ function formatSkillLine(skill: SkillMetadata, maxDescriptionChars: number): str
     description.length > maxDescriptionChars
       ? `${description.slice(0, maxDescriptionChars - 1)}...`
       : description;
-  return `- ${skillDisplayName(skill)}: ${trimmed}${bareAliasSuffix(skill)} (file: ${skill.path})`;
+  return `- ${skillDisplayName(skill)}: ${trimmed}${bareAliasSuffix(skill)}${agentSkillFileSuffix(skill.path)}`;
 }
 
 function skillDisplayName(skill: SkillMetadata): string {
@@ -74,6 +73,6 @@ function skillDisplayName(skill: SkillMetadata): string {
 
 function bareAliasSuffix(skill: SkillMetadata): string {
   return skill.qualifiedName && skill.qualifiedName !== skill.name
-    ? ` (also loadable as ${skill.name})`
+    ? agentSkillAliasSuffix(skill.name)
     : "";
 }

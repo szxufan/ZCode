@@ -38,7 +38,8 @@ export type ContextSource =
   | "request_user_context" // request-level user context provider-visible 组合块
   | "memory" // 长期 memory read path
   | "current_date" // 当前日期
-  | "custom_system_prompt" // 自定义 stable system body
+  | "custom_system_prompt" // 自定义 stable system body（动态工作流子代理路径）
+  | "system_prompt_override" // 用户系统提示词覆盖：替换交互身份与行为规范段，保留环境/记忆等动态事实段
   | "workflow_actor_identity" // 动态工作流子代理身份：契约 + persona 叠加
   | "subagent_agent_prompt" // 子 agent 专属身份/任务 prompt
   | "subagent_notes" // 子 agent 通用操作提醒
@@ -117,6 +118,14 @@ export interface ContextBuilderConfig {
   embeddedSearchEnabled?: boolean;
   skillMetadataBudget?: number;
   customSystemPrompt?: string;
+  /**
+   * 用户自定义的系统提示词覆盖（设置页配置档）。与 `customSystemPrompt` 的区别：
+   * 只替换交互身份与行为规范段（identity / Dynamic Behavior / Session Guidance /
+   * Context Management），保留 Desktop Context、Environment/Git、Memory、Output Style
+   * 等运行时事实段。主 Agent 专用；工作流子代理的 `customSystemPrompt` 在场时优先，
+   * 不受其影响。规格见 docs/specs/agent-system-prompt-chinese-and-profiles.md。
+   */
+  systemPromptOverride?: string;
   /**
    * 动态工作流子代理（workflow child）的身份输入。在场即走 builder 的第三条路径：
    * 基座段（CLI prefix、安全行、Harness、memory）+ 工作流子代理契约 + persona 叠加，

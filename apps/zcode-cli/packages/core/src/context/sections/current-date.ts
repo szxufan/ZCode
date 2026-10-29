@@ -2,6 +2,7 @@
 // Current Date Section Builder
 // ============================================================
 
+import { agentCurrentDateCopy } from "@zcode/shared";
 import type { ContextSection } from "../types.js";
 import { estimateTokens } from "../utils.js";
 
@@ -10,7 +11,7 @@ export function buildCurrentDateSection(currentDate: string | undefined): Contex
     return null;
   }
 
-  const content = `# currentDate\nToday's date is ${currentDate}.`;
+  const content = agentCurrentDateCopy(currentDate);
 
   return {
     name: "Current Date",

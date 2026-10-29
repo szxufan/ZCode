@@ -177,6 +177,7 @@ import type { CodeViewerSource } from "@/lib/codeViewer.js";
 import { useConversationSelectionReferences } from "@/v4/composer/useConversationSelectionReferences.js";
 import { ConversationBackgroundWorkTrigger } from "@/v4/composer/ConversationBackgroundWorkTrigger.js";
 import { V4ComposerCuaEntry } from "@/v4/composer/V4ComposerCuaEntry.js";
+import { PromptProfileSwitchControl } from "@/chat-input-toolbar/PromptProfileSwitchControl.js";
 import {
   V4ComposerModeSwitch,
   V4ComposerModelControls,
@@ -2376,6 +2377,8 @@ function ConversationComposerImpl({
           onConfigPickerOpenChange={handleConfigPickerOpenChange}
           onSwitchMode={onSwitchMode}
         />
+        {/* 提示词配置档切换器：紧邻切换模式；设置走本机 Host，与 workspace 无关。 */}
+        <PromptProfileSwitchControl disabled={disabled || runtimeBlocked} />
         {/* Bug 原因：附件画廊 rebase 曾整段覆盖 leadingActions，误删 staging 的 CUA 常驻入口。
             入口自身继续负责平台、远程与设置可见性，不在 composer 重复判定。 */}
         <V4ComposerCuaEntry

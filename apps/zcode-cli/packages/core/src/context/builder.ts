@@ -2,6 +2,7 @@
 // Context Builder - System prompt assembly
 // ============================================================
 
+import { AGENT_META_USER_CLOSING, AGENT_META_USER_OPENING } from "@zcode/shared";
 import type { ModelInputMessage } from "@zcode/contracts";
 import type {
   ContextMetaUserAttachment,
@@ -87,6 +88,9 @@ export class ContextBuilder {
       : undefined;
     const customSystemPrompt = this.config.customSystemPrompt?.trim();
     const hasCustomSystemPrompt = Boolean(customSystemPrompt);
+    // 用户系统提示词覆盖：只替换交互身份与行为规范段，环境/记忆等动态事实段保留。
+    const systemPromptOverride = this.config.systemPromptOverride?.trim();
+    const hasSystemPromptOverride = Boolean(systemPromptOverride);
     // 工作流子代理身份：第三条路径。与
     // customSystemPrompt 互斥——两者同在只可能是接线错误（persona 该经 workflowActor 进来，
     // 不该再塞 systemPrompt），大声失败而不是默默二选一。
@@ -99,13 +103,15 @@ export class ContextBuilder {
     const isWorkflowActor = workflowActor !== undefined;
 
     // 1. CLI / product prefix. Keep this as the short leading identity block.
-    // 「You are ZCode, an interactive coding agent」对一个
+    // 「你是 ZCode，一个交互式编码智能体」对一个
     // 只对脚本说话、可能连读文件工具都没有的子代理是错的身份，且走在正确身份段前面。
     if (!isWorkflowActor) {
       sections.push(buildCliPrefixSection());
     }
 
     // 2. Stable agent behavior or custom prompt body
+    // 优先级：customSystemPrompt（工作流子代理）> workflowActor > systemPromptOverride > 内置。
+    // 工作流子代理不消费用户配置档，override 在场时也不改变其身份。
     if (hasCustomSystemPrompt) {
       sections.push(
         createSection({
@@ -118,6 +124,16 @@ export class ContextBuilder {
       );
     } else if (workflowActor !== undefined) {
       sections.push(buildWorkflowActorIdentitySection(workflowActor));
+    } else if (hasSystemPromptOverride) {
+      sections.push(
+        createSection({
+          name: "System Prompt Override",
+          source: "system_prompt_override",
+          injectionTarget: "system",
+          cacheHint: "stable",
+          content: `\n${systemPromptOverride}`,
+        }),
+      );
     } else {
       sections.push(buildIdentitySection(activeOutputStyle));
     }
@@ -128,23 +144,26 @@ export class ContextBuilder {
     // custom prompt 后仍会混入 Session Guidance / output style 等动态 system 段。
     // 工作流子代理跳过其中面向「与用户对话」的三段（desktop、Dynamic Behavior、session
     // guidance——契约里已把 Report outcomes faithfully 搬过去），保留 memory 与其后各段。
+    // systemPromptOverride 只替换身份与行为规范段（Dynamic Behavior / Session Guidance /
+    // Context Management），其余动态事实段照常输出（规格 §1.4）。
     if (!hasCustomSystemPrompt) {
       if (!isWorkflowActor && this.config.presentationSurface === "zcode_desktop") {
         sections.push(buildDesktopContextSection(this.config.genUiOutputDirectory));
       }
 
       // behaviour part right after stable sp...
-      if (!isWorkflowActor) {
+      if (!isWorkflowActor && !hasSystemPromptOverride) {
         sections.push(buildDynamicBehaviorSection());
       }
 
       // Session-specific guidance
-      const sessionGuidanceSection = isWorkflowActor
-        ? null
-        : buildSessionGuidanceSection(
-            this.config.guidanceToolNames ?? [],
-            (this.config.skills?.skills.length ?? 0) > 0,
-          );
+      const sessionGuidanceSection =
+        isWorkflowActor || hasSystemPromptOverride
+          ? null
+          : buildSessionGuidanceSection(
+              this.config.guidanceToolNames ?? [],
+              (this.config.skills?.skills.length ?? 0) > 0,
+            );
       if (sessionGuidanceSection) {
         sections.push(sessionGuidanceSection);
       }
@@ -174,7 +193,9 @@ export class ContextBuilder {
       }
 
       // Context Management
-      sections.push(buildContextManagementSection());
+      if (!hasSystemPromptOverride) {
+        sections.push(buildContextManagementSection());
+      }
 
       const gitSystemContextSection = buildGitSystemContextSection(this.config.envInfo);
       if (gitSystemContextSection) {
@@ -337,10 +358,10 @@ export function buildContextMetaUserBody(sections: ContextSection[]): string | n
   if (sections.length === 0) return null;
 
   return [
-    "As you answer the user's questions, you can use the following context:",
+    AGENT_META_USER_OPENING,
     buildSectionContent(sections),
     "",
-    "      IMPORTANT: this context may or may not be relevant to your tasks. You should not respond to this context unless it is highly relevant to your task.",
+    AGENT_META_USER_CLOSING,
   ].join("\n");
 }
 

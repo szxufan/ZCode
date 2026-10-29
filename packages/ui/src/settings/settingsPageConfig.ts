@@ -15,6 +15,7 @@ import {
   Brain,
   Blocks,
   Globe2,
+  ScrollText,
   Cable,
   WandSparkles,
   HardDrive,
@@ -79,6 +80,12 @@ const BASE_SETTINGS_SECTIONS: SettingsSectionDefinition[] = [
     id: "memory",
     icon: Brain,
     titleId: "settings.memory",
+    groupId: "agentCapabilities",
+  },
+  {
+    id: "agentPrompt",
+    icon: ScrollText,
+    titleId: "settings.agentPrompt.title",
     groupId: "agentCapabilities",
   },
   {

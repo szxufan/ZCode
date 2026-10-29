@@ -85,6 +85,11 @@ export const SETTINGS_USER_ACTION_FEATURES = {
   "settings.task": ["toggle_auto_archive", "change_auto_archive_days"],
   "settings.storage": ["change_data_directory"],
   "settings.memory": ["toggle_memory", "refresh_memory", "change_memory_scope"],
+  "settings.agentPrompt": [
+    "save_profile",
+    "delete_profile",
+    "activate_profile",
+  ],
   "settings.browser": [
     "toggle_browser_use",
     "import_browser_data",

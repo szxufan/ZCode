@@ -706,3 +706,13 @@ exceptions:
       - packages/ui/src/settings/DynamicWorkflowModeSetting.tsx
       - packages/ui/src/store/dynamicWorkflowAvailabilityStore.ts
     reason: Admitted upstream files edited only to let the user's dynamic workflow mode choice always win and keep the settings row visible; adopting packages/shared/src and packages/ui/src needs a separate module boundary refactor.
+  - id: agent-system-prompt-chinese-and-profiles-unmanaged-files
+    rule: unmanaged-new-file
+    paths:
+      - packages/shared/src/agent-prompt/index.ts
+      - packages/shared/src/agent-prompt/sections.ts
+      - packages/shared/src/agent-prompt/compose.ts
+      - packages/shared/src/agent-prompt/profile.ts
+      - packages/ui/src/settings/AgentPromptSection.tsx
+      - packages/ui/src/chat-input-toolbar/PromptProfileSwitchControl.tsx
+    reason: 主 Agent 系统提示词中文化与多配置档（docs/specs/agent-system-prompt-chinese-and-profiles.md）新增的提示词文案唯一来源与设置/切换器组件；agent-prompt 是纯文案数据模块，UI 两个组件沿用了 shared/ui 既有未受管目录的组织方式，接管整个 shared/ui 需要独立的模块边界重构。

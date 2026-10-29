@@ -40,8 +40,8 @@ describe("runtime request reminders", () => {
   it("builds a one-time plan mode exit reminder", () => {
     const body = buildPlanModeExitReminderBody();
 
-    expect(body).toContain("## Exited Plan Mode");
-    expect(body).toContain("You can now make edits");
+    expect(body).toContain("## 已退出计划模式");
+    expect(body).toContain("现在可以进行编辑、运行工具和执行操作");
     expect(body).not.toContain("<system-reminder>");
     expect(body).not.toContain("source=");
   });
@@ -164,11 +164,11 @@ describe("runtime request reminders", () => {
 
   it("omits todo list details when a due reminder has no current todos", () => {
     const body = buildTodoReminderBody([]);
-    expect(body).toContain("The TodoWrite tool hasn't been used recently.");
+    expect(body).toContain("最近没有使用 TodoWrite 工具。");
     expect(body).not.toContain("<system-reminder>");
-    expect(body).toContain("Only use it if it's relevant to the current work.");
-    expect(body).toContain("ignore if not applicable");
-    expect(body).not.toContain("Here are the existing contents of your todo list:");
+    expect(body).toContain("仅在与当前工作相关时使用");
+    expect(body).toContain("无关请忽略");
+    expect(body).not.toContain("以下是你当前 todo 清单的内容：");
     expect(body).not.toContain("[pending]");
   });
 
@@ -182,19 +182,19 @@ describe("runtime request reminders", () => {
     ]);
     expect(body).toContain("1. [in_progress] Review prompt trajectory output");
     expect(body).not.toContain("<system-reminder>");
-    expect(body).toContain("The TodoWrite tool hasn't been used recently.");
-    expect(body).toContain("Only use it if it's relevant to the current work.");
-    expect(body).toContain("ignore if not applicable");
-    expect(body).toContain("Here are the existing contents of your todo list:");
+    expect(body).toContain("最近没有使用 TodoWrite 工具。");
+    expect(body).toContain("仅在与当前工作相关时使用");
+    expect(body).toContain("无关请忽略");
+    expect(body).toContain("以下是你当前 todo 清单的内容：");
     expect(body).not.toContain("Current session todo state (authoritative):");
     expect(body).not.toContain("source=");
   });
 
   it("builds date change reminder with no-user-mention wording", () => {
     const body = buildDateChangeReminderBody("2026-06-03", "2026-06-04");
-    expect(body).toContain("The date has changed. Today's date is now 2026-06-04.");
+    expect(body).toContain("日期已变化。今天是 2026-06-04。");
     expect(body).not.toContain("<system-reminder>");
-    expect(body).toContain("DO NOT mention this to the user explicitly");
+    expect(body).toContain("不要向用户明确提及这一点");
     expect(body).not.toContain("from 2026-06-03 to 2026-06-04");
   });
 
@@ -225,7 +225,7 @@ describe("runtime request reminders", () => {
     });
 
     expect(body).toBe(
-      "Learning output style is active. Remember to follow the specific guidelines for this style.",
+      "Learning 输出风格已生效。请继续遵循该风格的具体指引。",
     );
   });
 
@@ -234,11 +234,11 @@ describe("runtime request reminders", () => {
       [{ message: { role: "user", content: "make a plan" }, metadata: realUserRuntimeMetadata() }],
       "plan",
     );
-    expect(firstBody).toContain("Plan mode is active");
+    expect(firstBody).toContain("计划模式已激活");
     expect(firstBody).not.toContain("<system-reminder>");
 
-    expect(firstBody).toContain("MUST NOT make any edits");
-    expect(firstBody).toContain("## Plan Workflow");
+    expect(firstBody).toContain("必须不做任何编辑");
+    expect(firstBody).toContain("## 计划工作流（Plan Workflow）");
     expect(firstBody).not.toContain("ExitPlanModeV2");
 
     const recent = buildRuntimeModeReminderBody(
@@ -275,9 +275,9 @@ describe("runtime request reminders", () => {
       ],
       "plan",
     );
-    expect(sparse).toContain("Plan mode still active");
-    expect(sparse).toContain("Read-only.");
-    expect(sparse).not.toContain("## Plan Workflow");
+    expect(sparse).toContain("计划模式仍然生效");
+    expect(sparse).toContain("只读。");
+    expect(sparse).not.toContain("## 计划工作流（Plan Workflow）");
     expect(sparse).not.toContain("<system-reminder>");
 
     const nextFull = buildRuntimeModeReminderBody(
@@ -299,7 +299,7 @@ describe("runtime request reminders", () => {
       ],
       "plan",
     );
-    expect(nextFull).toContain("Plan mode is active");
+    expect(nextFull).toContain("计划模式已激活");
 
     expect(buildRuntimeModeReminderBody([], "build")).toBeNull();
   });
@@ -376,7 +376,7 @@ describe("runtime request reminders", () => {
       {
         message: {
           role: "user",
-          content: "<system-reminder>\nPlan mode is active\n</system-reminder>",
+          content: "<system-reminder>\n计划模式已激活\n</system-reminder>",
         },
         metadata: { source: "runtime_mode" },
       },
@@ -393,7 +393,7 @@ describe("runtime request reminders", () => {
       cacheControl: { type: "ephemeral" },
     });
 
-    expect(JSON.stringify(messages[2]?.content)).toContain("Plan mode is active");
+    expect(JSON.stringify(messages[2]?.content)).toContain("计划模式已激活");
     const reminderTexts = String(JSON.stringify(messages));
     expect(reminderTexts).toContain("compare prompts");
     expect(JSON.stringify(messages)).not.toContain("projectionPolicy");

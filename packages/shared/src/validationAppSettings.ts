@@ -1,5 +1,10 @@
 /* oxlint-disable eslint(max-lines) -- AppSettings schema 聚合历史迁移、默认值和 patch 校验，拆分会削弱设置迁移的单一入口。 */
 import { z } from "zod";
+import {
+  AGENT_PROMPT_PROFILE_CONTENT_MAX,
+  AGENT_PROMPT_PROFILE_NAME_MAX,
+  AGENT_PROMPT_PROFILES_MAX,
+} from "./agent-prompt/index.js";
 import { appToolSearchModeSchema } from "./app-runtime-preferences.js";
 import type { AppSettings } from "./protocol.js";
 import { REMOTE_ASSET_INSTALL_MODES } from "./remoteAssetInstallMode.js";
@@ -488,6 +493,23 @@ function migrateLegacyWorkspaceSession(value: unknown): unknown {
   return migrated;
 }
 
+// 系统提示词配置档：id 唯一（active 指向依赖它）；name 允许重复但非空。
+// 内置默认不在此存储，activeProfileId 缺省 / "default" / 悬空即回落内置。
+const agentPromptProfileSchema = z.object({
+  id: nonEmptyStringSchema,
+  name: z.string().trim().min(1).max(AGENT_PROMPT_PROFILE_NAME_MAX),
+  content: z.string().max(AGENT_PROMPT_PROFILE_CONTENT_MAX),
+  createdAt: z.string().optional(),
+  updatedAt: z.string().optional(),
+});
+
+const agentPromptProfilesSchema = z
+  .array(agentPromptProfileSchema)
+  .max(AGENT_PROMPT_PROFILES_MAX)
+  .refine((profiles) => new Set(profiles.map((profile) => profile.id)).size === profiles.length, {
+    message: "agentPromptProfiles.id must be unique",
+  });
+
 const appSettingsObjectSchema = z.object({
   recentProjects: z.array(z.string()).default([]),
   locale: localeSchema.default("zh-CN"),
@@ -541,6 +563,8 @@ const appSettingsObjectSchema = z.object({
   onboardingOccupation: appSettingsOccupationSchema.nullish(),
   proactiveSuggestionsEnabled: z.boolean().optional(),
   memoryEnabled: z.boolean().default(false),
+  agentPromptProfiles: agentPromptProfilesSchema.optional(),
+  agentPromptActiveProfileId: nonEmptyStringSchema.optional(),
   lastWorkspaceSession: z.array(appWorkspaceSessionEntrySchema).default([]),
   lastActiveWorkspace: appWorkspaceSessionEntrySchema.nullable().optional(),
   remoteConversationWorkspaceBySourceServerId: z
@@ -650,6 +674,8 @@ export const appSettingsPatchSchema = z.object({
     .nullish(),
   proactiveSuggestionsEnabled: z.boolean().optional(),
   memoryEnabled: z.boolean().optional(),
+  agentPromptProfiles: agentPromptProfilesSchema.optional(),
+  agentPromptActiveProfileId: nonEmptyStringSchema.optional(),
   lastWorkspaceSession: z.array(appWorkspaceSessionEntrySchema).optional(),
   lastActiveWorkspace: appWorkspaceSessionEntrySchema.nullable().optional(),
   remoteConversationWorkspaceBySourceServerId: z

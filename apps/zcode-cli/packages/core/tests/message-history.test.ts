@@ -211,7 +211,7 @@ describe("message history metadata", () => {
         {
           source: "context_prefix",
           content:
-            "As you answer the user's questions, you can use the following context:\n# currentDate\nToday's date is 2026-06-17.\n\n      IMPORTANT: this context may or may not be relevant to your tasks. You should not respond to this context unless it is highly relevant to your task.",
+            "在回答用户问题时，你可以使用以下上下文：\n# currentDate\n今天是 2026-06-17。\n\n      重要：这些上下文可能与你的任务无关。除非与当前任务高度相关，否则不要响应这些上下文。",
         },
       ],
     };
@@ -225,7 +225,7 @@ describe("message history metadata", () => {
       {
         kind: "attachment",
         content:
-          "As you answer the user's questions, you can use the following context:\n# currentDate\nToday's date is 2026-06-17.\n\n      IMPORTANT: this context may or may not be relevant to your tasks. You should not respond to this context unless it is highly relevant to your task.",
+          "在回答用户问题时，你可以使用以下上下文：\n# currentDate\n今天是 2026-06-17。\n\n      重要：这些上下文可能与你的任务无关。除非与当前任务高度相关，否则不要响应这些上下文。",
         metadata: { source: "context_prefix" },
       },
     ]);

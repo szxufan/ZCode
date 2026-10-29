@@ -49,7 +49,7 @@ export async function setExecutionState(
 
 export function updateConfig(
   this: AgentRuntimeInternal,
-  patch: Pick<AgentRuntimeConfig, "mode" | "planEnabled" | "language" | "outputStyle">,
+  patch: Pick<AgentRuntimeConfig, "mode" | "planEnabled" | "language" | "outputStyle" | "systemPromptOverride">,
 ): void {
   if (patch.mode !== undefined || patch.planEnabled !== undefined) {
     const previous = resolveExecutionState(this.config);
@@ -66,6 +66,14 @@ export function updateConfig(
   }
   if ("outputStyle" in patch) {
     this.config.outputStyle = patch.outputStyle;
+    if (!this.activeTurn) {
+      rebuildContextPrefix(this);
+    }
+  }
+  // 系统提示词覆盖（设置页配置档热切换）：无活跃 turn 时立即重建前缀；turn 中延迟，
+  // 下一 turn 的前缀重建自然带上新值——与 language/outputStyle 同一语义。
+  if ("systemPromptOverride" in patch) {
+    this.config.systemPromptOverride = patch.systemPromptOverride;
     if (!this.activeTurn) {
       rebuildContextPrefix(this);
     }

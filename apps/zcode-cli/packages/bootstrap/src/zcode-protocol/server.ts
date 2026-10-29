@@ -110,7 +110,7 @@ import {
   unsubscribeMcpUiResource,
 } from "./mcp-ui/index.js";
 import { listPluginUiSurfaces } from "./plugin-ui-surfaces.js";
-import { updateInteractionPreferences } from "./interaction-preferences.js";
+import { updateAgentPromptPreferences, updateInteractionPreferences } from "./interaction-preferences.js";
 import { refreshProviderRegistry, updateAccountProviderConfig } from "./account-provider-config.js";
 import { updateModelIoPreferences } from "./model-io-preferences.js";
 import { updateOffPeakToolPolicy } from "./off-peak-tool-policy.js";
@@ -719,6 +719,8 @@ export class ZCodeProtocolAgentServer {
         return await refreshProviderRegistry(this.context, request.params);
       case zcodeProtocolMethods.workspaceUpdateInteractionPreferences:
         return await updateInteractionPreferences(this.context, request.params);
+      case zcodeProtocolMethods.workspaceUpdateAgentPromptPreferences:
+        return await updateAgentPromptPreferences(this.context, request.params);
       case zcodeProtocolMethods.workspaceUpdateModelIoPreferences:
         return await updateModelIoPreferences(this.context, request.params);
       case zcodeProtocolMethods.workspaceUpdateOffPeakToolPolicy:

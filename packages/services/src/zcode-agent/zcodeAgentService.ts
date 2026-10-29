@@ -136,6 +136,7 @@ import {
   zcodeWorkspaceHookTrustGrantResultSchema,
   zcodeWorkspaceUpdateInteractionPreferencesResultSchema,
   zcodeWorkspaceUpdateModelIoPreferencesResultSchema,
+  zcodeWorkspaceUpdateAgentPromptPreferencesResultSchema,
   zcodeProviderUpdateAccountConfigResultSchema,
   type ZCodeSessionStateSnapshot,
   type ZCodeAutomation,
@@ -1540,6 +1541,23 @@ export function createZCodeAgentService(
         } catch (error) {
           // 新 Host 兼容尚未升级的 CLI：只有 method-not-found 可降级，其他同步失败仍需上抛。
           if (!isProtocolMethodNotFoundError(error)) throw error;
+        }
+        // 系统提示词覆盖：键在场才同步（缺席 = 本次不涉及提示词，不给旧 CLI 发新方法）。
+        // 独立方法 + method-not-found 降级，与 modelIo 同一兼容模式。
+        if ("agentSystemPromptOverride" in params.preferences) {
+          try {
+            await params.client.request(
+              zcodeProtocolMethods.workspaceUpdateAgentPromptPreferences,
+              {
+                workspace: buildWorkspaceRef(params.workspace),
+                agentSystemPromptOverride:
+                  params.preferences.agentSystemPromptOverride ?? null,
+              },
+              zcodeWorkspaceUpdateAgentPromptPreferencesResultSchema,
+            );
+          } catch (error) {
+            if (!isProtocolMethodNotFoundError(error)) throw error;
+          }
         }
       });
     interactionPreferenceSyncByWorkspaceKey.set(workspaceKey, current);

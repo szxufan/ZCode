@@ -5592,10 +5592,10 @@ describe("AgentRuntime tool loop", () => {
       .map((part) => part.text);
 
     expect(contextText).not.toContain("Current session todo state (authoritative):");
-    expect(contextText).not.toContain("The TodoWrite tool hasn't been used recently.");
+    expect(contextText).not.toContain("最近没有使用 TodoWrite 工具。");
     expect(persistedTexts.join("\n")).not.toContain("Current session todo state (authoritative):");
     expect(persistedTexts.join("\n")).not.toContain(
-      "The TodoWrite tool hasn't been used recently.",
+      "最近没有使用 TodoWrite 工具。",
     );
   });
 
@@ -5653,16 +5653,16 @@ describe("AgentRuntime tool loop", () => {
       .filter((part) => part.type === "text" && part.synthetic)
       .filter((part) => part.metadata?.runtimeMessage?.source === "todo_reminder");
 
-    expect(dueRequestText).toContain("The TodoWrite tool hasn't been used recently.");
+    expect(dueRequestText).toContain("最近没有使用 TodoWrite 工具。");
     expect(dueRequestText).toContain("1. [in_progress] Review prompt trajectory output");
     expect(dueRequestText).not.toContain("Current session todo state (authoritative):");
-    expect(dueRequestText.match(/The TodoWrite tool hasn't been used recently\./g)).toHaveLength(1);
-    expect(nextRequestText.match(/The TodoWrite tool hasn't been used recently\./g)).toHaveLength(
+    expect(dueRequestText.match(/最近没有使用 TodoWrite 工具。/g)).toHaveLength(1);
+    expect(nextRequestText.match(/最近没有使用 TodoWrite 工具。/g)).toHaveLength(
       1,
     );
     expect(persistedTodoReminders).toHaveLength(1);
     expect(persistedTodoReminders[0]?.text).toContain(
-      "The TodoWrite tool hasn't been used recently.",
+      "最近没有使用 TodoWrite 工具。",
     );
     expect(persistedTodoReminders[0]?.text).not.toContain("<system-reminder>");
     expect(persistedTodoReminders[0]?.text).not.toContain("</system-reminder>");
@@ -5719,7 +5719,7 @@ describe("AgentRuntime tool loop", () => {
       .filter((part) => part.type === "text" && part.synthetic)
       .filter((part) => part.metadata?.runtimeMessage?.source === "todo_reminder");
 
-    expect(finalRequestText).not.toContain("The TodoWrite tool hasn't been used recently.");
+    expect(finalRequestText).not.toContain("最近没有使用 TodoWrite 工具。");
     expect(finalRequestText).not.toContain("Current session todo state (authoritative):");
     expect(persistedTodoReminders).toHaveLength(0);
   });
@@ -5768,9 +5768,9 @@ describe("AgentRuntime tool loop", () => {
       .map((part) => part.text)
       .join("\n");
 
-    expect(firstRequestText.match(/Learning output style is active/g)).toHaveLength(1);
-    expect(secondRequestText.match(/Learning output style is active/g)).toHaveLength(2);
-    expect(persistedTexts).not.toContain("Learning output style is active");
+    expect(firstRequestText.match(/Learning 输出风格已生效/g)).toHaveLength(1);
+    expect(secondRequestText.match(/Learning 输出风格已生效/g)).toHaveLength(2);
+    expect(persistedTexts).not.toContain("Learning 输出风格已生效");
   });
 
   it("does not duplicate output style reminders across model requests in the same turn", async () => {
@@ -5832,7 +5832,7 @@ describe("AgentRuntime tool loop", () => {
     await runtime.executeTurn("read marker with style");
 
     const secondRequestText = providerMessagesToText(requests[1]!);
-    expect(secondRequestText.match(/Learning output style is active/g)).toHaveLength(1);
+    expect(secondRequestText.match(/Learning 输出风格已生效/g)).toHaveLength(1);
   });
 
   it("uses hydrated todo reminder metadata to avoid duplicate cadence reminders after resume", async () => {
@@ -5899,7 +5899,7 @@ describe("AgentRuntime tool loop", () => {
       .filter((part) => part.type === "text" && part.synthetic)
       .filter((part) => part.metadata?.runtimeMessage?.source === "todo_reminder");
 
-    expect(resumeRequestText.match(/The TodoWrite tool hasn't been used recently\./g)).toHaveLength(
+    expect(resumeRequestText.match(/最近没有使用 TodoWrite 工具。/g)).toHaveLength(
       1,
     );
     expect(persistedTodoReminders).toHaveLength(1);
@@ -6859,8 +6859,8 @@ describe("AgentRuntime tool loop", () => {
     ).toEqual(capturedMessages);
     expect(realUserMessage?.cacheControl).toEqual({ type: "ephemeral" });
     expect(planModeReminderText).not.toContain("<system-reminder>");
-    expect(planModeReminderText).toContain("Plan mode is active");
-    expect(planModeReminderText).toContain("MUST NOT make any edits");
+    expect(planModeReminderText).toContain("计划模式已激活");
+    expect(planModeReminderText).toContain("必须不做任何编辑");
     expect(realUserContent).toBe("看看项目里是啥");
   });
 

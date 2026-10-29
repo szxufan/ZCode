@@ -2093,6 +2093,9 @@ export const zcodeSessionRuntimePreferencesResultSchema = z
     modelContextBudgetStrategy: zcodeModelContextBudgetStrategySchema.default(
       DEFAULT_ZCODE_MODEL_CONTEXT_BUDGET_STRATEGY,
     ),
+    // 用户系统提示词覆盖（设置页配置档解析后的文本）。可选 + 缺省回落内置：
+    // 旧 Host 不下发该字段时 CLI 使用内置中文提示词，行为安全。
+    agentSystemPromptOverride: z.string().max(100_000).optional(),
   })
   .strict();
 export type ZCodeSessionRuntimePreferencesResult = z.infer<
@@ -2633,6 +2636,34 @@ export const zcodeWorkspaceUpdateModelIoPreferencesResultSchema = z
 export type ZCodeWorkspaceUpdateModelIoPreferencesResult = z.infer<
   typeof zcodeWorkspaceUpdateModelIoPreferencesResultSchema
 >;
+
+/**
+ * 系统提示词覆盖热更新（设置页配置档切换）。独立于 updateInteractionPreferences 的
+ * 原因与 updateModelIoPreferences 相同：旧 CLI 的 strict schema 会拒绝未知字段，独立
+ * 方法让 Host 可以按 method-not-found 降级，不影响同一快照里的其他偏好同步。
+ */
+export const zcodeWorkspaceUpdateAgentPromptPreferencesParamsSchema = z
+  .object({
+    workspace: zcodeWorkspaceRefSchema,
+    // string = 配置档解析后的覆盖文本；null = 回落内置中文提示词。
+    agentSystemPromptOverride: z.union([z.string().max(100_000), z.literal(null)]),
+  })
+  .strict();
+export type ZCodeWorkspaceUpdateAgentPromptPreferencesParams = z.infer<
+  typeof zcodeWorkspaceUpdateAgentPromptPreferencesParamsSchema
+>;
+
+export const zcodeWorkspaceUpdateAgentPromptPreferencesResultSchema = z
+  .object({
+    workspace: zcodeWorkspaceRefSchema,
+    /** 是否至少应用到一个活跃会话；无活跃会话时为 false（快照已记录，新会话会读取）。 */
+    applied: z.boolean(),
+  })
+  .strict();
+export type ZCodeWorkspaceUpdateAgentPromptPreferencesResult = z.infer<
+  typeof zcodeWorkspaceUpdateAgentPromptPreferencesResultSchema
+>;
+
 
 export const zcodeWorkspaceUpdateOffPeakToolPolicyParamsSchema = z
   .object({
@@ -4151,6 +4182,8 @@ export const zcodeProtocolMethods = {
   providerRefreshRegistry: "provider/refreshRegistry",
   workspaceUpdateInteractionPreferences: "workspace/updateInteractionPreferences",
   workspaceUpdateModelIoPreferences: "workspace/updateModelIoPreferences",
+  // 系统提示词覆盖热更新：同 modelIo 的独立方法模式（旧 CLI method-not-found → host 降级忽略）。
+  workspaceUpdateAgentPromptPreferences: "workspace/updateAgentPromptPreferences",
   // Off-Peak 工具面门禁是 workspace 级事实（灰度 + 本地/远程），由 host 在 agent 就绪时同步；
   // CLI 对 legacy create/resume 与 v4 冷恢复统一读取。旧 CLI method-not-found → host 降级忽略。
   workspaceUpdateOffPeakToolPolicy: "workspace/updateOffPeakToolPolicy",

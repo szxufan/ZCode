@@ -497,7 +497,7 @@ describe("AgentRuntime trace propagation", () => {
     expect(requestEnvInfo).toBeUndefined();
     const requestText = providerMessagesToText(requests[0]);
     expect(requestText).toContain("/resolved");
-    expect(requestText).toContain("- Platform: linux");
+    expect(requestText).toContain("- 平台: linux");
     expect(requestText).toContain("resolved project instructions");
     expect(requests[0]?.at(-1)?.role).toBe("user");
     expect(requests[0]?.at(-1)?.content).toContain("hello");
@@ -771,11 +771,11 @@ describe("AgentRuntime trace propagation", () => {
 
     expect(requestEnvInfo).toBeUndefined();
     const requestText = providerMessagesToText(requests[0]);
-    expect(requestText).toContain("- Is a git repository: yes");
-    expect(requestText).toContain("- Platform: linux");
-    expect(requestText).toContain("Current branch: feat/trajectory-167");
+    expect(requestText).toContain("- 是否 Git 仓库: 是");
+    expect(requestText).toContain("- 平台: linux");
+    expect(requestText).toContain("当前分支: feat/trajectory-167");
     expect(requestText).not.toContain("- Platform: unknown");
-    expect(requestText).not.toContain("- Is a git repository: no");
+    expect(requestText).not.toContain("- 是否 Git 仓库: 否");
   });
 
   it("treats systemPrompt as a custom prompt while preserving userContext", async () => {
@@ -843,7 +843,7 @@ describe("AgentRuntime trace propagation", () => {
     await runtime.executeTurn("hello");
 
     expect(requests[0]?.[0]).toEqual(expect.objectContaining({ role: "system" }));
-    expect(requests[0]?.[0]?.content).toBe("You are ZCode, an interactive coding agent");
+    expect(requests[0]?.[0]?.content).toBe("你是 ZCode，一个交互式编码智能体");
     expect(requests[0]?.[1]?.content).toBe("\nYou are terse for this session.");
     expect(requests[0]?.[2]?.role).toBe("user");
     expect(requests[0]?.[2]?.content).not.toContain("# agentsMd");
@@ -855,16 +855,16 @@ describe("AgentRuntime trace propagation", () => {
     expect(requests[0]?.[2]?.content).not.toContain("# user_instructions");
     expect(requests[0]?.[2]?.content).not.toContain("hello");
     expect(requests[0]?.[3]?.role).toBe("user");
-    expect(requests[0]?.[3]?.content).toContain("Terse output style is active");
+    expect(requests[0]?.[3]?.content).toContain("Terse 输出风格已生效");
     expect(requests[0]?.[3]?.content).toContain("<system-reminder>");
     expect(requests[0]?.[4]?.role).toBe("user");
     expect(requests[0]?.[4]?.content).toContain("hello");
     const providerText = providerMessagesToText(requests[0]);
     expect(providerText).not.toContain("# Session Guidance");
-    expect(providerText).not.toContain("# Session-specific guidance");
+    expect(providerText).not.toContain("# 会话专项指导");
     expect(providerText).not.toContain("## Current Environment");
-    expect(providerText).not.toContain("# Environment");
-    expect(providerText).not.toContain("# Context management");
+    expect(providerText).not.toContain("# 环境");
+    expect(providerText).not.toContain("# 上下文管理");
     expect(providerText).not.toContain("# Memory");
     expect(providerText).not.toContain("# Language");
     expect(providerText).not.toContain("# Output Style: Terse");
@@ -914,7 +914,7 @@ describe("AgentRuntime trace propagation", () => {
 
     expect(requests[1]?.filter((message) => message.role === "system")).toHaveLength(3);
     const secondRequestText = providerMessagesToText(requests[1]);
-    expect(secondRequestText).not.toContain("# Session-specific guidance");
+    expect(secondRequestText).not.toContain("# 会话专项指导");
     expect(secondRequestText).not.toContain("`! <command>`");
     expect(secondRequestText).not.toContain(
       "Otherwise use `find` or `grep` via the Bash tool directly.",
@@ -1033,26 +1033,26 @@ describe("AgentRuntime trace propagation", () => {
     const stableBody = second?.messages[1]?.content ?? "";
     const dynamicSystem = second?.messages[2]?.content ?? "";
 
-    expect(cliPrefix).toBe("You are ZCode, an interactive coding agent");
+    expect(cliPrefix).toBe("你是 ZCode，一个交互式编码智能体");
     expect(stableBody).not.toContain("# Agent Identity");
-    expect(stableBody).toContain("according to the active Output Style below");
+    expect(stableBody).toContain("依据下方生效的输出风格");
     expect(stableBody).not.toContain("# Task Behavior");
-    expect(stableBody).toContain("# Harness");
-    expect(stableBody).not.toContain("# Session-specific guidance");
-    expect(stableBody).not.toContain("# Environment");
-    expect(stableBody).not.toContain("# Context management");
+    expect(stableBody).toContain("# 运行时框架（Harness）");
+    expect(stableBody).not.toContain("# 会话专项指导");
+    expect(stableBody).not.toContain("# 环境");
+    expect(stableBody).not.toContain("# 上下文管理");
     expect(stableBody).not.toContain("# Risky Actions");
-    expect(stableBody).not.toContain("Write code that reads like the surrounding code");
-    expect(stableBody).not.toContain("For actions that are hard to reverse");
+    expect(stableBody).not.toContain("写代码要像周围的代码");
+    expect(stableBody).not.toContain("对难以逆转或对外的操作");
     expect(dynamicSystem).not.toContain("# Session Guidance");
-    expect(dynamicSystem).toMatch(/^\n\n# Communicating with the user/);
-    expect(dynamicSystem).toContain("Write code that reads like the surrounding code");
-    expect(dynamicSystem).toContain("For actions that are hard to reverse");
-    expect(dynamicSystem).not.toContain("# Session-specific guidance");
+    expect(dynamicSystem).toMatch(/^\n\n# 与用户沟通/);
+    expect(dynamicSystem).toContain("写代码要像周围的代码");
+    expect(dynamicSystem).toContain("对难以逆转或对外的操作");
+    expect(dynamicSystem).not.toContain("# 会话专项指导");
     expect(dynamicSystem).not.toContain("`! <command>`");
-    expect(dynamicSystem).toContain("# Environment");
-    expect(dynamicSystem).toContain("# Context management");
-    expect(dynamicSystem).not.toContain("not a git repository");
+    expect(dynamicSystem).toContain("# 环境");
+    expect(dynamicSystem).toContain("# 上下文管理");
+    expect(dynamicSystem).not.toContain("不是 Git 仓库");
     expect(dynamicSystem).not.toContain("- **Git**:");
     expect(dynamicSystem).not.toContain("# Language");
     expect(dynamicSystem).not.toContain(
@@ -1060,31 +1060,31 @@ describe("AgentRuntime trace propagation", () => {
     );
     expect(dynamicSystem).not.toContain("Respond in Spanish");
     expect(dynamicSystem).toContain(
-      "# Output Style: Learning\nExplain tradeoffs while solving the task.",
+      "# 输出风格：Learning\nExplain tradeoffs while solving the task.",
     );
-    expect(dynamicSystem).not.toContain("# Output Style: Learning\n\n");
+    expect(dynamicSystem).not.toContain("# 输出风格：Learning\n\n");
     expect(dynamicSystem).not.toContain("# Function Result Clearing");
     expect(dynamicSystem).not.toContain("compactable tool results");
     expect(dynamicSystem).not.toContain("# Summarize Tool Results");
     expect(dynamicSystem).not.toContain("mcp__local__ping");
     expect(dynamicSystem).not.toContain("scratchpad");
     expect(dynamicSystem).not.toContain("token_budget");
-    expect(dynamicSystem.indexOf("# Output Style: Learning")).toBeLessThan(
-      dynamicSystem.indexOf("# Context management"),
+    expect(dynamicSystem.indexOf("# 输出风格：Learning")).toBeLessThan(
+      dynamicSystem.indexOf("# 上下文管理"),
     );
     expect(second?.messages[4]?.content).toContain("first question");
-    expect(second?.messages[4]?.content).not.toContain("Learning output style is active");
+    expect(second?.messages[4]?.content).not.toContain("Learning 输出风格已生效");
     expect(second?.messages[7]?.content).toContain("second question");
     const firstOutputStyleReminder = second?.messages[3]?.content ?? "";
     const secondOutputStyleReminder = second?.messages[6]?.content ?? "";
-    expect(firstOutputStyleReminder).toContain("Learning output style is active");
-    expect(secondOutputStyleReminder).toContain("Learning output style is active");
+    expect(firstOutputStyleReminder).toContain("Learning 输出风格已生效");
+    expect(secondOutputStyleReminder).toContain("Learning 输出风格已生效");
     expect(firstOutputStyleReminder).toContain("<system-reminder>");
     expect(secondOutputStyleReminder).toContain("<system-reminder>");
     expect(secondOutputStyleReminder).not.toContain("Explain tradeoffs while solving the task.");
     expect(secondOutputStyleReminder).not.toContain("source=");
     expect(
-      providerMessagesToText(second?.messages).match(/Learning output style is active/g),
+      providerMessagesToText(second?.messages).match(/Learning 输出风格已生效/g),
     ).toHaveLength(2);
     expect(JSON.stringify(second?.messages)).not.toContain("runtimeMessage");
   });
@@ -1186,72 +1186,70 @@ describe("AgentRuntime trace propagation", () => {
       "system",
       "user",
     ]);
-    expect(requests[0]?.[0]?.content).toBe("You are ZCode, an interactive coding agent");
+    expect(requests[0]?.[0]?.content).toBe("你是 ZCode，一个交互式编码智能体");
     expect(requests[0]?.[1]?.content).not.toContain("# Agent Identity");
-    expect(requests[0]?.[1]?.content).toMatch(/^\n?You are an interactive ZCode agent/);
-    expect(requests[0]?.[1]?.content).toContain("# Harness");
-    expect(requests[0]?.[1]?.content).not.toContain("# Session-specific guidance");
-    expect(requests[0]?.[1]?.content).not.toContain("# Environment");
-    expect(requests[0]?.[1]?.content).not.toContain("# Context management");
+    expect(requests[0]?.[1]?.content).toMatch(/^\n?你是一个交互式 ZCode 智能体/);
+    expect(requests[0]?.[1]?.content).toContain("# 运行时框架（Harness）");
+    expect(requests[0]?.[1]?.content).not.toContain("# 会话专项指导");
+    expect(requests[0]?.[1]?.content).not.toContain("# 环境");
+    expect(requests[0]?.[1]?.content).not.toContain("# 上下文管理");
     expect(requests[0]?.[1]?.content).not.toContain("# Task Behavior");
     expect(requests[0]?.[1]?.content).not.toContain(
-      "Write code that reads like the surrounding code",
+      "写代码要像周围的代码",
     );
-    expect(requests[0]?.[1]?.content).not.toContain("For actions that are hard to reverse");
-    expect(requests[0]?.[2]?.content).toMatch(/^\n\n# Communicating with the user/);
+    expect(requests[0]?.[1]?.content).not.toContain("对难以逆转或对外的操作");
+    expect(requests[0]?.[2]?.content).toMatch(/^\n\n# 与用户沟通/);
     expect(requests[0]?.[2]?.content).toContain(
-      "Your text output is what the user reads; they usually can't see your thinking or the raw tool results.",
-    );
-    expect(requests[0]?.[2]?.content).toContain(
-      "Only write a code comment to state a constraint the code itself can't show",
+      "你的文本输出是用户阅读的内容；他们通常看不到你的思考过程或原始工具结果。",
     );
     expect(requests[0]?.[2]?.content).toContain(
-      "For actions that are hard to reverse or outward-facing",
+      "代码注释只用来陈述代码本身无法表达的约束",
     );
+    expect(requests[0]?.[2]?.content).toContain("对难以逆转或对外的操作");
     expect(
-      requests[0]?.[2]?.content.indexOf("Write code that reads like the surrounding code"),
+      requests[0]?.[2]?.content.indexOf("写代码要像周围的代码"),
     ).toBeLessThan(
       requests[0]?.[2]?.content.indexOf(
-        "Only write a code comment to state a constraint the code itself can't show",
+        "代码注释只用来陈述代码本身无法表达的约束",
       ) ?? -1,
     );
     expect(
       requests[0]?.[2]?.content.indexOf(
-        "Only write a code comment to state a constraint the code itself can't show",
+        "代码注释只用来陈述代码本身无法表达的约束",
       ),
-    ).toBeLessThan(requests[0]?.[2]?.content.indexOf("For actions that are hard to reverse") ?? -1);
-    expect(requests[0]?.[2]?.content.indexOf("For actions that are hard to reverse")).toBeLessThan(
-      requests[0]?.[2]?.content.indexOf("# Environment") ?? -1,
+    ).toBeLessThan(requests[0]?.[2]?.content.indexOf("对难以逆转或对外的操作") ?? -1);
+    expect(requests[0]?.[2]?.content.indexOf("对难以逆转或对外的操作")).toBeLessThan(
+      requests[0]?.[2]?.content.indexOf("# 环境") ?? -1,
     );
-    expect(requests[0]?.[2]?.content).not.toContain("# Session-specific guidance");
+    expect(requests[0]?.[2]?.content).not.toContain("# 会话专项指导");
     expect(requests[0]?.[2]?.content).not.toContain("`! <command>`");
     expect(requests[0]?.[2]?.content).not.toContain("# Language");
     expect(requests[0]?.[2]?.content).not.toContain("# Function Result Clearing");
     expect(requests[0]?.[2]?.content).not.toContain("# Summarize Tool Results");
     expect(requests[0]?.[2]?.content).not.toContain("## Current Environment");
-    expect(requests[0]?.[2]?.content).toContain("# Environment");
-    expect(requests[0]?.[2]?.content).toContain("# Context management");
+    expect(requests[0]?.[2]?.content).toContain("# 环境");
+    expect(requests[0]?.[2]?.content).toContain("# 上下文管理");
     expect(requests[0]?.[2]?.content).toContain(
-      "When you have enough information to act, act. Do not re-derive facts already established in the conversation, re-litigate a decision the user has already made, or narrate options you will not pursue. If you are weighing a choice, give a recommendation, not an exhaustive survey",
+      "当信息已足够行动时就行动。不要重复推导会话中已确立的事实，不要重新质疑用户已经做出的决定，也不要罗列你并不打算执行的选项。如果你在权衡取舍，给出推荐，而不是穷举所有可能。",
     );
-    expect(requests[0]?.[2]?.content.indexOf("# Context management")).toBeLessThan(
-      requests[0]?.[2]?.content.indexOf("When you have enough information to act, act.") ?? -1,
+    expect(requests[0]?.[2]?.content.indexOf("# 上下文管理")).toBeLessThan(
+      requests[0]?.[2]?.content.indexOf("当信息已足够行动时就行动") ?? -1,
     );
     expect(
-      requests[0]?.[2]?.content.indexOf("When you have enough information to act, act."),
-    ).toBeLessThan(requests[0]?.[2]?.content.indexOf("You are operating autonomously.") ?? -1);
+      requests[0]?.[2]?.content.indexOf("当信息已足够行动时就行动"),
+    ).toBeLessThan(requests[0]?.[2]?.content.indexOf("你正在自主运行。") ?? -1);
     expect(requests[0]?.[2]?.content).toContain(
-      "Exception: when the user is describing a problem, asking a question, or thinking out loud rather than requesting a change",
+      "例外：当用户是在描述问题、提出疑问或边想边说，而不是要求改动时，交付物就是你的评估。",
     );
     expect(requests[0]?.[2]?.content).toContain(
-      "Before ending your turn, check your last paragraph.",
+      "结束回合前，检查你的最后一段。",
     );
     expect(
       requests[0]?.[2]?.content.endsWith(
-        "A signal that pattern-matches to a known failure may have a different cause.",
+        "某个信号与已知故障模式相似，不代表它是同一原因。",
       ),
     ).toBe(true);
-    expect(requests[0]?.[2]?.content).not.toContain("not a git repository");
+    expect(requests[0]?.[2]?.content).not.toContain("不是 Git 仓库");
     expect(requests[0]?.[2]?.content).not.toContain("- **Git**:");
     expect(requests[0]?.[3]).toEqual({
       role: "user",
@@ -1405,18 +1403,18 @@ describe("AgentRuntime trace propagation", () => {
     const requestTexts = requests.map((messages) =>
       messages.map((message) => message.content).join("\n"),
     );
-    expect(requestTexts[0]).not.toContain("The date has changed.");
-    expect(requestTexts[1]).not.toContain("The date has changed.");
-    expect(requestTexts[2]).toContain("The date has changed. Today's date is now 2026-06-03.");
-    expect(requestTexts[3]).toContain("The date has changed. Today's date is now 2026-06-03.");
+    expect(requestTexts[0]).not.toContain("日期已变化。");
+    expect(requestTexts[1]).not.toContain("日期已变化。");
+    expect(requestTexts[2]).toContain("日期已变化。今天是 2026-06-03。");
+    expect(requestTexts[3]).toContain("日期已变化。今天是 2026-06-03。");
     expect(
-      requests[2]?.filter((message) => message.content.includes("The date has changed.")),
+      requests[2]?.filter((message) => message.content.includes("日期已变化。")),
     ).toHaveLength(1);
     expect(
-      requests[3]?.filter((message) => message.content.includes("The date has changed.")),
+      requests[3]?.filter((message) => message.content.includes("日期已变化。")),
     ).toHaveLength(1);
-    expect(requestTexts[2]).toContain("Today's date is 2026-06-02.");
-    expect(requestTexts[3]).toContain("Today's date is 2026-06-02.");
+    expect(requestTexts[2]).toContain("今天是 2026-06-02。");
+    expect(requestTexts[3]).toContain("今天是 2026-06-02。");
     expect(requestTexts[2]).not.toContain("Today's date is 2026-06-03.");
   });
 
