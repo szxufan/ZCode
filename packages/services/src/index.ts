@@ -124,6 +124,10 @@ export {
   ZCodeAgentMcpStatusModeUnsupportedError,
 } from "./zcode-agent/zcodeAgentErrors.js";
 export {
+  AGENT_PROMPT_DRAFT_EMPTY_OUTPUT_CODE,
+  AGENT_PROMPT_DRAFT_WORKSPACE_REQUIRED_CODE,
+} from "./zcode-agent/agentPromptDraft.js";
+export {
   createZCodeAgentConnectionScope,
   readTrustedZCodeAgentV4Connection,
 } from "./zcode-agent/zcodeAgentConnectionScope.js";

@@ -357,6 +357,16 @@ export interface ZCodeAgentGenerateWorkspaceTextParams extends ZCodeAgentWorkspa
   requestTimeoutMs?: number;
 }
 
+/**
+ * 设置页系统提示词配置档的 AI 生成/修改（agentPromptDraft.ts 组装 prompt，
+ * 本接口方法只做转调与输出规整）。baseContent 在场 = 修改模式。
+ */
+export interface ZCodeAgentGenerateAgentPromptDraftParams extends ZCodeAgentWorkspaceTarget {
+  selection: ZCodeWorkspaceGenerateTextParams["selection"];
+  instruction: string;
+  baseContent?: string;
+}
+
 export interface ZCodeAgentTestModelConnectivityParams extends ZCodeAgentWorkspaceTarget {
   selection: ZCodeProviderTestModelConnectivityParams["selection"];
   signal?: AbortSignal;
@@ -817,6 +827,9 @@ export interface IZCodeAgentService {
   generateWorkspaceText(
     params: ZCodeAgentGenerateWorkspaceTextParams,
   ): Promise<ZCodeWorkspaceGenerateTextResult>;
+  generateAgentPromptDraft(
+    params: ZCodeAgentGenerateAgentPromptDraftParams,
+  ): Promise<{ text: string }>;
   testModelConnectivity(
     params: ZCodeAgentTestModelConnectivityParams,
   ): Promise<ZCodeProviderTestModelConnectivityResult>;

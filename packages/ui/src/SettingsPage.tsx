@@ -107,10 +107,14 @@ import { cn } from "@/components/lib/utils.js";
 import { useSelectDirectory } from "@/hooks/usePlatform.js";
 import { ServiceProvider, useServices } from "@/hooks/useServices.js";
 import type { AppToolSearchMode } from "@zcode/shared";
+import { AGENT_PROMPT_DRAFT_WORKSPACE_REQUIRED_CODE } from "@zcode/services";
 import { useSettings } from "@/hooks/useSettingService.js";
 import type { CreateTaskRequest, RemoteConnectionOpenPreference } from "@/app-shell/types.js";
 import { useBaseWorkspaceServices } from "@/hooks/useWorkspaceServices.js";
-import { resolveModelProviderConnectivityWorkspacePath } from "@/lib/modelProviderConnectivityTarget.js";
+import {
+  isRemoteWorkspaceTab,
+  resolveModelProviderConnectivityWorkspacePath,
+} from "@/lib/modelProviderConnectivityTarget.js";
 import {
   createSettingsPageConfig,
   GeneralSectionContent,
@@ -727,6 +731,33 @@ export function SettingsPage({
     activeWorkspaceTab?.remoteSessionId?.trim() ||
     activeWorkspaceTab?.remoteTarget,
   );
+  // AI 提示词草稿由本机 Host 启动 CLI 执行：远端 tab 的 workspacePath 是远端文件系统路径，
+  // 不能直接交给 Local Host，与模型连通性探测同源复用同一个本地 workspace 解析函数；
+  // 无任何本地 tab 时回退进入设置页前的工作区（远端则不回落），都没有时 AI 按钮禁用。
+  const aiWorkspacePathForPromptDraft = useMemo(() => {
+    const localPath = resolveModelProviderConnectivityWorkspacePath({
+      activeWorkspacePath,
+      activeWorkspaceIdentity,
+      activeWorkspaceTab,
+      workspaceTabs,
+    });
+    if (localPath) {
+      return localPath;
+    }
+    const captionTab = workspaceTabs.find(
+      (tab) => tab.workspacePath === captionWorkspacePath?.trim(),
+    );
+    if (captionTab && isRemoteWorkspaceTab(captionTab)) {
+      return undefined;
+    }
+    return captionWorkspacePath ?? undefined;
+  }, [
+    activeWorkspaceIdentity,
+    activeWorkspacePath,
+    activeWorkspaceTab,
+    captionWorkspacePath,
+    workspaceTabs,
+  ]);
   const selectDirectory = useSelectDirectory();
   const services = useServices();
   const onboardingRecordService = services.onboardingRecordService;
@@ -2102,6 +2133,34 @@ export function SettingsPage({
                               onUpdateActiveProfileId={(profileId) =>
                                 updateSharedSettings({ agentPromptActiveProfileId: profileId })
                               }
+                              aiWorkspacePath={aiWorkspacePathForPromptDraft}
+                              onGenerateDraft={async ({ instruction, mode, baseContent }) => {
+                                // AI 生成走本机 Host 的模型默认选择（与 commit message 生成同源）；
+                                // workspace ref 需要一个已打开的本地工作区来启动 CLI 进程。
+                                // 失败原因只抛稳定错误码，由 AgentPromptSection 按码映射 i18n 文案。
+                                const workspacePath = aiWorkspacePathForPromptDraft;
+                                if (!workspacePath) {
+                                  throw new Error(AGENT_PROMPT_DRAFT_WORKSPACE_REQUIRED_CODE);
+                                }
+                                const view =
+                                  await localHostServices.modelSelectionService.getView();
+                                const selection = view.preferredSelection;
+                                if (!selection) {
+                                  throw new Error("agent-prompt-draft.model-missing");
+                                }
+                                const result =
+                                  await localHostServices.zcodeAgentService.generateAgentPromptDraft(
+                                    {
+                                      workspacePath,
+                                      selection,
+                                      instruction,
+                                      ...(mode === "revise" && baseContent !== undefined
+                                        ? { baseContent }
+                                        : {}),
+                                    },
+                                  );
+                                return result.text;
+                              }}
                             />
                           ) : activeSection === "plugin" ? (
                             <PluginsSection

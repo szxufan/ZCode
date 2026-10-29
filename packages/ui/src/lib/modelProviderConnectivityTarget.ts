@@ -6,7 +6,7 @@ interface ConnectivityWorkspaceTab {
   localWorkspacePath?: string | null;
 }
 
-function isRemoteWorkspaceTab(tab: ConnectivityWorkspaceTab | null | undefined): boolean {
+export function isRemoteWorkspaceTab(tab: ConnectivityWorkspaceTab | null | undefined): boolean {
   return Boolean(
     tab?.workspaceIdentity?.trim() || tab?.remoteSessionId?.trim() || tab?.remoteTarget,
   );

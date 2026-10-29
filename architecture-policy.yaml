@@ -721,3 +721,8 @@ exceptions:
     paths:
       - packages/ui/src/lib/pluginIconSource.ts
     reason: 下线内置 image-search 插件时仅从该存量图标映射表删除一条映射与对应 import；映射表结构、图标信任判定与模块边界不变，接管整个 ui lib 目录不在本次范围内。
+  - id: agent-prompt-draft-unmanaged-file
+    rule: unmanaged-new-file
+    paths:
+      - packages/services/src/zcode-agent/agentPromptDraft.ts
+    reason: 系统提示词配置档 AI 生成/修改的 prompt 构造与输出规整纯函数（docs/specs/agent-system-prompt-chinese-and-profiles.md §6）；沿用 zcode-agent 目录的未受管组织方式，接管 packages/services 需要独立的模块边界重构。
