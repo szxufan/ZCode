@@ -101,6 +101,16 @@ vi.mock("@/v4/composer/useComposerAttachments.js", () => ({
   }),
 }));
 
+// PromptProfileSwitchControl 依赖 ServiceProvider（useBaseWorkspaceServices 会抛错）；
+// 本文件是无 Provider 的静态渲染，只覆盖网页元素上下文附件，stub 掉配置档切换控件。
+vi.mock("@/chat-input-toolbar/PromptProfileSwitchControl.js", async () => {
+  const React = await import("react");
+  return {
+    PromptProfileSwitchControl: () =>
+      React.createElement("span", { "data-testid": "mock-prompt-profile-switch" }),
+  };
+});
+
 vi.mock("@/v4/composer/V4ComposerToolbar.js", async () => {
   const React = await import("react");
   return {

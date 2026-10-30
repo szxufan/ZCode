@@ -48,7 +48,8 @@ describe("settingsPageConfig", () => {
       },
       {
         id: "agentCapabilities",
-        sections: ["memory", "subagents", "plugin", "mcp", "skill", "commands", "hooks"],
+        // agentPrompt 由 v3.18.0 agent-prompt 特性加入，位于 memory 之后。
+        sections: ["memory", "agentPrompt", "subagents", "plugin", "mcp", "skill", "commands", "hooks"],
       },
       { id: "dataAndStats", sections: ["usage", "archives"] },
     ]);
@@ -57,6 +58,7 @@ describe("settingsPageConfig", () => {
       "appearance",
       "modelProvider",
       "memory",
+      "agentPrompt",
       "subagents",
       "plugin",
       "mcp",
