@@ -140,6 +140,7 @@ export type {
   ZCodeAgentAttachmentBeginParams,
   ZCodeAgentAttachmentChunkParams,
   ZCodeAgentAttachmentTerminalParams,
+  ZCodeAgentCreateAutomationParams,
   ZCodeAgentCreateSessionParams,
   ZCodeAgentCuaPermissionObservation,
   ZCodeAgentInitializeResult,

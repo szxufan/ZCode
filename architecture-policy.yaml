@@ -559,6 +559,25 @@ modules:
     layers:
       ui: .
     owner: conversation
+  # scheduled-send：由 architecture:adopt 登记（composer 定时发送 UI 模块）
+  - id: scheduled-send
+    roots:
+      - packages/ui/src/v4/scheduled-send
+      # 预设偏好 store 依 AGENTS 约定留在 store/；将其登记为同一模块的文件根。
+      - packages/ui/src/store/scheduledSendPresetStore.ts
+    managed: true
+    requires:
+      - services
+      - shared
+      - ui
+    publicEntrypoints:
+      - packages/ui/src/v4/scheduled-send/index.ts
+      - packages/ui/src/v4/scheduled-send/contract.ts
+    layers:
+      # 契约层只放类型（含 services 入参类型转出）；其余文件归 ui 层。
+      contract: contract.ts
+      ui: .
+    owner: conversation
 
 global:
   # 临时时间戳（2026-09-10）：unmanaged-new-file 只约束此日期之后首次入库的文件。

@@ -4801,14 +4801,20 @@ export function createZCodeAgentService(
     },
 
     async createAutomation(params: ZCodeAgentCreateAutomationParams) {
+      // cronExpr 与 relativeDelayMinutes 二选一：只给延迟时服务层会覆盖占位 cron；
+      // 两者都缺省时占位空串会被 isValidCronExpr 拒绝，等价于「必须提供调度」。
+      if (!params.cronExpr && params.relativeDelayMinutes === undefined) {
+        throw new Error("automation create requires cronExpr or relativeDelayMinutes");
+      }
       return automationService.create({
         projectId: params.projectId,
         title: params.title,
-        cronExpr: params.cronExpr,
+        cronExpr: params.cronExpr ?? "",
         relativeDelayMinutes: params.relativeDelayMinutes,
         prompt: params.prompt,
         modelSelection: params.modelSelection,
         mode: params.mode as ZCodeTaskMode | undefined,
+        targetTaskId: params.targetTaskId,
         workspacePath: params.workspacePath,
         workspaceIdentity: params.workspaceIdentity,
         recurring: params.recurring ?? true,

@@ -597,6 +597,14 @@ export const TID_V4_COMPOSER_BACKGROUND_WORK_TRIGGER = "v4-composer-background-w
 export const TID_V4_COMPOSER_CUA_ENTRY = "v4-composer-cua-entry";
 /** v4 composer 发送按钮 */
 export const TID_V4_COMPOSER_SEND = "v4-composer-send";
+/** v4 composer 发送按钮右侧「设为定时」下拉触发键 */
+export const TID_V4_COMPOSER_SCHEDULE_TRIGGER = "v4-composer-schedule-trigger";
+/** v4 composer 定时发送浮层：设为定时菜单项 */
+export const TID_V4_COMPOSER_SCHEDULE_MENU_ITEM = "v4-composer-schedule-menu-item";
+/** v4 composer 定时发送浮层：预设时间点按钮（多条共享同一 id，按 DOM 顺序取第一条） */
+export const TID_V4_COMPOSER_SCHEDULE_PRESET = "v4-composer-schedule-preset";
+/** v4 composer 定时发送浮层：确认按钮 */
+export const TID_V4_COMPOSER_SCHEDULE_CONFIRM = "v4-composer-schedule-confirm";
 /** v4 暂停队列发送确认：清空队列并发送 */
 export const TID_V4_COMPOSER_CLEAR_QUEUE_SEND = "v4-composer-clear-queue-send";
 /** v4 暂停队列发送确认：保留队列并发送 */
