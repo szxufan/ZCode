@@ -202,11 +202,18 @@ export interface ZCodeAgentResolveSuggestedPluginReferenceParams extends ZCodeAg
 export interface ZCodeAgentCreateAutomationParams extends ZCodeAgentWorkspaceTarget {
   projectId?: string | null;
   title: string;
-  cronExpr: string;
+  /**
+   * 与 relativeDelayMinutes 二选一：普通 cron 任务必填；composer 定时发送只给
+   * relativeDelayMinutes，由服务层 buildRelativeDelaySchedule 换算 cronExpr 并强制一次性。
+   * 两者都缺省时服务层抛错，不写库。
+   */
+  cronExpr?: string;
   relativeDelayMinutes?: number;
   prompt: string;
   modelSelection?: ModelSelection;
   mode?: string;
+  /** 会话内定时发送绑定当前会话；到点直接注入原会话而非新建。缺省时走 fallback 建会话。 */
+  targetTaskId?: string;
   recurring?: boolean;
   maxRuns?: number;
   endAt?: number;

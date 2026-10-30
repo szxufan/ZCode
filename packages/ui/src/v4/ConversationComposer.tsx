@@ -34,6 +34,7 @@ import {
 } from "react";
 import { cn } from "@/components/lib/utils.js";
 import {
+  isRemoteWorkspaceIdentity,
   type PlanIdentitySnapshot,
   type ZCodeProvider,
 } from "@zcode/shared";
@@ -66,6 +67,7 @@ import {
   XIcon,
 } from "lucide-react";
 import { ControlHintTooltip } from "@/ControlHintTooltip.js";
+import { ComposerScheduledSend } from "@/v4/scheduled-send/index.js";
 import {
   ChatErrorBanner,
   resolveChatErrorBannerDisplayMessage,
@@ -1264,6 +1266,21 @@ function ConversationComposerImpl({
     !runtimeBlocked;
   // 旧 UI 状态机：streaming + 空草稿 → Stop；有草稿 → 发送键（入队）。
   const showStopControl = canStop && !hasDraftToSubmit;
+  // 定时发送只支持纯文本：附件/代码批注/网页元素/PPT/会话引用/插件 UI 上下文
+  // 都无法序列化进 automation prompt，入口需据此禁用而不是静默丢上下文。
+  const hasNonTextContext =
+    hasAttachments ||
+    hasCodeCommentContexts ||
+    hasWebElementContexts ||
+    hasPptxElementReferences ||
+    hasConversationSelectionReferences ||
+    hasPluginUiContexts;
+  // 定时任务写 tasks-index 并在本机 scheduler 派发；远程 workspace 的 identity 不接受本机调度，
+  // 直接隐藏入口（手机/远控由既有会话链路处理）。
+  const scheduledSendLocalOnly =
+    !workspaceIdentity?.trim() || !isRemoteWorkspaceIdentity(workspaceIdentity);
+  // 模型/模式沿用 composer 当前选择：草稿态读 draftConfig，会话态读 snapshot.config。
+  const scheduleConfig = snapshot?.config ?? draftConfig;
 
   useEffect(() => {
     if (!canSend) setSendTooltipOpen(false);
@@ -1737,6 +1754,14 @@ function ConversationComposerImpl({
       failureStage: "stop_generation",
     });
   }, [onStop]);
+
+  // 定时发送创建成功后清空草稿：复用发送后的清理路径（编辑器 + 文本态 + draft owner），
+  // 不重走 submit，因为正文已作为 automation prompt 落库。
+  const handleScheduledSend = useCallback(() => {
+    inputApiRef.current?.clear();
+    updateText("");
+    updateComposerContent({ text: "" });
+  }, [updateComposerContent, updateText]);
 
   // 发送键是 type="submit"，与 Enter 共用 handleEditorSubmit；DOM 事件顺序保证 click 早于
   // submit，故这里只置标记，由 submit() 读取并复位。
@@ -2301,25 +2326,45 @@ function ConversationComposerImpl({
             </Button>
           </ControlHintTooltip>
         ) : (
-          <ControlHintTooltip
-            title={resolvedSendTooltipTitle}
-            shortcut={resolvedSendTooltipShortcut}
-            open={Boolean(modifierTooltip) || sendTooltipOpen}
-            onOpenChange={setSendTooltipOpen}
-          >
-            <Button
-              type="submit"
-              size="icon-md"
-              disabled={!canSend}
-              onClick={handleSendButtonClick}
-              data-testid={TID_V4_COMPOSER_SEND}
-              aria-label={resolvedSendTooltipTitle}
-              className="cursor-pointer gap-1 rounded-lg bg-brand text-ui-base text-foreground-inverse hover:bg-brand/80"
+          <div className="flex items-center gap-1">
+            <ControlHintTooltip
+              title={resolvedSendTooltipTitle}
+              shortcut={resolvedSendTooltipShortcut}
+              open={Boolean(modifierTooltip) || sendTooltipOpen}
+              onOpenChange={setSendTooltipOpen}
             >
-              {pending ? <Spinner className="size-4" /> : <ArrowUpIcon className="size-4" />}
-              <span className="sr-only">{resolvedSendTooltipTitle}</span>
-            </Button>
-          </ControlHintTooltip>
+              <Button
+                type="submit"
+                size="icon-md"
+                disabled={!canSend}
+                onClick={handleSendButtonClick}
+                data-testid={TID_V4_COMPOSER_SEND}
+                aria-label={resolvedSendTooltipTitle}
+                className="cursor-pointer gap-1 rounded-lg bg-brand text-ui-base text-foreground-inverse hover:bg-brand/80"
+              >
+                {pending ? <Spinner className="size-4" /> : <ArrowUpIcon className="size-4" />}
+                <span className="sr-only">{resolvedSendTooltipTitle}</span>
+              </Button>
+            </ControlHintTooltip>
+            {/* 定时发送：仅本地 workspace；到点事实归 tasks-index automation，不在此保存待发状态。 */}
+            {remoteAvailable && scheduledSendLocalOnly && services?.zcodeAgentService ? (
+              <ComposerScheduledSend
+                draftText={text}
+                hasNonTextContext={hasNonTextContext}
+                enabled={canSend}
+                disabledReason={resolvedSendTooltipTitle}
+                agentService={services.zcodeAgentService}
+                workspacePath={workspacePath}
+                {...(workspaceIdentity ? { workspaceIdentity } : {})}
+                sessionId={sessionId ?? null}
+                {...(scheduleConfig?.modelSelection
+                  ? { modelSelection: scheduleConfig.modelSelection }
+                  : {})}
+                {...(scheduleConfig?.mode ? { mode: scheduleConfig.mode } : {})}
+                onScheduled={handleScheduledSend}
+              />
+            ) : null}
+          </div>
         )}
       </div>
     ),
@@ -2335,6 +2380,8 @@ function ConversationComposerImpl({
       handleStopClick,
       handleSendButtonClick,
       handleConfigPickerOpenChange,
+      handleScheduledSend,
+      hasNonTextContext,
       mode,
       handleSelectModelTrace,
       modelSelectionReload,
@@ -2350,13 +2397,17 @@ function ConversationComposerImpl({
       modifierTooltip,
       resolvedSendTooltipShortcut,
       resolvedSendTooltipTitle,
+      scheduleConfig,
+      scheduledSendLocalOnly,
       sendTooltipOpen,
       remoteAvailable,
       sendShortcut,
       sendTooltipTitle,
+      services,
       sessionId,
       showStopControl,
       stopTooltipTitle,
+      text,
       workspaceIdentity,
       workspacePath,
     ],
