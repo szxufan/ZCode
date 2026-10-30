@@ -77,3 +77,4 @@ __pycache__/
 .zcode-runtime
 # ZCode 应用在本 workspace 运行时写入的本地数据（会话缓存/技能/插件等），与仓库代码无关。
 /.zcode/
+.openbitfun/
