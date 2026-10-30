@@ -296,6 +296,18 @@ function renderComposer(onSendText: (text: string, options?: unknown) => Promise
         { initialLocale: "en-US" },
         createElement(ConversationComposer, {
           composerDraft: { text: "", updatedAt: 0 },
+          composerDraftScopeToken: scopeToken,
+          rootDraftScopeKey: "/workspace",
+          stageComposerContent: vi.fn(),
+          captureComposerContentLifecycleCommit: () => vi.fn(),
+          captureComposerSubmissionDraftTransaction: () => ({
+            claim: () => true,
+            restore: () => ({ current: true, applied: true }),
+            finalize: () => ({ current: true, applied: true }),
+            release: () => undefined,
+            matchesTarget: () => true,
+          }),
+          persistComposerContent: vi.fn(),
           updateComposerContent: vi.fn(),
           replaceComposerDraft: vi.fn(),
           draftMode: true,
@@ -323,6 +335,8 @@ afterEach(() => {
   delete (globalThis as { window?: unknown }).window;
   delete (globalThis as { IS_REACT_ACT_ENVIRONMENT?: unknown }).IS_REACT_ACT_ENVIRONMENT;
 });
+
+const scopeToken = Symbol("test-scope");
 
 describe("V4 web element context attachment", () => {
   it("accepts focused workspace events and submits the prompt with a web element context block", async () => {

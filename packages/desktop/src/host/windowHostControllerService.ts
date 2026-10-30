@@ -7,6 +7,7 @@ import type {
   WindowHostTaskAddress,
 } from "@zcode/shared/zcode-protocol-v4";
 import {
+  CONTROLLER_TASKS_INDEX_TOPIC,
   matchesTaskListMembershipKind,
   windowHostTaskAddressSchema,
 } from "@zcode/shared/zcode-protocol-v4";
@@ -140,6 +141,7 @@ function liveStatusFromMeta(meta: ZCodeTaskMeta): WindowHostControllerTaskRow["l
  */
 export function createWindowHostControllerRuntime(options: {
   createId: () => string;
+  readHostTaskList: IZCodeTaskService["listTaskList"];
   resolveSource: (scope: ZCodeTaskListWorkspaceScope) => ResolvedWindowHostControllerSource | null;
   onSourceError?: (
     scope: WindowHostControllerSourceScope,
@@ -557,6 +559,29 @@ export function createWindowHostControllerRuntime(options: {
   async function listTaskList(
     query: ZCodeTaskListQuery,
   ): Promise<WindowHostControllerTaskListResult> {
+    if (query.workspaceScopes === "host") {
+      // 已注册 source 也只覆盖打开过的工作区；全局历史必须直接交给持久化 owner。
+      // 不 refreshSource，因此搜索不会为未打开目录创建 CLI/runtime 或远程连接。
+      const result = await options.readHostTaskList(query);
+      const localRows = new Map(
+        projection
+          .getTasks()
+          .filter((row) => !row.address.sourceServerId && !row.address.remoteSessionId)
+          .map((row) => [taskKey(row.meta), row]),
+      );
+      return {
+        ...result,
+        items: result.items.map((item) => {
+          const projected = localRows.get(taskKey(item));
+          return {
+            ...item,
+            sourceAvailability: "online" as const,
+            liveStatus: projected?.liveStatus ?? liveStatusFromMeta(item),
+            ...(projected?.activity ? { activity: projected.activity } : {}),
+          };
+        }),
+      };
+    }
     const resolvedSources = resolveQuerySources(query.workspaceScopes);
     await Promise.all(
       resolvedSources.map(async (source) => {
@@ -662,7 +687,7 @@ export function createWindowHostControllerRuntime(options: {
                 };
           return (
             selectedSources.has(sourceKey(scope)) &&
-            matchesTaskListMembershipKind(row.membership, query.kind)
+            (query.kind === "all" || matchesTaskListMembershipKind(row.membership, query.kind))
           );
         })
         .map((row) => {
@@ -900,6 +925,11 @@ export function createWindowHostControllerRuntime(options: {
   return {
     service,
     createAttachmentService,
+    /** 手机项目树叠加实时交互：只读当前投影行，不触发 source 刷新。 */
+    readTaskRows: (): WindowHostControllerTaskRow[] => projection.getTasks(),
+    /** 投影行任一变化即回调；订阅时会立即收到一次快照回调。 */
+    subscribeTaskRows: (onChange: () => void): { dispose(): void } =>
+      projection.subscribe({ topic: CONTROLLER_TASKS_INDEX_TOPIC, onFrame: () => onChange() }),
     replaceDisconnectedSource,
     async resolveTaskAddress(params: {
       taskId: string;

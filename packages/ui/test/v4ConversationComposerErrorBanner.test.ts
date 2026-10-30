@@ -113,6 +113,24 @@ const AnyConversationComposer = ConversationComposer as unknown as ComponentType
   Record<string, unknown>
 >;
 
+const composerDraftOwnerProps = {
+  composerDraftScopeToken: Symbol("error-banner-scope"),
+  rootDraftScopeKey: "/workspace",
+  stageComposerContent: () => undefined,
+  captureComposerContentLifecycleCommit: () => () => undefined,
+  captureComposerSubmissionDraftTransaction: () => ({
+    claim: () => true,
+    restore: () => ({ current: true, applied: true }),
+    finalize: () => ({ current: true, applied: true }),
+    release: () => undefined,
+    matchesTarget: () => true,
+  }),
+  persistComposerContent: () => undefined,
+  updateComposerContent: () => undefined,
+  replaceComposerDraft: () => undefined,
+  composerDraft: { text: "", updatedAt: 0 },
+};
+
 function makeSnapshot(): ConversationSnapshot {
   return {
     protocolVersion: 1,
@@ -175,6 +193,7 @@ function renderComposerWithError(
       ZCodeIntlProvider,
       { initialLocale: "zh-CN" },
       createElement(AnyConversationComposer, {
+        ...composerDraftOwnerProps,
         snapshot: null,
         sessionId: "session-1",
         workspacePath: "/workspace",
@@ -209,6 +228,7 @@ function renderComposerWithSnapshot(
       createElement(RemoteConversationAvailability, {
         available: remoteAvailable,
         children: createElement(AnyConversationComposer, {
+        ...composerDraftOwnerProps,
           snapshot,
           sessionId: "session-1",
           workspacePath: "/workspace",
@@ -231,6 +251,7 @@ function renderBlockedComposer(): string {
       ZCodeIntlProvider,
       { initialLocale: "zh-CN" },
       createElement(AnyConversationComposer, {
+        ...composerDraftOwnerProps,
         snapshot: makeSnapshot(),
         sessionId: "session-1",
         workspacePath: "/workspace",
@@ -390,6 +411,7 @@ it("离线输入栏优先显示禁发送原因，不让不可用模型控件挤�
         RemoteConversationAvailability,
         { available: false },
         createElement(AnyConversationComposer, {
+        ...composerDraftOwnerProps,
           workspacePath: "/workspace",
           sessionId: null,
           snapshot: null,

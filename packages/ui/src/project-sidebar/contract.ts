@@ -22,6 +22,8 @@ export interface ProjectRowAction {
   run(): void;
   disabled?: boolean;
   destructive?: boolean;
+  /** 与上一组操作之间画分隔线；首项忽略。 */
+  separatorBefore?: boolean;
 }
 export {
   buildRemoteHostWorkspaceIdentity,
@@ -65,7 +67,7 @@ export interface ProjectAvailability {
   unresolved?: boolean;
 }
 export type { Locale, Theme };
-export type ProjectSidebarView = "projects" | "grouped" | "timeline";
+export type ProjectSidebarView = "projects" | "grouped" | "timeline" | "unread";
 export interface SidebarFileTreeTarget {
   workspacePath: string;
   workspaceName: string;
@@ -80,6 +82,9 @@ export interface SidebarFileTreeOpenRequest {
 }
 /** 项目、时间线共用同一 Host 行集合；回调只负责现有导航，不维护组织状态。 */
 export interface ProjectSidebarProps {
+  /** 远控壳标识；桌面端恒为 falsy，仅保留上游接口形状。 */
+  isWebRemoteControl?: boolean;
+
   workspacePath: string;
   workspaceIdentity?: string;
   workspaceRemoteSessionId?: string;

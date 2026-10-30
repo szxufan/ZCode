@@ -1,3 +1,4 @@
+import { createServiceLogger } from "@zcode/services/node";
 import type { IDisposable } from "@zcode/rpc";
 import { ZCODE_AGENT_RUNTIME_UNAVAILABLE_CODE, type IZCodeAgentService } from "@zcode/services";
 import {
@@ -9,6 +10,7 @@ import {
   type SessionsIndexTopicWireCandidate,
   type SessionSummary,
 } from "@zcode/shared/zcode-protocol-v4";
+
 
 const SUBSCRIBER_SCOPE = "window-controller";
 const MAX_STAGED_WIRES = 1_024;
@@ -105,11 +107,16 @@ export function createWindowHostSessionsIndexObserver(options: {
     assemblyTimer.unref?.();
   };
 
-  const applyFrame = (frame: SessionsIndexTopicFrame): void => {
+  const applyFrame = (frame: SessionsIndexTopicFrame, live: boolean): void => {
     if (frame.payload.kind === "snapshot") {
       summaries.clear();
+      // recovery 快照只重建基线；仍在运行的任务沿用实时开始时建立的 owner，
+      // 否则 gap 恢复后的终态会因 run_not_observed 被永久跳过。
+      const running = new Set<string>();
       for (const session of frame.payload.snapshot.sessions) {
         summaries.set(session.sessionId, session);
+        if (session.phase === "running" || session.phase === "prewarming")
+          running.add(session.sessionId);
       }
       cursor = { logEpoch: frame.payload.snapshot.logEpoch, seq: frame.toSeq };
       recovering = false;
@@ -122,8 +129,11 @@ export function createWindowHostSessionsIndexObserver(options: {
       return;
     }
     for (const delta of frame.payload.deltas) {
-      if (delta.op === "session.upserted") summaries.set(delta.session.sessionId, delta.session);
-      else summaries.delete(delta.sessionId);
+      if (delta.op === "session.upserted") {
+        summaries.set(delta.session.sessionId, delta.session);
+      } else {
+        summaries.delete(delta.sessionId);
+      }
     }
     cursor = { ...cursor, seq: frame.toSeq };
     publish();
@@ -141,7 +151,7 @@ export function createWindowHostSessionsIndexObserver(options: {
     let faulted = false;
     for (const event of events) {
       if (event.kind === "fault") faulted = true;
-      else applyFrame(event.frame);
+      else applyFrame(event.frame, event.deliveryKind === "online");
     }
     if (faulted) requestRecovery();
     scheduleAssemblyExpiry();

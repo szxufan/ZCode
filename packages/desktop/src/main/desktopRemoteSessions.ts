@@ -1329,6 +1329,13 @@ export function createRemoteWorkspaceSessionManager(options: {
     getRemoteConnectionStats,
     disposeRemoteWorkspaceSession,
     disposeRemoteWorkspaceSessionsForWindow,
+    getProviderProvisioningLaneStatus: (
+      sourceServerId: string,
+      options?: { waitForIdle?: boolean },
+    ) => providerProvisioningCoordinator.getLaneStatus(sourceServerId, options),
+    /** 数据同步页「重试」：复用同一条 single-flight lane 的尾随同步。 */
+    retryProviderProvisioning: (sourceServerId: string) =>
+      providerProvisioningCoordinator.retry(sourceServerId),
     disposeAllAndWaitForAppShutdown: async (_reason: string) => {
       appShutdownStarted = true;
       const error = new Error("应用正在退出，远程连接已取消");

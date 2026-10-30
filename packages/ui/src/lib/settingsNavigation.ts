@@ -8,12 +8,15 @@ export type SettingsSectionId =
   | "browser"
   | "modelProvider"
   | "remoteDevices"
+  | "dataSync"
+  | "personalization"
   | "memory"
   | "agentPrompt"
   | "plugin"
   | "mcp"
   | "skill"
   | "plugins"
+  | "projects"
   | "archives"
   | "usage"
   | "subagents"
@@ -72,11 +75,14 @@ function isSettingsSectionId(value: string): value is SettingsSectionId {
     value === "browser" ||
     value === "modelProvider" ||
     value === "remoteDevices" ||
+    value === "dataSync" ||
+    value === "personalization" ||
     value === "memory" ||
     value === "plugin" ||
     value === "mcp" ||
     value === "skill" ||
     value === "plugins" ||
+    value === "projects" ||
     value === "archives" ||
     value === "usage" ||
     value === "subagents" ||

@@ -60,6 +60,7 @@ import {
   PluginUiLauncherItems,
   PluginUiSidePane,
   SidePaneLauncherRow,
+  useMarketPluginUi,
   useOpenPluginUi,
 } from "@/plugin-ui/index.js";
 import { WorkflowRunSidePane } from "@/app-shell/WorkflowRunSidePane.js";
@@ -80,6 +81,7 @@ import {
   resolveAnimatedSidePanePanelLayout,
   resolveOpenTabLauncherItemIds,
   shouldOfferSelectionSideConversation,
+  SITES_PLUGIN_ID,
   shouldRenderPreviewPaneHeavyContent,
   type OpenTabLauncherItemId,
 } from "@/app-shell/animatedSidePanePanelModel.js";
@@ -112,6 +114,7 @@ import {
   ChevronRightIcon,
   FileDiffIcon,
   FolderOpenIcon,
+  EarthIcon,
   GlobeIcon,
   MessageSquareTextIcon,
   PlusIcon,
@@ -529,6 +532,17 @@ export function AnimatedSidePanePanel({
     activeTaskId,
     isMobileTextInputViewport,
   });
+  // Sites 面板是官方插件 zcode-site 的 UI surface；远程 workspace 不开放本地插件入口。
+  const canOpenSites =
+    canOpenSelectionSideConversation &&
+    !workspaceRemoteSessionId &&
+    !(workspaceIdentity ?? "").trim().startsWith("remote-session:");
+  const sitesPluginUi = useMarketPluginUi({
+    workspacePath: workspaceAbsPath,
+    workspaceIdentity,
+    remoteSessionId: workspaceRemoteSessionId ?? null,
+    sessionId: activeTaskId,
+  });
   const tabDragSensors = useSensors(
     useSensor(PointerSensor, {
       activationConstraint: {
@@ -774,6 +788,13 @@ export function AnimatedSidePanePanel({
     </Button>
   );
   const openTabLauncherItemById: Record<OpenTabLauncherItemId, OpenTabLauncherItem> = {
+    sites: {
+      id: "sites",
+      label: intl.formatMessage({ id: "sidePane.sites" }),
+      description: intl.formatMessage({ id: "sidePane.launcher.sites" }),
+      icon: EarthIcon,
+      onOpen: () => void sitesPluginUi.open(SITES_PLUGIN_ID),
+    },
     "selection-side-conversation": {
       id: "selection-side-conversation",
       label: intl.formatMessage({ id: "sidePane.selectionChat" }),
@@ -818,6 +839,7 @@ export function AnimatedSidePanePanel({
     },
   };
   const openTabLauncherItems: OpenTabLauncherItem[] = resolveOpenTabLauncherItemIds({
+    canOpenSites,
     canOpenSelectionSideConversation,
     developerToolsEnabled,
     hasReviewTab,
