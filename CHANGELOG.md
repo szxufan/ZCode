@@ -1,5 +1,22 @@
 # Changelog
 
+## [3.20.0](https://github.com/szxufan/ZCode/compare/v3.19.0...v3.20.0) (2026-10-30)
+
+### Features
+
+* **composer:** 定时发送——草稿按选定时间投递为一次性 automation ([6a7e592](https://github.com/szxufan/ZCode/commit/6a7e5928c10b3efb4a373d0f3fc428342e377826))
+  * 发送键右侧新增「设为定时」入口：预设时间点（本地偏好，localStorage 持久化）
+  * 自定义日期时间，确认时按当前时刻重算目标时刻
+  * 一次定时发送 = 一条 recurring=false automation（relativeDelayMinutes），
+  * 服务层 createAutomation 收口 cronExpr/relativeDelayMinutes 二选一门禁并透传 targetTaskId
+  * 入口仅本地 workspace 且支持纯文本：附件/引用等非文本上下文禁用并说明原因
+  * 新增 scheduled-send 架构模块（契约层/时间换算/提交入参纯函数 + 预设 store），
+
+
+### Chores
+
+* ignore .openbitfun local directory ([ec00416](https://github.com/szxufan/ZCode/commit/ec00416c871cd3863b8667ec920e336e687eca20))
+
 ## [3.19.0](https://github.com/szxufan/ZCode/compare/v3.18.0...v3.19.0) (2026-10-29)
 
 ### Features
