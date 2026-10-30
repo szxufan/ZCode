@@ -241,6 +241,11 @@ export function createTelemetryCore() {
       return Promise.resolve();
     },
 
+    trackPendingReport(_report: Promise<void>): Promise<void> {
+      // 上报出网路径已移除；挂账接口保留为透传空实现，供会话遥测分发器串联时序。
+      return _report;
+    },
+
     reportAppDailyActive(_context: TelemetryRendererContext): Promise<void> {
       return Promise.resolve();
     },

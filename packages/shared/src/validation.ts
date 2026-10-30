@@ -1,4 +1,5 @@
-import { mobilePluginDiscoveryTelemetrySchema } from "./telemetry.js";
+import { mobilePluginDiscoveryTelemetrySchema, telemetryUiModeSchema } from "./telemetry.js";
+import { remoteConversationTelemetryEventSchema } from "./conversation-telemetry/remoteTelemetryEvent.js";
 import { databaseStartupControlSchema, databaseStartupStateSchema } from "./database-startup.js";
 import { mcpAppInstanceSchema } from "./mcp-apps/instance.js";
 import {
@@ -16,6 +17,7 @@ import { zcodeProcessDiagnosticSchema } from "./process-diagnostic.js";
 import { PROCESS_RESOURCE_CLI_LANES } from "./processResourceTelemetry.js";
 import {
   providerProvisioningErrorCodeSchema,
+  providerProvisioningLaneStatusSchema,
   providerProvisioningTriggerSchema,
 } from "./provider-provisioning.js";
 import { zcodeProviderSchema } from "./providers.js";
@@ -150,6 +152,7 @@ export const taskNotificationPayloadSchema = z.object({
 });
 
 export const telemetryRendererContextSchema = z.object({
+  uiMode: telemetryUiModeSchema.optional(),
   clientTimezone: nonEmptyStringSchema,
   clientLanguage: nonEmptyStringSchema,
   screenResolution: nonEmptyStringSchema,
@@ -196,6 +199,9 @@ const hostAgentWarmupTargetSchema = z.object({
 });
 
 export const hostInitLocalMessageSchema = z.object({
+  browserBackendIdentity: z
+    .object({ id: nonEmptyStringSchema, generation: z.number().int().nonnegative() })
+    .optional(),
   type: z.literal("init-local"),
   databaseStartupId: z.string().min(1).max(128).optional(),
   hostId: nonEmptyStringSchema.optional(),
@@ -318,6 +324,7 @@ export const hostDisposeRemoteWorkspaceSessionMessageSchema = z
 export const hostAttachServicePortMessageSchema = z
   .object({
     type: z.literal("attach-service-port"),
+    terminalOwnerId: nonEmptyStringSchema.optional(),
     // main 只能声明 attachment 来源；connectionId 仍由 host process 分配。
     // desktop reload/remote reattach 必须显式 continuous，手机 shared-host 必须 replayable。
     requestId: nonEmptyStringSchema,
@@ -466,6 +473,7 @@ export const hostPluginSandboxRegisterResultMessageSchema = z
         heightHint: z.number().int().positive().optional(),
         minFrameHeight: z.number().int().positive().optional(),
         showInline: z.boolean().optional(),
+        backgroundRetention: z.boolean().optional(),
         // 资源声明的浏览器权限随句柄回 renderer（进 hostContext.permissions）；与登记请求的 permissions 同一枚举。
         permissions: z
           .array(z.enum(["camera", "microphone", "geolocation", "clipboardWrite"]))
@@ -519,6 +527,14 @@ export type HostResourceUsageSnapshotRequestMessage = z.infer<
   typeof hostResourceUsageSnapshotRequestMessageSchema
 >;
 
+export const hostProviderProvisioningLaneResultMessageSchema = z
+  .object({
+    type: z.literal("provider-provisioning-lane-result"),
+    requestId: nonEmptyStringSchema,
+    status: providerProvisioningLaneStatusSchema,
+  })
+  .strict();
+
 export const hostIncomingMessageSchema = z.discriminatedUnion("type", [
   z.object({ type: z.literal("network-capture"), control: networkCaptureControlSchema }).strict(),
   z
@@ -534,6 +550,9 @@ export const hostIncomingMessageSchema = z.discriminatedUnion("type", [
   hostBindRemoteWorkspaceContextMessageSchema,
   hostCancelRemoteWorkspaceBindMessageSchema,
   hostDisposeRemoteWorkspaceSessionMessageSchema,
+  z
+    .object({ type: z.literal("set-terminal-owner"), ownerId: nonEmptyStringSchema.nullable() })
+    .strict(),
   hostAttachServicePortMessageSchema,
   hostDetachServicePortMessageSchema,
   hostDisposeMessageSchema,
@@ -552,6 +571,7 @@ export const hostIncomingMessageSchema = z.discriminatedUnion("type", [
   hostCuaPipFocusChangedMessageSchema,
   hostApplicationLocaleChangedMessageSchema,
   hostProviderProvisioningExecuteMessageSchema,
+  hostProviderProvisioningLaneResultMessageSchema,
 ]);
 
 export const hostRemoteWorkspaceConnectedResponseSchema = z
@@ -837,6 +857,16 @@ export const hostPluginTelemetryResponseSchema = z
   .strict();
 export type HostPluginTelemetryResponse = z.infer<typeof hostPluginTelemetryResponseSchema>;
 
+export const hostRemoteConversationTelemetryResponseSchema = z
+  .object({
+    type: z.literal("remote-conversation-telemetry"),
+    event: remoteConversationTelemetryEventSchema,
+  })
+  .strict();
+export type HostRemoteConversationTelemetryResponse = z.infer<
+  typeof hostRemoteConversationTelemetryResponseSchema
+>;
+
 export const hostSessionCreateTelemetryResponseSchema = z
   .object({
     type: z.literal("session-create-telemetry"),
@@ -955,6 +985,7 @@ export const hostCronSchedulerWakeRequestResponseSchema = z.object({
 
 // host → main：执行一条 browser-use 命令（main 用 WebContentsView+CDP 执行）。
 export const hostBrowserExecuteRequestResponseSchema = z.object({
+  controlScopeId: nonEmptyStringSchema.optional(),
   type: z.literal("browser-execute-request"),
   requestId: nonEmptyStringSchema,
   // 迁移兼容：旧 host bundle 没有 browserId/context；新 browser-client 链路始终携带。
@@ -1020,6 +1051,7 @@ export const hostPluginSandboxRegisterRequestResponseSchema = z
     heightHint: z.number().int().positive().optional(),
     minFrameHeight: z.number().int().positive().optional(),
     showInline: z.boolean().optional(),
+    backgroundRetention: z.boolean().optional(),
   })
   .strict()
   .refine(
@@ -1053,7 +1085,20 @@ export const hostNetworkTelemetryBatchResponseSchema = z.object({
 export const hostProviderProvisioningSourceChangedResponseSchema = z
   .object({
     type: z.literal("provider-provisioning-source-changed"),
-    trigger: providerProvisioningTriggerSchema.exclude(["environment-online"]),
+    trigger: providerProvisioningTriggerSchema.exclude(["environment-online", "user-retry"]),
+  })
+  .strict();
+
+/**
+ * host → main：数据同步页按设备读取（read）、等当前执行结束后读取（wait）或重试（retry）
+ * Provisioning lane。Main 总是回 provider-provisioning-lane-result。
+ */
+export const hostProviderProvisioningLaneRequestResponseSchema = z
+  .object({
+    type: z.literal("provider-provisioning-lane-request"),
+    requestId: nonEmptyStringSchema,
+    sourceServerId: nonEmptyStringSchema,
+    action: z.enum(["read", "wait", "retry"]),
   })
   .strict();
 
@@ -1117,6 +1162,7 @@ export const hostResponseMessageSchema = z.discriminatedUnion("type", [
   hostMcpResourceSamplesResponseSchema,
   hostToolExecResourceResponseSchema,
   hostSessionCreateTelemetryResponseSchema,
+  hostRemoteConversationTelemetryResponseSchema,
   hostPluginTelemetryResponseSchema,
   hostAgentRunningTaskCountChangedResponseSchema,
   hostWorkspaceRunningTaskCountChangedResponseSchema,
@@ -1140,6 +1186,7 @@ export const hostResponseMessageSchema = z.discriminatedUnion("type", [
   hostNetworkTelemetryBatchResponseSchema,
   hostProviderProvisioningSourceChangedResponseSchema,
   hostProviderProvisioningExecutionResultResponseSchema,
+  hostProviderProvisioningLaneRequestResponseSchema,
   hostCronRunResultResponseSchema,
   hostCronSchedulerWakeRequestResponseSchema,
 ]);

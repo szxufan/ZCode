@@ -1,3 +1,4 @@
+import { useYoloModeConfirmation } from "@/hooks/useConfirmDialog.js";
 import { useToolPresentationHostCapabilities } from "@/hooks/useToolPresentationHostCapabilities.js";
 import { ToolPresentationCapabilitiesProvider } from "@/ToolCallBlocks/presentationCapabilities.js";
 import { ToolCallBlock } from "@/ToolCallBlocks.js";
@@ -466,9 +467,11 @@ export function PermissionDialog({
   provider,
   responding = false,
   responseError,
+  permissionMode,
 }: {
   request: ZCodePermissionRequest;
   responding?: boolean;
+  permissionMode?: string;
   responseError?: string;
   /**
    * `content` 只在工作流确认窗的放行应答上出现：用户在窗里改过的设置（docs/dynamic-workflow/launch.md
@@ -488,6 +491,17 @@ export function PermissionDialog({
   provider?: ZCodeProvider;
 }) {
   const { intl } = useZCodeIntl();
+  const confirmMode = useYoloModeConfirmation(
+    JSON.stringify([
+      workspacePath,
+      workspaceIdentity,
+      remoteSessionId,
+      request.taskId,
+      request.requestId,
+      responding,
+    ]),
+    permissionMode,
+  );
   const presentationCapabilities = useToolPresentationHostCapabilities(workspacePath);
   // M5②.5 store 耦合剥离：主题/代码预览设置在宿主处取 store，向下走 props/render context。
   const theme = useZCodeStoreWithDefault((state) => state.theme, "system");
@@ -627,13 +641,16 @@ export function PermissionDialog({
         workflowSettingsContent !== undefined && isWorkflowSettingsCarrier(option)
           ? { ...workflowSettingsContent }
           : undefined;
-      if (content === undefined) {
-        onRespond(request.requestId, option, trimmedFeedback || undefined);
-      } else {
-        onRespond(request.requestId, option, trimmedFeedback || undefined, content);
-      }
+      confirmMode(option.optionId === "fullAccess" ? "yolo" : "unchanged", () => {
+        if (content === undefined) {
+          onRespond(request.requestId, option, trimmedFeedback || undefined);
+        } else {
+          onRespond(request.requestId, option, trimmedFeedback || undefined, content);
+        }
+      });
     },
     [
+      confirmMode,
       feedback,
       isOptionBlocked,
       onRespond,

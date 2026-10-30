@@ -48,15 +48,28 @@ describe("settingsPageConfig", () => {
       },
       {
         id: "agentCapabilities",
-        // agentPrompt 由 v3.18.0 agent-prompt 特性加入，位于 memory 之后。
-        sections: ["memory", "agentPrompt", "subagents", "plugin", "mcp", "skill", "commands", "hooks"],
+        // agentPrompt 由 v3.18.0 agent-prompt 特性加入，位于 memory 之后；
+        // personalization 为上游新增自定义指令分区，同样归入 agentCapabilities。
+        sections: [
+          "personalization",
+          "memory",
+          "agentPrompt",
+          "subagents",
+          "plugin",
+          "mcp",
+          "skill",
+          "commands",
+          "hooks",
+        ],
       },
-      { id: "dataAndStats", sections: ["usage", "archives"] },
+      // dataSync/projects 为上游数据同步与项目设置分区。
+      { id: "dataAndStats", sections: ["dataSync", "usage", "projects", "archives"] },
     ]);
     expect(settingsSections.map((section) => section.id)).toEqual([
       "general",
       "appearance",
       "modelProvider",
+      "personalization",
       "memory",
       "agentPrompt",
       "subagents",
@@ -68,7 +81,9 @@ describe("settingsPageConfig", () => {
       "browser",
       "remoteDevices",
       "shortcuts",
+      "dataSync",
       "usage",
+      "projects",
       "archives",
     ]);
   });

@@ -30,6 +30,8 @@ export function TaskActionMenuContent({
   onStartRenameTask,
   onArchiveTask,
   onMarkTaskAsUnread,
+  onRestartTask,
+  restartPending = false,
   onOpenTaskPathInFileManager,
   onCopyWorkspacePath,
   onCopyTaskPath,
@@ -63,6 +65,8 @@ export function TaskActionMenuContent({
   onStartRenameTask: () => void;
   onArchiveTask: () => void;
   onMarkTaskAsUnread: () => void;
+  onRestartTask?: () => void;
+  restartPending?: boolean;
   onOpenTaskPathInFileManager: () => void;
   onCopyWorkspacePath: () => void;
   onCopyTaskPath: () => void;
@@ -119,6 +123,15 @@ export function TaskActionMenuContent({
       >
         {intl.formatMessage({ id: "taskList.markAsUnread" })}
       </Item>
+      {onRestartTask ? (
+        <Item
+          data-testid="task-restart"
+          disabled={taskTargetActionsDisabled || restartPending}
+          onSelect={onRestartTask}
+        >
+          {intl.formatMessage({ id: restartPending ? "taskList.restarting" : "taskList.restart" })}
+        </Item>
+      ) : null}
       <Separator />
       {!hideMobileUnsupportedActions ? (
         <Item

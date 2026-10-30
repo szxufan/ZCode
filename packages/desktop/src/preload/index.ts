@@ -31,7 +31,6 @@ contextBridge.exposeInMainWorld("__ZCODE_DEVICE_ID__", parseDeviceIdFromArgs());
 import type {
   AppSettings,
   ApplicationIconRequest,
-  BindRemoteWorkspaceSessionContextResult,
   BindRemoteWorkspaceSessionContextIpcResult,
   BrowserViewOperationPayload,
   BrowserGuestAttachResult,
@@ -59,6 +58,7 @@ import type {
   Locale,
   OAuthStateRegistration,
   OpenInEditorOptions,
+  FileApplicationTarget,
   RemoteTarget,
   TaskNotificationPayload,
   TelemetryRendererContext,
@@ -87,7 +87,6 @@ import type {
   ConfigureFinalArmsCustomEventE2ERequest,
   FinalArmsCustomEventE2EEntry,
 } from "@zcode/shared";
-import { unwrapRemoteWorkspaceBindResult } from "./remoteWorkspaceBindBridge.js";
 import {
   InternalChannels,
   PlatformChannels,
@@ -274,12 +273,9 @@ contextBridge.exposeInMainWorld("zcode", {
     workspacePath: string;
     workspaceIdentity?: string;
     workspacePurpose?: import("@zcode/shared").WorkspacePurpose;
-  }): Promise<BindRemoteWorkspaceSessionContextResult> =>
-    ipcRenderer
-      .invoke(PlatformChannels.BindRemoteWorkspaceSessionContext, context)
-      .then((result: BindRemoteWorkspaceSessionContextIpcResult) =>
-        unwrapRemoteWorkspaceBindResult(result),
-      ),
+  }): Promise<BindRemoteWorkspaceSessionContextIpcResult> =>
+    // 原样返回结构化结果：在 preload 抛出的 Error 跨 contextBridge 会丢失 code，由 renderer 还原。
+    ipcRenderer.invoke(PlatformChannels.BindRemoteWorkspaceSessionContext, context),
   disposeRemoteSession: (sessionId: string): Promise<void> =>
     ipcRenderer.invoke(PlatformChannels.DisposeRemoteSession, sessionId),
   isDockerAvailable: (): Promise<boolean> => ipcRenderer.invoke(PlatformChannels.IsDockerAvailable),
@@ -421,6 +417,16 @@ contextBridge.exposeInMainWorld("zcode", {
   ): Promise<EmbeddedBrowserSitePermissionsSnapshot> =>
     ipcRenderer.invoke(PlatformChannels.ResetEmbeddedBrowserSitePermission, request),
   /** 注册 agent 首次 browser 命令建好受控 view 的回调（自动开 browser-use tab），返回 disposer */
+  onBrowserViewDownloadStarted: (
+    callback: (payload: { webContentsId: number; urls: string[] }) => void,
+  ): (() => void) => {
+    const handler = (_event: unknown, payload: { webContentsId: number; urls: string[] }) =>
+      callback(payload);
+    ipcRenderer.on(PlatformChannels.BrowserViewDownloadStarted, handler);
+    return () => {
+      ipcRenderer.removeListener(PlatformChannels.BrowserViewDownloadStarted, handler);
+    };
+  },
   onBrowserViewReady: (
     callback: (payload: {
       workspaceKey: string;
@@ -828,6 +834,10 @@ contextBridge.exposeInMainWorld("zcode", {
   /** 获取已安装的编辑器/终端列表（含图标） */
   getInstalledEditors: (filePath?: string) =>
     ipcRenderer.invoke(PlatformChannels.GetInstalledEditors, filePath),
+  getFileApplications: (target: FileApplicationTarget) =>
+    ipcRenderer.invoke(PlatformChannels.GetFileApplications, target),
+  openFileWithApplication: (applicationId: string, target: FileApplicationTarget) =>
+    ipcRenderer.invoke(PlatformChannels.OpenFileWithApplication, { applicationId, target }),
   getApplicationIcon: (request: string | ApplicationIconRequest) =>
     ipcRenderer.invoke(PlatformChannels.GetApplicationIcon, request),
   /** 用指定编辑器打开路径 */

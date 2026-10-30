@@ -1,5 +1,6 @@
 import { randomUUID, timingSafeEqual } from "node:crypto";
-import { hostname, userInfo } from "node:os";
+import { hostname } from "node:os";
+import { resolveServerOsUser } from "@zcode/shared/node";
 import { serve } from "@hono/node-server";
 import { createNodeWebSocket } from "@hono/node-ws";
 import { Hono } from "hono";
@@ -211,12 +212,13 @@ export async function createCoreHttpServer(
     workspaces: [],
     compatibility: ZCODE_COMPATIBILITY_MANIFEST,
     migration: { failedPathCount: options.migrationFailedPathCount ?? 0 },
-    identity: { osUser: userInfo().username, hostname: hostname() },
+    identity: { osUser: resolveServerOsUser(), hostname: hostname() },
     capabilities: {
       desktopContinuous: true,
       websocketRpc: true,
       virtualProjects: true,
       processResourceTelemetry: true,
+      remoteConversationTelemetry: true,
     },
   });
   // 裸 Set 无法落实 expiresAt，未消费的 capability 会一直有效并持续累积。

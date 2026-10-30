@@ -29,6 +29,7 @@ export const REMOTE_WORKSPACE_RPC_CHANNELS = [
   "skillSyncService",
   "mcpSyncService",
   "pluginSyncService",
+  "userConfigSyncService",
   "pluginsService",
   "pluginManagementService",
   "subagentsService",
