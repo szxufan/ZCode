@@ -98,7 +98,10 @@ import { prepareAccessToken401Fixture } from "./test/e2e/helpers/access-token-40
 import { createE2EReplayFixtureVariables } from "./test/e2e/helpers/e2e-runtime-paths.js";
 import { stageE2EAppOutput } from "./test/e2e/helpers/e2e-app-output-stage.js";
 import { withE2EDesktopBuildLock } from "./scripts/ensure-e2e-desktop-build.mjs";
-import { ensureSshRemoteReleaseAssets } from "./test/e2e/helpers/e2e-ssh-remote-release-assets.js";
+import {
+  ensureSshRemoteReleaseAssets,
+  resolveSshRemoteReleaseScope,
+} from "./test/e2e/helpers/e2e-ssh-remote-release-assets.js";
 import {
   ASK_USER_QUESTION_E2E_CLOCK_SCALE_ENV,
   BIGMODEL_PROVIDER_ID,
@@ -913,10 +916,13 @@ function prepareDesktopAppBuild() {
   assertDesktopE2EBuildReady("onPrepare build");
 }
 
-function runPnpmWorkspaceCommand(args: string[], options?: { timeoutMs?: number }) {
+function runPnpmWorkspaceCommand(
+  args: string[],
+  options?: { timeoutMs?: number; env?: Record<string, string> },
+) {
   execFileSync(PNPM_COMMAND, args, {
     cwd: REPO_ROOT,
-    env: createPnpmChildEnv(),
+    env: { ...createPnpmChildEnv(), ...options?.env },
     stdio: "inherit",
     // Bug 根因：prepare:remote-assets 会在 CI 上下载 node 二进制并串行构建多个包，
     // 无 timeout 时一旦下载/构建挂死，wdio onPrepare 会一直占住专用 runner 直到 job
@@ -965,13 +971,17 @@ async function stageDesktopE2EAppOutput() {
     // 失败并让所有 SSH E2E 在 onPrepare 阶段 fatal；必须调用根 package.json 的
     // prepare:remote-assets（→ @zcode/server-cli stage:remote-assets）。runPnpmWorkspaceCommand
     // 的 cwd 固定为 REPO_ROOT，直接传脚本名即可命中根脚本。
-    ensureSshRemoteReleaseAssets({
+    // 上游契约：onPrepare 必须等待资产 prepare 完成再 fail-closed，不能 fire-and-forget。
+    await ensureSshRemoteReleaseAssets({
       releaseDir: E2E_REMOTE_RELEASE_SOURCE_DIR,
-      prepareReleaseAssets: () =>
-        runPnpmWorkspaceCommand(["prepare:remote-assets"], {
+      // 「只需 Linux」声明来自本机 Docker runner 的环境变量；未声明时 helper 返回全平台入口。
+      scope: resolveSshRemoteReleaseScope(process.env),
+      prepareReleaseAssets: (request) =>
+        runPnpmWorkspaceCommand([request.script], {
           // 防挂死上限：冷缓存全量 prepare 约 10 分钟，给到 30 分钟只兑现在「彻底卡死」时
           // 让 onPrepare 失败退出，正常慢路径不受影响。
           timeoutMs: 30 * 60 * 1000,
+          env: request.env,
         }),
     });
     // Bug 根因：dual-SSH case 只配置 A/B target；若这里只识别 common host，就不会把

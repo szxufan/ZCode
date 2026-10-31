@@ -354,6 +354,24 @@ function orderSectionsForInjection(sections: ContextSection[]): ContextSection[]
   ];
 }
 
+/** 上游 subagent context-builder 依赖的独立附件装配；复用 fork 的 skills/context 分流。 */
+export function buildMetaUserAttachments(sections: ContextSection[]): ContextMetaUserAttachment[] {
+  const attachments: ContextMetaUserAttachment[] = [];
+  const skillsContent = buildSkillsMetaUserBody(
+    sections.filter(
+      (section) => section.injectionTarget === "meta_user" && section.source === "skills",
+    ),
+  );
+  if (skillsContent) attachments.push({ source: "skills_listing", content: skillsContent });
+  const contextContent = buildContextMetaUserBody(
+    sections.filter(
+      (section) => section.injectionTarget === "meta_user" && section.source !== "skills",
+    ),
+  );
+  if (contextContent) attachments.push({ source: "context_prefix", content: contextContent });
+  return attachments;
+}
+
 export function buildContextMetaUserBody(sections: ContextSection[]): string | null {
   if (sections.length === 0) return null;
 

@@ -47,6 +47,8 @@ export type ContextSource =
   | "dynamic_behavior" // 动态行为边界
   | "session_guidance" // 当前可用内置能力指导
   | "context_management" // 长上下文管理提示
+  | "output_style" // 输出风格（fork 保留的动态 section 来源）
+  | "system_context" // git 系统上下文附件（fork 中文文案路径）
   | "desktop_context"; // ZCode Desktop 渲染与交互协议
 
 export type ContextInjectionTarget = "system" | "meta_user";
