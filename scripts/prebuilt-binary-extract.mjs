@@ -9,7 +9,7 @@ import {
   rmSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
-import { dirname, join, relative } from "node:path";
+import { dirname, join, relative, basename } from "node:path";
 import process from "node:process";
 import { runCommand } from "./spawn-command.mjs";
 
@@ -24,7 +24,14 @@ function resolveTarArchiveArg(archivePath, cwd) {
   if (process.platform === "win32") {
     try {
       const relativeArchivePath = relative(cwd, archivePath);
-      if (relativeArchivePath && !relativeArchivePath.startsWith("..")) {
+      // Bug 根因：跨盘符时 relative 返回带盘符的绝对路径（不以 ".." 开头），
+      // 旧守卫会误当作相对路径放行，GNU tar 把 "D:" 解析成远程主机而报
+      // "Cannot connect to D: resolve failed"。含盘符冒号的结果一律视为不可用。
+      if (
+        relativeArchivePath &&
+        !relativeArchivePath.startsWith("..") &&
+        !/^[A-Za-z]:/u.test(relativeArchivePath)
+      ) {
         return toTarPosixPath(relativeArchivePath);
       }
     } catch {
@@ -55,10 +62,18 @@ export function extractPrebuiltArchive({ archivePath, archiveExt, extractDir, cw
   }
 
   const tarCwd = cwd ?? process.cwd();
+  let tarArchiveArg = resolveTarArchiveArg(archivePath, tarCwd);
+  let effectiveCwd = tarCwd;
+  // 归档参数仍带盘符冒号（跨盘符回退）时，改在归档所在目录执行并以文件名引用，
+  // 避免把 "D:" 当作 tar 的远程主机语法；-C 目标路径不受该语法影响。
+  if (process.platform === "win32" && /^[A-Za-z]:/u.test(tarArchiveArg)) {
+    effectiveCwd = dirname(archivePath);
+    tarArchiveArg = basename(archivePath);
+  }
   runCommand(
     "tar",
-    ["-xzf", resolveTarArchiveArg(archivePath, tarCwd), "-C", toTarPosixPath(extractDir)],
-    { cwd: tarCwd },
+    ["-xzf", tarArchiveArg, "-C", toTarPosixPath(extractDir)],
+    { cwd: effectiveCwd },
   );
 }
 
