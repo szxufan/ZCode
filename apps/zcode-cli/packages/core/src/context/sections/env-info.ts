@@ -125,3 +125,146 @@ function formatRecentCommits(info: EnvInfo): string {
   }
   return "";
 }
+
+// ---- 环境公告（快照比较与解析；文案路径保持 fork 中文体系，机制与上游一致） ----
+
+export type EnvironmentSnapshot = Pick<EnvInfo, "cwd" | "platform" | "shell" | "osVersion"> & {
+  isGitRepository: boolean;
+  /** 本次运行的附加目录（运行配置，不来自 Context Source）。 */
+  additionalWorkingDirectories: readonly string[];
+};
+
+export interface EnvironmentAnnouncement {
+  snapshot: EnvironmentSnapshot;
+  full: boolean;
+}
+
+// 专用 agent 正文与环境上下文分开组装，避免走 custom system 分支时漏掉环境或复制另一套文案。
+export function buildEnvironmentSections(
+  envInfo: EnvInfo,
+  model?: Model,
+  additionalDirectories: readonly string[] = [],
+): ContextSection[] {
+  // 上游调用方以 (envInfo, additionalDirectories) 二参调用；fork 签名是 (envInfo, model?, additionalDirs?)。
+  const sections = [buildEnvInfoSection(envInfo, undefined, additionalDirectories)];
+  const modelSection = buildModelSection(model);
+  if (modelSection) sections.push(modelSection);
+  return sections;
+}
+
+export function environmentSnapshot(
+  info: EnvInfo,
+  additionalDirectories: readonly string[] = [],
+): EnvironmentSnapshot {
+  return {
+    cwd: info.cwd,
+    platform: info.platform,
+    shell: info.shell,
+    osVersion: info.osVersion,
+    isGitRepository: isEnvInfoGitRepository(info),
+    additionalWorkingDirectories: [...additionalDirectories],
+  };
+}
+
+export function parseEnvironmentAnnouncement(value: unknown): EnvironmentAnnouncement | undefined {
+  if (typeof value !== "object" || value === null) return undefined;
+  const { full, snapshot } = value as Record<string, unknown>;
+  if (typeof full !== "boolean" || typeof snapshot !== "object" || snapshot === null)
+    return undefined;
+  const { cwd, platform, shell, osVersion, isGitRepository, additionalWorkingDirectories } =
+    snapshot as Record<string, unknown>;
+  if (
+    typeof cwd !== "string" ||
+    typeof platform !== "string" ||
+    typeof shell !== "string" ||
+    typeof osVersion !== "string" ||
+    typeof isGitRepository !== "boolean"
+  )
+    return undefined;
+  if (
+    !Array.isArray(additionalWorkingDirectories) ||
+    !additionalWorkingDirectories.every((path) => typeof path === "string")
+  )
+    return undefined;
+  return {
+    full,
+    snapshot: {
+      cwd,
+      platform,
+      shell,
+      osVersion,
+      isGitRepository,
+      additionalWorkingDirectories: [...additionalWorkingDirectories],
+    },
+  };
+}
+
+export function buildModelSection(model: Model | undefined): ContextSection | null {
+  if (!model) return null;
+  // 模型身份只来自当前执行句柄，不从会话选择或环境快照推断。
+  const content = agentEnvModelLine(model.providerId, model.modelId);
+  return {
+    name: "Model Identity",
+    source: "model",
+    injectionTarget: "meta_user",
+    cacheHint: "dynamic",
+    content,
+    chars: content.length,
+    tokens: estimateTokens(content),
+    preview: content.slice(0, 100),
+  };
+}
+
+/** 环境更新全量块：直接以快照字段渲染，不经完整 EnvInfo。 */
+function buildEnvInfoContentFromSnapshot(snapshot: EnvironmentSnapshot): string {
+  // 渲染只读取 snapshot 携带的环境字段；nodeVersion 是 EnvInfo 必填但不在公告里渲染。
+  const info = { ...snapshot, nodeVersion: "" } as EnvInfo;
+  return buildEnvInfoContent(info, undefined, snapshot.additionalWorkingDirectories);
+}
+
+const ENVIRONMENT_UPDATE_HEADING = "# 环境更新";
+
+function pathLines(paths: readonly string[]): string[] {
+  return paths.map((path) => `  - ${path}`);
+}
+
+export function buildEnvironmentAnnouncement(
+  next: EnvironmentSnapshot,
+  previous: EnvironmentSnapshot | undefined,
+  hasFullBlock: boolean,
+): { content: string; environment: EnvironmentAnnouncement } | null {
+  const full =
+    !previous ||
+    !hasFullBlock ||
+    previous.platform !== next.platform ||
+    previous.shell !== next.shell ||
+    previous.osVersion !== next.osVersion;
+  if (full) {
+    return {
+      content: buildEnvInfoContentFromSnapshot(next),
+      environment: { full, snapshot: next },
+    };
+  }
+  const lines = [ENVIRONMENT_UPDATE_HEADING];
+  if (previous.cwd !== next.cwd) {
+    lines.push(` - ${AGENT_ENV_LABELS.workingDirectory}: ${next.cwd}（原为 ${previous.cwd}）`);
+  }
+  if (previous.isGitRepository !== next.isGitRepository) {
+    lines.push(
+      ` - ${AGENT_ENV_LABELS.isGitRepository}: ${next.isGitRepository ? AGENT_ENV_LABELS.yes : AGENT_ENV_LABELS.no}（原为 ${previous.isGitRepository ? AGENT_ENV_LABELS.yes : AGENT_ENV_LABELS.no}）`,
+    );
+  }
+  const before = new Set(previous.additionalWorkingDirectories);
+  const after = new Set(next.additionalWorkingDirectories);
+  const added = next.additionalWorkingDirectories.filter((path) => !before.has(path));
+  const removed = previous.additionalWorkingDirectories.filter((path) => !after.has(path));
+  if (added.length > 0) {
+    lines.push(" - 新增附加工作目录:", ...pathLines(added));
+  }
+  if (removed.length > 0) {
+    lines.push(" - 移除附加工作目录:", ...pathLines(removed));
+  }
+  return lines.length === 1
+    ? null
+    : { content: lines.join("\n"), environment: { full, snapshot: next } };
+}

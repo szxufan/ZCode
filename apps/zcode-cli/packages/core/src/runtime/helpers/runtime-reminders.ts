@@ -14,6 +14,7 @@ import type {
 } from "../deps.js";
 import { ASK_USER_QUESTION_TOOL_NAME, EXIT_PLAN_MODE_TOOL_NAME } from "@zcode/contracts";
 import { EXPLORE_AGENT_TYPE } from "../../subagent/explore.js";
+import { isUserTurnInput } from "./provider-entry-origins.js";
 
 export const RUNTIME_MODE_REMINDER_CONFIG = Object.freeze({
   TURNS_BETWEEN_ATTACHMENTS: 5,
@@ -88,8 +89,10 @@ export interface TodoReminderTurnCounts {
   turnsSinceLastReminder: number;
 }
 
-export function buildDateChangeReminderBody(_previousDate: string, currentDate: string): string {
-  return `日期已变化。今天是 ${currentDate}。不要向用户明确提及这一点，他们已经知道。`;
+// 上游调用方只传当前日期；previousDate 保留可选以兼容 fork 既有双参调用。
+export function buildDateChangeReminderBody(_previousDate?: string, currentDate?: string): string {
+  const date = currentDate ?? _previousDate ?? "";
+  return `日期已变化。今天是 ${date}。不要向用户明确提及这一点，他们已经知道。`;
 }
 
 export function runtimeMetadataForSyntheticUserMessageSource(
@@ -249,4 +252,93 @@ function countRuntimeModeReminders(entries: readonly RuntimeMessageEntry[]): num
     (count, entry) => count + (entry.metadata?.source === "runtime_mode" ? 1 : 0),
     0,
   );
+}
+
+// ---- 静默回合提醒（机制与上游一致；文案走 fork 中文体系） ----
+
+const SILENT_TURN_REMINDER_CONFIG = Object.freeze({
+  TURNS_BETWEEN_REMINDERS: 5,
+  MAX_REMINDERS_PER_STRETCH: 3,
+});
+const SILENT_TURN_REMINDER_BODY = "用户已经有一段时间没有收到你的消息了。继续任务时，有值得告知的进展（发现、计划变更）请主动同步。";
+// 只有空白或这些占位文字的 assistant 文本不算与用户沟通。
+const SILENT_TURN_PLACEHOLDER_TEXTS: ReadonlySet<string> = new Set([
+  "(no content)",
+  "No response requested.",
+]);
+
+function isVisibleAssistantText(text: string): boolean {
+  const trimmed = text.trim();
+  return trimmed.length > 0 && !SILENT_TURN_PLACEHOLDER_TEXTS.has(trimmed);
+}
+
+export function buildSilentTurnReminderBody(
+  entries: readonly RuntimeMessageEntry[],
+): string | null {
+  let silentTurns = 0;
+  let reminders = 0;
+  for (let index = entries.length - 1; index >= 0; index--) {
+    const entry = entries[index]!;
+    if (entry.metadata?.source === "silent_turn_reminder") {
+      reminders++;
+      if (reminders >= SILENT_TURN_REMINDER_CONFIG.MAX_REMINDERS_PER_STRETCH) return null;
+      continue;
+    }
+    if (isRuntimeAttachmentEntry(entry)) continue;
+    const { message } = entry;
+    // 新的用户轮次结束静默段：新轮通知、中断标记与 compact summary 也算。
+    // 中途输入（user_steer 等，含旧版本存下的立即发送）不算，不结束静默段。
+    if (isUserTurnInput(entry)) break;
+    if (message.role !== "assistant") continue;
+    const communicated =
+      typeof message.content === "string"
+        ? isVisibleAssistantText(message.content)
+        : message.content.some(
+            (block) => block.type === "text" && isVisibleAssistantText(block.text),
+          );
+    if (
+      communicated ||
+      message.toolCalls?.some(
+        (call) =>
+          call.name === ASK_USER_QUESTION_TOOL_NAME || call.name === EXIT_PLAN_MODE_TOOL_NAME,
+      )
+    )
+      break;
+    // 每个已提交 assistant entry 是一次模型响应；工具数量和工具结果都不增加轮次。
+    // 只累计最新提醒之后的响应，历史提醒仍用于限制同一段静默中的重复次数。
+    if (reminders === 0) silentTurns++;
+  }
+  return silentTurns >= SILENT_TURN_REMINDER_CONFIG.TURNS_BETWEEN_REMINDERS
+    ? SILENT_TURN_REMINDER_BODY
+    : null;
+}
+
+// ---- 输出风格提醒（fork 保留 output_style section；提醒正文与上游一致） ----
+
+export const OUTPUT_STYLE_RESET_REMINDER =
+  "The output style was reset to the default. Respond in your usual style.";
+
+/** output style 指令正文；prompt 为空白时视为未设置。 */
+export function buildOutputStyleInstructionsBody(
+  outputStyle: { name: string; prompt: string } | undefined,
+): string | null {
+  const activePrompt = outputStyle?.prompt.trim();
+  if (!outputStyle || !activePrompt) return null;
+  return `# Output Style: ${outputStyle.name}\n${activePrompt}`;
+}
+
+/** 当前计划段（最近一次退出之后）里是否已有完整的 plan 提醒。 */
+export function hasFullRuntimeModeReminder(entries: readonly RuntimeMessageEntry[]): boolean {
+  for (let index = entries.length - 1; index >= 0; index--) {
+    const entry = entries[index]!;
+    if (entry.metadata?.source === "plan_mode_exit") return false;
+    if (
+      isRuntimeAttachmentEntry(entry) &&
+      entry.metadata.source === "runtime_mode" &&
+      entry.content.startsWith(PLAN_MODE_FULL_REMINDER[0]!)
+    ) {
+      return true;
+    }
+  }
+  return false;
 }
