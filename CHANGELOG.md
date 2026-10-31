@@ -1,5 +1,14 @@
 # Changelog
 
+## [3.21.0](https://github.com/szxufan/ZCode/compare/v3.20.0...v3.21.0) (2026-10-31)
+
+### Miscellaneous
+
+* **sync:** 合并上游 zai-org/ZCode v3.17.1 开源同步（a60ba6a7，5231 文件），保留 fork 全部自有功能与云端功能移除边界
+  * 采纳上游保留功能演进：ProviderProvisioningLane、设备数据同步、Personalization 设置分区、Sites 启动器、窗口 Host 终端 owner、会话 ID 预分配、/reload 恢复命令、ConversationTelemetryEngine、electron 44、engineering 工程测试与 verify:pre-push 新链路
+  * CLI 系统提示词保留 fork 中文体系；测试基建取混合形态（fork unit/fork-isolated + 上游 engineering 清单）
+  * 上游退役的 App 业务单测按其策略接受；fork 自有功能单测 112/112 通过
+
 ## [3.20.0](https://github.com/szxufan/ZCode/compare/v3.19.0...v3.20.0) (2026-10-30)
 
 ### Features
