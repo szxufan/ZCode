@@ -81,6 +81,9 @@ const artifactExtensionsByOs = {
   win: [".exe"],
   linux: [".AppImage", ".deb", ".rpm", ".pkg.tar.zst"],
 };
+// electron-builder.config.js 中声明的 linux target 全集；--targets 只允许其中的子集，
+// 防止把任意字符串透传成 electron-builder 的位置参数。
+const knownLinuxTargets = new Set(["AppImage", "deb", "rpm", "pacman"]);
 const artifactArchHintsByArch = {
   x64: ["x64", "x86_64", "amd64"],
   arm64: ["arm64", "aarch64"],
@@ -125,7 +128,8 @@ const requiredRuntimeModules = [
 const electronBuilderRetryCount = 3;
 const electronBuilderRetryDelayMs = 5_000;
 const electronBuilderHeartbeatIntervalMs = 30_000;
-export const DEFAULT_ELECTRON_MIRROR = "https://npmmirror.com/mirrors/electron/";
+export const DEFAULT_ELECTRON_MIRROR =
+  "https://npmmirror.com/mirrors/electron/";
 export const NPMMIRROR_ELECTRON_BUILDER_BINARIES_MIRROR =
   "https://registry.npmmirror.com/-/binary/electron-builder-binaries/";
 export const OFFICIAL_ELECTRON_BUILDER_BINARIES_MIRROR =
@@ -197,7 +201,9 @@ export function createElectronBuilderBinariesMirrorEnv(mirror) {
   return {
     // 26.17.0 默认拒绝非 localhost HTTP 工具镜像。只对明确的 HTTP builder 子进程放行，
     // HTTPS 时清空父环境中的宽松开关，避免扩大到其他下载链路。
-    ELECTRON_BUILDER_BINARIES_ALLOW_HTTP: /^http:\/\//i.test(mirror.trim()) ? "true" : "",
+    ELECTRON_BUILDER_BINARIES_ALLOW_HTTP: /^http:\/\//i.test(mirror.trim())
+      ? "true"
+      : "",
     // electron-builder 的 DOWNLOAD_OVERRIDE_URL 优先级高于 mirror。
     // CI 若把它误配到 Electron runtime 目录，会完全绕过 mirror fallback 并继续 404。
     ELECTRON_BUILDER_BINARIES_DOWNLOAD_OVERRIDE_URL: "",
@@ -211,7 +217,12 @@ export function createElectronBuilderBinariesMirrorEnv(mirror) {
   };
 }
 
-export function createBundleProcessEnvs({ os, arch, electronMirror, electronBuilderMirror }) {
+export function createBundleProcessEnvs({
+  os,
+  arch,
+  electronMirror,
+  electronBuilderMirror,
+}) {
   const commonEnv = {
     ZCODE_TARGET_OS: os,
     ZCODE_TARGET_ARCH: arch,
@@ -232,22 +243,28 @@ export function createBundleProcessEnvs({ os, arch, electronMirror, electronBuil
   };
 }
 
-export function shouldFallbackElectronBuilderBinariesMirror(output, mirror, env = process.env) {
+export function shouldFallbackElectronBuilderBinariesMirror(
+  output,
+  mirror,
+  env = process.env,
+) {
   const normalizedOutput = output.toLowerCase();
   const normalizedMirror = mirror.trim().replace(/\/+$/, "");
-  const normalizedDefaultMirror = resolveDefaultElectronBuilderBinariesMirror(env).replace(
-    /\/+$/,
-    "",
-  );
+  const normalizedDefaultMirror = resolveDefaultElectronBuilderBinariesMirror(
+    env,
+  ).replace(/\/+$/, "");
   const isMissingBuilderBinary =
-    normalizedOutput.includes("status code 404") || normalizedOutput.includes("response code 404");
+    normalizedOutput.includes("status code 404") ||
+    normalizedOutput.includes("response code 404");
   const isDefaultDepsMirror = normalizedMirror === normalizedDefaultMirror;
   // 26.17 + @electron/get 的并发下载失败经 AsyncTaskManager 聚合后只剩通用
   // "HTTPError: Response code 404"，不再带完整镜像 URL；默认内网镜像缺新工具目录时
   // 必须仍可切公共镜像重试，否则要到 ZIP/DMG 阶段才以 Cannot cleanup 暴露。
   const isDefaultDepsMirrorMissing =
-    isDefaultDepsMirror && normalizedOutput.includes("electron-builder-binaries/");
-  const isDefaultDepsMirrorGenericTool404 = isDefaultDepsMirror && isMissingBuilderBinary;
+    isDefaultDepsMirror &&
+    normalizedOutput.includes("electron-builder-binaries/");
+  const isDefaultDepsMirrorGenericTool404 =
+    isDefaultDepsMirror && isMissingBuilderBinary;
   const isMisconfiguredNpmMirrorElectronRuntime =
     normalizedOutput.includes("npmmirror.com/binaries/electron/") &&
     !normalizedOutput.includes("electron-builder-binaries/");
@@ -260,7 +277,11 @@ export function shouldFallbackElectronBuilderBinariesMirror(output, mirror, env 
   );
 }
 
-export function resolveElectronBuilderBinariesFallbackMirror(output, mirror, env = process.env) {
+export function resolveElectronBuilderBinariesFallbackMirror(
+  output,
+  mirror,
+  env = process.env,
+) {
   if (!shouldFallbackElectronBuilderBinariesMirror(output, mirror, env)) {
     return null;
   }
@@ -278,7 +299,10 @@ function escapeRegExp(value) {
 export function artifactNameMatchesArch(fileName, archHint) {
   // 部分环境的安装包会在架构后追加后缀（如 mac-arm64_TEST.dmg）。
   // 体积审计必须接受 "_" 作为架构后的分隔符，否则包已生成但审计阶段会误报找不到产物。
-  return new RegExp(`-${escapeRegExp(archHint.toLowerCase())}(?:[._-])`, "i").test(fileName);
+  return new RegExp(
+    `-${escapeRegExp(archHint.toLowerCase())}(?:[._-])`,
+    "i",
+  ).test(fileName);
 }
 
 function printHelp() {
@@ -292,6 +316,8 @@ function printHelp() {
 参数:
   --os, -o <mac|win|linux>     目标操作系统，默认 mac
   --arch, -a <x64|arm64>       目标 CPU 架构，默认 arm64
+  --targets <A,B,...>          仅 linux 生效：覆盖 electron-builder 的 linux target
+                               列表（AppImage/deb/rpm/pacman 的子集），其余平台忽略
   --skip-prepare               跳过 prepare:runtime-assets
   --skip-build                 跳过 pnpm build
   --dry-run                    只打印最终命令，不执行打包
@@ -373,6 +399,17 @@ function parseArgs(argv) {
       continue;
     }
 
+    if (arg === "--targets") {
+      options.targets = argv[index + 1] ?? null;
+      index += 1;
+      continue;
+    }
+
+    if (arg.startsWith("--targets=")) {
+      options.targets = arg.slice("--targets=".length);
+      continue;
+    }
+
     if (arg.startsWith("--arch=")) {
       options.arch = arg.slice("--arch=".length);
       continue;
@@ -392,12 +429,39 @@ function parseArgs(argv) {
     throw new Error(`参数过多: ${options.positionals.join(" ")}`);
   }
 
-  const resolvedOs = normalizeOs(options.os ?? positionalOs ?? DEFAULT_TARGET_OS);
-  const resolvedArch = normalizeArch(options.arch ?? positionalArch ?? DEFAULT_TARGET_ARCH);
+  const resolvedOs = normalizeOs(
+    options.os ?? positionalOs ?? DEFAULT_TARGET_OS,
+  );
+  const resolvedArch = normalizeArch(
+    options.arch ?? positionalArch ?? DEFAULT_TARGET_ARCH,
+  );
+
+  let linuxTargets = null;
+  if (options.targets) {
+    if (resolvedOs !== "linux") {
+      throw new Error(`--targets 仅支持 linux 目标，当前目标: ${resolvedOs}`);
+    }
+    linuxTargets = options.targets
+      .split(",")
+      .map((target) => target.trim())
+      .filter(Boolean);
+    const unknownTargets = linuxTargets.filter(
+      (target) => !knownLinuxTargets.has(target),
+    );
+    if (unknownTargets.length > 0) {
+      throw new Error(
+        `不支持的 linux target: ${unknownTargets.join(", ")}（可选: ${[...knownLinuxTargets].join(", ")}）`,
+      );
+    }
+    if (linuxTargets.length === 0) {
+      throw new Error("--targets 不能为空");
+    }
+  }
 
   return {
     os: resolvedOs,
     arch: resolvedArch,
+    linuxTargets,
     skipPrepare: options.skipPrepare,
     skipBuild: options.skipBuild,
     dryRun: options.dryRun,
@@ -433,7 +497,9 @@ function findBuiltArtifact(os, arch) {
     const matchesExtension = extensions.some((extension) =>
       lowerName.endsWith(extension.toLowerCase()),
     );
-    const matchesArch = archHints.some((archHint) => artifactNameMatchesArch(lowerName, archHint));
+    const matchesArch = archHints.some((archHint) =>
+      artifactNameMatchesArch(lowerName, archHint),
+    );
 
     if (!matchesExtension || !matchesArch) {
       continue;
@@ -592,12 +658,14 @@ async function runElectronBuilderWithRetry(args, envPatch) {
       .filter(Boolean)
       .join("\n");
 
-    const currentElectronBuilderMirror = retryEnvPatch.ELECTRON_BUILDER_BINARIES_MIRROR ?? "";
-    const fallbackElectronBuilderMirror = resolveElectronBuilderBinariesFallbackMirror(
-      failureOutput,
-      currentElectronBuilderMirror,
-      process.env,
-    );
+    const currentElectronBuilderMirror =
+      retryEnvPatch.ELECTRON_BUILDER_BINARIES_MIRROR ?? "";
+    const fallbackElectronBuilderMirror =
+      resolveElectronBuilderBinariesFallbackMirror(
+        failureOutput,
+        currentElectronBuilderMirror,
+        process.env,
+      );
     if (
       attempt < electronBuilderRetryCount &&
       !didFallbackElectronBuilderMirror &&
@@ -619,7 +687,8 @@ async function runElectronBuilderWithRetry(args, envPatch) {
     }
 
     const shouldRetry =
-      attempt < electronBuilderRetryCount && shouldRetryElectronBuilderFailure(failureOutput);
+      attempt < electronBuilderRetryCount &&
+      shouldRetryElectronBuilderFailure(failureOutput);
     if (!shouldRetry) {
       if (result.error) {
         throw result.error;
@@ -690,7 +759,12 @@ function verifyPackagedRuntimeDependencies(os, arch) {
   const asarEntriesWithPackState = parseAsarListWithPackState(
     // pnpm exec 会把 workspace engine warning 混进 stdout，严格的 asar 行解析会误判失败。
     // 直接执行锁定版本的 CLI，让 stdout 只包含 asar pack state，不靠放宽解析器吞掉未知输出。
-    runAndReadStdout(process.execPath, [asarCliPath, "list", "--is-pack", appAsarPath]),
+    runAndReadStdout(process.execPath, [
+      asarCliPath,
+      "list",
+      "--is-pack",
+      appAsarPath,
+    ]),
   );
   const asarEntries = asarEntriesWithPackState.map((entry) => entry.path);
 
@@ -702,7 +776,9 @@ function verifyPackagedRuntimeDependencies(os, arch) {
   if (nativePackageViolations.length > 0) {
     // afterPack 之外再对最终 unpacked 产物做一次机械校验，避免后续 hook 或 builder
     // 重新带入其他平台 native，或者把 unpack 文件又写回 app.asar payload。
-    throw new Error(`打包产物包含越界 native 资源:\n- ${nativePackageViolations.join("\n- ")}`);
+    throw new Error(
+      `打包产物包含越界 native 资源:\n- ${nativePackageViolations.join("\n- ")}`,
+    );
   }
 
   const runtimeModules = collectRuntimeModuleClosureEntries(
@@ -715,7 +791,9 @@ function verifyPackagedRuntimeDependencies(os, arch) {
       // 否则在某些 CI 安装布局中会出现“注入阶段已跳过，但校验阶段仍硬失败”的误报。
       console.warn(
         `[bundle] runtime module not found in workspace, skip verify: ${entry.moduleName}; searched=${runtimeModuleLookupRoots
-          .map((lookupRoot) => resolve(lookupRoot, "node_modules", entry.moduleName))
+          .map((lookupRoot) =>
+            resolve(lookupRoot, "node_modules", entry.moduleName),
+          )
           .join(", ")}`,
       );
       return false;
@@ -740,7 +818,9 @@ function verifyPackagedRuntimeDependencies(os, arch) {
 }
 
 async function main() {
-  const { os, arch, skipPrepare, skipBuild, dryRun } = parseArgs(process.argv.slice(2));
+  const { os, arch, linuxTargets, skipPrepare, skipBuild, dryRun } = parseArgs(
+    process.argv.slice(2),
+  );
   const buildArgs = [
     "exec",
     "electron-builder",
@@ -749,8 +829,16 @@ async function main() {
     osBuilderFlagMap[os],
     archBuilderFlagMap[arch],
   ];
+  // electron-builder 的 CLI 允许在 --linux 后追加 target 名，覆盖配置文件的 target 列表。
+  // GitHub hosted ubuntu 上 rpm/pacman 目标阶段会静默退出（fpm 工具链问题），
+  // 发版流水线据此只构建 AppImage+deb，内部 runner 仍走全量 target。
 
-  console.log(`[bundle] target=${os}/${arch}`);
+  console.log(
+    `[bundle] target=${os}/${arch}${linuxTargets ? ` targets=${linuxTargets.join(",")}` : ""}`,
+  );
+  if (linuxTargets) {
+    buildArgs.push(...linuxTargets);
+  }
   console.log(`[bundle] skipPrepare=${skipPrepare} skipBuild=${skipBuild}`);
 
   const { buildEnv, electronBuilderEnv } = createBundleProcessEnvs({
@@ -798,7 +886,9 @@ if (entryHref === import.meta.url) {
   try {
     await main();
   } catch (error) {
-    console.error(`[bundle] ${error instanceof Error ? error.message : String(error)}`);
+    console.error(
+      `[bundle] ${error instanceof Error ? error.message : String(error)}`,
+    );
     process.exit(1);
   }
 }
