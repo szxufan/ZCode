@@ -18,6 +18,7 @@ on:
           - all
           - windows-x64
           - macos-arm64
+          - linux-x64
 
 permissions:
   contents: read
@@ -48,19 +49,20 @@ jobs:
           PLATFORMS: ${{ inputs.platforms }}
         run: |
           platforms="${PLATFORMS:-all}"
-          # Linux 打包暂不纳入：GitHub hosted ubuntu 上 electron-builder 在 AppImage/deb
-          # 之后于 rpm/pacman 目标阶段无报错静默退出（fpm 工具链问题待查，见
-          # docs/desktop-github-release.md 已知边界）。产物形态对齐上游 Release 先例
-          # （zai-org/ZCode v3.14.3 = win-x64 exe + mac-arm64 dmg）。
+          # Linux 只构建 deb：GitHub hosted ubuntu 上 electron-builder 在
+          # rpm/pacman 目标阶段无报错静默退出（fpm 工具链问题待查，见
+          # docs/desktop-github-release.md 已知边界），--targets 用 bundle.mjs 的
+          # linux target 覆盖能力把目标限制在可稳定产出的子集。
           all='[
             {"name":"windows-x64","runs-on":"windows-latest","target":"win","arch":"x64"},
-            {"name":"macos-arm64","runs-on":"macos-latest","target":"mac","arch":"arm64"}
+            {"name":"macos-arm64","runs-on":"macos-latest","target":"mac","arch":"arm64"},
+            {"name":"linux-x64","runs-on":"ubuntu-latest","target":"linux","arch":"x64","targets":"deb"}
           ]'
           case "$platforms" in
             all)
               matrix="$all"
               ;;
-            windows-x64|macos-arm64)
+            windows-x64|macos-arm64|linux-x64)
               matrix="$(echo "$all" | jq -c --arg name "$platforms" '[.[] | select(.name == $name)]')"
               ;;
             *)
@@ -124,13 +126,8 @@ jobs:
       # bundle.mjs 的 CLI 契约是位置参数或 --os/--arch（win/mac/linux + x64/arm64）；
       # --win/--mac 等 flag 是它内部传给 electron-builder 的形式。pnpm 10 会把 -- 分隔符
       # 原样透传给脚本（脚本自行跳过），不要再叠加一层 --。
-      # rpm 目标走 fpm，需要构建机提供 rpmbuild（见 electron-builder.config.js rpm 注释）；
-      # 内部 GitLab runner 预装了它，GitHub hosted ubuntu 没有。xz 已预装。
-      - name: Install Linux packaging prerequisites
-        if: runner.os == 'Linux'
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y rpm
+      # linux 用 --targets 只构建 deb：rpm/pacman 需要构建机提供 rpmbuild 等
+      # fpm 工具链（内部 GitLab runner 预装，GitHub hosted ubuntu 上会静默退出）。
       # 失败时把日志尾部写进 job summary 与 ::error:: annotations：job 日志需要授权才能经
       # API 读取；summary 可匿名经 check-runs API（output.summary）读取。
       # 注意 GitHub 显式 shell: bash 等价于 bash -eo pipefail：管道失败会立即中断脚本，
@@ -139,7 +136,11 @@ jobs:
         run: |
           set -o pipefail
           code=0
-          pnpm bundle:desktop -- --os ${{ matrix.target }} --arch ${{ matrix.arch }} 2>&1 | tee bundle.log || code=$?
+          targets_arg=""
+          if [ -n "${{ matrix.targets }}" ]; then
+            targets_arg="--targets ${{ matrix.targets }}"
+          fi
+          pnpm bundle:desktop -- --os ${{ matrix.target }} --arch ${{ matrix.arch }} $targets_arg 2>&1 | tee bundle.log || code=$?
           if [ "$code" != "0" ]; then
             {
               echo "### bundle failure (${{ matrix.name }}), exit ${code}"
