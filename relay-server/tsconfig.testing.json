@@ -1,0 +1,12 @@
+{
+  "extends": "../tsconfig.base.json",
+  "compilerOptions": {
+    "rootDir": "test",
+    "outDir": "dist-testing",
+    "types": ["node"],
+    "strict": true,
+    "noEmit": true
+  },
+  "include": ["test/**/*.ts"],
+  "references": [{ "path": "." }, { "path": "../packages/shared" }]
+}

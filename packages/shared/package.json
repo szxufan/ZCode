@@ -32,13 +32,19 @@
     "./request-security": "./src/request-security-edition/index.ts",
     "./conversation-telemetry": "./src/conversation-telemetry/index.ts",
     "./conversation-telemetry/messageTelemetry": "./src/conversation-telemetry/messageTelemetry.ts",
-    "./conversation-telemetry/providerTelemetryIdentity": "./src/conversation-telemetry/providerTelemetryIdentity.ts"
+    "./conversation-telemetry/providerTelemetryIdentity": "./src/conversation-telemetry/providerTelemetryIdentity.ts",
+    "./remote-relay-v3": "./src/remote-relay-v3/index.ts",
+    "./testing/fake-relay-v3": "./test/fixtures/fake-relay-v3.ts",
+    "./testing/relay-v3-consistency": "./test/fixtures/relay-v3-consistency.ts"
   },
   "scripts": {
     "lint": "oxlint",
     "lint:fix": "oxlint --fix"
   },
   "dependencies": {
+    "@noble/ciphers": "1.3.0",
+    "@noble/curves": "1.9.7",
+    "@noble/hashes": "1.8.0",
     "@zcode/model-option-map": "workspace:*",
     "zod": "4.6.5"
   },

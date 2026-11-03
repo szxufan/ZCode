@@ -1,0 +1,36 @@
+{
+  "name": "@zcode/relay-server",
+  "version": "0.1.0",
+  "private": true,
+  "description": "ZCode Relay V3 自托管中继（Fastify + ws + node:sqlite）",
+  "bin": {
+    "relay-admin": "./src/admin/cli.ts"
+  },
+  "type": "module",
+  "main": "./src/index.ts",
+  "exports": {
+    ".": "./src/index.ts",
+    "./app": "./src/app.ts",
+    "./config": "./src/config.ts",
+    "./admin": "./src/admin/operations.ts"
+  },
+  "scripts": {
+    "build": "tsc -b",
+    "start": "node dist/index.js",
+    "dev": "node --watch --experimental-strip-types src/index.ts",
+    "lint": "oxlint",
+    "lint:fix": "oxlint --fix"
+  },
+  "dependencies": {
+    "@zcode/shared": "workspace:*",
+    "fastify": "^5.12.8",
+    "ws": "8.20.0"
+  },
+  "devDependencies": {
+    "@types/ws": "8.18.1",
+    "typescript": "^6.0.2"
+  },
+  "engines": {
+    "node": ">=24.0.0"
+  }
+}

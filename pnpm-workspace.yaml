@@ -4,6 +4,7 @@ packages:
   - apps/zcode-cli
   - apps/zcode-cli/packages/*
   - apps/zcode-cli/tools/*
+  - relay-server
 supportedArchitectures:
   os:
     - current

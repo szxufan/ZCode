@@ -70,6 +70,8 @@ export default defineConfig({
             // Gen UI 目录回归位于源码旁，默认入口也必须执行，避免只在手动定向运行时生效。
             "packages/shared/src/node/genUiPaths.test.ts",
             "packages/services/src/gen-ui/**/*.test.ts",
+            // relay-server 是根目录 workspace 包，不匹配 packages/* glob；显式纳入。
+            "relay-server/test/**/*.test.ts",
           ],
           exclude: [
             "packages/desktop/test/e2e/**",

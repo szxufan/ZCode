@@ -64,6 +64,30 @@ modules:
   - id: zcode-cli
     roots: [apps/zcode-cli]
     managed: false
+  # Relay V3 自托管中继（docs/relay-server/relay-v3-design.md）：协议模块在 shared，
+  # 服务端为根目录 workspace 包。
+  - id: remote-relay-v3
+    roots: [packages/shared/src/remote-relay-v3]
+    managed: true
+    requires: [shared]
+    publicEntrypoints:
+      - packages/shared/src/remote-relay-v3/index.ts
+      - packages/shared/src/remote-relay-v3/contract.ts
+      - packages/shared/src/remote-relay-v3/crypto.ts
+      - packages/shared/src/remote-relay-v3/heartbeat.ts
+    layers: {app: "."}
+    owner: remote-control
+  - id: relay-server
+    roots: [relay-server/src]
+    managed: true
+    requires: [shared, remote-relay-v3]
+    publicEntrypoints:
+      - relay-server/src/index.ts
+      - relay-server/src/app.ts
+      - relay-server/src/config.ts
+      - relay-server/src/admin/operations.ts
+    layers: {app: "src"}
+    owner: remote-control
   # sqlite-migrations：由 architecture:adopt 登记
   - id: conversation-telemetry-engine
     roots: [packages/shared/src/conversation-telemetry]

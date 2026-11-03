@@ -1,0 +1,42 @@
+# Relay V3 自部署样例（§8）：仅暴露 TLS 入口，静态页面与 API 同源由反代终结 TLS。
+# 环境变量见 README；RELAY_JWT_SECRET / RELAY_DB_PATH 必填（fail closed）。
+services:
+  relay:
+    build:
+      context: ..
+      dockerfile: relay-server/Dockerfile
+    restart: unless-stopped
+    environment:
+      RELAY_PORT: "8080"
+      RELAY_DB_PATH: /data/relay.db
+      RELAY_JWT_SECRET: ${RELAY_JWT_SECRET:?set RELAY_JWT_SECRET in .env}
+      RELAY_LOCAL_REGISTRATION: ${RELAY_LOCAL_REGISTRATION:-open}
+      RELAY_STATIC_DIR: ${RELAY_STATIC_DIR:-}
+      RELAY_SMS_PROVIDER: ${RELAY_SMS_PROVIDER:-aliyun}
+      RELAY_SMS_ALIYUN_ACCESS_KEY_ID: ${RELAY_SMS_ALIYUN_ACCESS_KEY_ID:-}
+      RELAY_SMS_ALIYUN_ACCESS_KEY_SECRET: ${RELAY_SMS_ALIYUN_ACCESS_KEY_SECRET:-}
+      RELAY_SMS_ALIYUN_SIGN_NAME: ${RELAY_SMS_ALIYUN_SIGN_NAME:-}
+      RELAY_SMS_ALIYUN_TEMPLATE_CODE: ${RELAY_SMS_ALIYUN_TEMPLATE_CODE:-}
+      RELAY_SMS_CODE_SECRET: ${RELAY_SMS_CODE_SECRET:-}
+    volumes:
+      - relay-data:/data
+      - ${RELAY_STATIC_DIR:-./static}:/static:ro
+    expose:
+      - "8080"
+
+  caddy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    depends_on:
+      - relay
+    ports:
+      - "443:443"
+    command: caddy reverse-proxy --from ${RELAY_PUBLIC_HOST:?set RELAY_PUBLIC_HOST} --to relay:8080
+    volumes:
+      - caddy-data:/data
+      - caddy-config:/config
+
+volumes:
+  relay-data:
+  caddy-data:
+  caddy-config:

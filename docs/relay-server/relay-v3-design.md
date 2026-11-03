@@ -1,6 +1,6 @@
 # Relay V3 自托管设计与架构
 
-状态：设计稿（未实现）。本文是 Relay V3 的产品规则、协议契约、状态所有权与验收边界的 spec 源；实现前以此为准，实现后随行为变更同步更新。
+状态：P0 已实现（`relay-server/` 全量 + `packages/shared/src/remote-relay-v3/` 协议/加密模块 + `fake-relay-v3` fixture 与双跑一致性矩阵）；P1 起的客户端里程碑未实现。本文是 Relay V3 的产品规则、协议契约、状态所有权与验收边界的 spec 源；实现后随行为变更同步更新。已落地的两处契约澄清：§5.2 auth_init 两角色均携带 `device_sid`；relay 在 `pair_status_ack` 中向 device 透传 `terminal_public_key`。
 
 V3 是全新协议，**不兼容现有闭源 Relay V2**，不与 V2 共存或灰度迁移：客户端（桌面 main、手机 Web、Android 壳）一次性切换到 V3，V2 transport 与其 OAuth 登录链路在客户端切换完成后移除。本文不承担 V2 兼容义务，契约设计只以 V3 自身需求为准；V2 文档（[Relay V2 共享契约与配对](../web-remote-control/relay-v2-pairing.md)）仅作语义参考。
 
@@ -21,6 +21,7 @@ OpenBitFun（`C:\Users\xufan\Trae\OpenBitFun`）证明了替代形态可行：re
 - **一步到位引入端到端加密**：`data` 消息以 X25519 + HKDF-SHA256 + AES-256-GCM 加密，relay 只见密文。
 - 登录改造为 relay 自有账号：手机号 + 短信验证码（Aliyun SMS），与桌面端模型供应商 OAuth 解耦。
 - **桌面互控**：桌面 App 既能作为被控端（device），也能作为控制端（terminal）连接同账号的其他电脑，在桌面 UI 中浏览与操作目标设备的任务。
+- **确立"运行时即设备"的架构终态**：远端 source-server daemon 经设备授权（§5.5）注册为与桌面同权的一等 relay 设备，为 R4 退役 R3 的 SSH 部署/隧道外壳铺路（§9 R4）。
 - 协议与客户端（桌面 main、手机 Web、Android 壳）的全部代码收敛到本仓库，契约可用同一套 fixture/一致性测试覆盖。
 - 全新协议、无历史包袱：字段、端点、错误码按 V3 自身需求设计，不保留 V2 字段兼容层。
 
@@ -50,7 +51,7 @@ OpenBitFun（`C:\Users\xufan\Trae\OpenBitFun`）证明了替代形态可行：re
               目标桌面 renderer（continuous）─┘
 ```
 
-一台桌面可以同时具备两种角色：作为 **device**（被控端）接受手机/其他桌面的控制，作为 **terminal**（控制端）连接其他电脑；两个方向的连接、密钥与配对状态互相独立。
+一台桌面可以同时具备两种角色：作为 **device**（被控端）接受手机/其他桌面的控制，作为 **terminal**（控制端）连接其他电脑；两个方向的连接、密钥与配对状态互相独立。R4 起，source-server daemon 经 §5.5 设备授权同样作为 device 接入（headless 环境，无 GUI），桌面与手机均以控制端身份 attach 它——届时 R3 的 SSH 部署/隧道外壳退役，SSH 降级为可选的部署便利路径。
 
 ### 仓库布局
 
@@ -61,6 +62,8 @@ OpenBitFun（`C:\Users\xufan\Trae\OpenBitFun`）证明了替代形态可行：re
 | `packages/desktop` main | device transport 升级 V3 + relay 账号登录。 |
 | `packages/web` | `/remote/v4` 登录页改为手机号+验证码表单；terminal transport 升级 V3。 |
 | `docs/relay-server/` | 本 spec 及后续验收记录。 |
+
+注：本 fork 已移除上游 `packages/web` 手机应用（commit 3c86dba8）；P2 的 `/remote/v4` 页面在本仓库属**新建**工作而非改造，落地时以当时仓库结构为准。
 
 ### 所有权一览
 
@@ -81,6 +84,7 @@ OpenBitFun（`C:\Users\xufan\Trae\OpenBitFun`）证明了替代形态可行：re
 - 账号 = 手机号（E.164，唯一）。首次验证码登录成功即建号（与 OpenBitFun 一致）；可后置设置密码作为短信不可用时的登录方式（`relay-admin set-password` 或登录后设置）。
 - `RELAY_LOCAL_REGISTRATION=open|closed`：closed 时新手机号不可自注册，仅 `relay-admin add-user --phone <number>` 预建账号。
 - 账号与桌面模型供应商账号（Z.AI/BigModel OAuth）**完全无关**。桌面远控弹窗新增 relay 登录区（手机号+验证码表单），不触碰 OAuth credential；`auth-required` 语义改为"远控等待 relay 账号登录"，复用现有 manager 状态机。
+- 无 GUI 设备（R4 起的 source-server daemon）不走短信登录，经 §5.5 设备授权由同账号已认证设备批准接入。
 
 ### 3.2 短信验证码
 
@@ -120,6 +124,7 @@ sequenceDiagram
 
 - **桌面 device**：首次注册时本地生成 X25519 静态密钥对，注册请求携带公钥（base64url 32 字节）。私钥保存在 main 进程（持久化设备身份时一并持久化私钥，存于用户数据目录，不进同步设置）。重新注册即换新密钥对并产生新 SID——密钥轮换与设备轮换同生命周期。
 - **terminal（手机浏览器或桌面控制端）**：每次控制会话生成一次性 X25519 密钥对，`auth_init` 携带 `terminal_public_key`（信封元数据，明文可见——它本来就是公钥）。手机页面关闭即弃；桌面控制端随控制连接生命周期，断开重连重新生成，不持久化。
+- **（R4）source-server daemon**：`zcode server login` 时本地生成静态密钥对，公钥经 §5.5 设备授权请求上报，批准时刻完成"账号 ↔ 公钥 ↔ 设备记录"绑定；私钥落 server root（0600），重装即换新密钥对并产生新设备记录。
 - **公钥获取**：手机经认证的 `GET /v3/device` 取得目标设备的 `public_key`；桌面从 terminal 的 `auth_init` 取得 terminal 公钥。双方均可本地推导同一会话密钥，无需额外往返。
 
 ### 4.3 会话密钥派生
@@ -168,7 +173,9 @@ V3 的 `data` 消息外层结构为 `{payload, client_ts}`（上行）/ `{payloa
 
 所有接口前缀 `/v3`，成功信封 `{code: 0, msg: string, data: T}`，失败信封 `{code: 非零整数, msg: string, data?: null}`；HTTP 非 2xx 可能无 JSON 正文，调用方必须同时检查 HTTP 状态与业务 `code`。
 
-### 5.1 HTTP| 方法与路径 | 认证 | 请求 | 成功 data |
+### 5.1 HTTP
+
+| 方法与路径 | 认证 | 请求 | 成功 data |
 | --- | --- | --- | --- |
 | `POST /v3/auth/sms-code` | 无 | `{phone: E.164}` | `null` |
 | `POST /v3/auth/login` | 无 | `{phone, code}` 或 `{phone, password}` | `{access, refresh, account: {id, phone_masked}}` |
@@ -178,6 +185,9 @@ V3 的 `data` 消息外层结构为 `{payload, client_ts}`（上行）/ `{payloa
 | `GET /v3/device` | Bearer | 无 | 当前账号设备记录数组 |
 | `POST /v3/device/delete` | Bearer | `{device_sid}` | `null`（仅离线设备可删、删除幂等、越权返回 `no permission`） |
 | `POST /v3/relay/token` | Bearer | `{role: "device" \| "terminal"}` | `{token, expires_in: 60}` |
+| `POST /v3/device-auth/request` | 无 | `{public_key: base64url 32B}` | `{user_code, device_code, expires_in: 900}` |
+| `POST /v3/device-auth/approve` | Bearer | `{user_code}` | `{device: 设备记录}`（凭据经 poll 交付给发起方） |
+| `POST /v3/device-auth/poll` | 无 | `{device_code}` | 未批准：`{status: "pending"}`；已批准：`{access, refresh, device}`；过期：业务错误码 |
 
 设备记录：`{device_sid, device_mid, public_key, online, created_at, meta: {name?, platform?, version?}}`。注册不接收 `meta` 与 `online`；同 MID 每次注册产生新 SID 与新公钥绑定。
 
@@ -189,11 +199,11 @@ V3 的 `data` 消息外层结构为 `{payload, client_ts}`（上行）/ `{payloa
 
 | 方向 | 消息 | 字段 |
 | --- | --- | --- |
-| 客户端 → relay | `auth_init` | device：`device_sid`（≤128 UTF-8 字节）、可选 `meta`、可选 `client_ts`（Unix 秒）；terminal：`terminal_public_key`（base64url 32 字节，必填）、可选 `client_ts` |
+| 客户端 → relay | `auth_init` | 两角色均必填 `device_sid`（≤128 UTF-8 字节，配对按 (SID, role) 路由）；device 可选 `meta`、可选 `client_ts`（Unix 秒）；terminal 必填 `terminal_public_key`（base64url 32 字节）、可选 `client_ts` |
 | 客户端 → relay | `pair_status_query` | 可选 `client_ts` |
 | 客户端 → relay | `data` | 必填 `payload`（密文信封，§4.5）、可选 `client_ts` |
 | relay → 客户端 | `auth_ack` | `device_sid`、`terminal_sid`、`pair_status`、可选 `server_ts` |
-| relay → 客户端 | `pair_status_ack` | `terminal_sid`、`pair_status`、可选 `server_ts` |
+| relay → 客户端 | `pair_status_ack` | `terminal_sid`、`pair_status`、可选 `terminal_public_key`（matched 且接收方为 device 时，由 relay 从 terminal 的 `auth_init` 透传，§4.2）、可选 `server_ts` |
 | relay → 客户端 | `data` | `payload`、可选 `server_ts` |
 | relay → 客户端 | `error` | `code`、可选 `message`、可选 `server_ts` |
 
@@ -211,6 +221,35 @@ terminal 角色不区分客户端类型：手机浏览器与桌面控制端（§
 ### 5.4 静态资源
 
 relay 通过 `RELAY_STATIC_DIR` 指向 `/remote/v4` 手机页面静态产物目录，使自部署实例"扫码即用"。未配置该目录时二维码生成入口在桌面侧提示不可用；生产部署建议始终配置，并由反向代理直接缓存静态资源。
+
+### 5.5 设备授权（headless 设备接入）
+
+为无 GUI 环境（远端服务器、容器、WSL）提供不依赖短信登录的接入通道：daemon 侧发起请求，同账号已认证设备批准。信任建立点在**批准时刻**——relay 在批准时才完成"账号 ↔ 公钥 ↔ 设备记录"绑定，此前该公钥不进入设备目录。
+
+```mermaid
+sequenceDiagram
+    participant S as 远端 daemon（无 GUI）
+    participant R as Relay V3
+    participant A as 已认证设备（桌面弹窗 / 手机）
+    S->>S: zcode server login → 本地生成 X25519 密钥对
+    S->>R: POST /v3/device-auth/request {public_key}
+    R-->>S: {user_code, device_code, expires_in: 900}
+    S-->>用户: 终端显示输入码与授权地址
+    A->>R: 登录态下 POST /v3/device-auth/approve {user_code}
+    Note over A: 批准界面显示设备公钥指纹短哈希，用户核对后确认
+    R-->>A: {device: 设备记录}
+    S->>R: POST /v3/device-auth/poll {device_code}
+    R-->>S: {access, refresh, device}
+    A-->>S: 批准后经 relay E2E 下发 Provider 配置（可选，复用 Provisioning 语义）
+```
+
+规则与边界：
+
+- `user_code` 为 8 位数字、单次使用、15 分钟过期；`device_code` 为 32 字节随机串，仅发起方持有。request/poll/approve 限流见 §8；`poll` 在批准前返回 `pending`，过期返回业务错误码，发起方重新发起即换新密钥对。
+- 批准界面**必须**显示请求方公钥指纹（SHA-256 前 8 字节 hex）与 `meta` 摘要，供用户人工核对——headless 接入没有面对面扫码的带外通道，指纹核对该场景下的必选项，同时是 §10 公钥替换 MITM 问题的解法。
+- 批准动作不向批准方交付发起方凭据；daemon 经 `poll` 取得自己的 `{access, refresh}`，refresh token 家族语义与 §3.3 一致（落 server root 0600，重启免重登，任何同账号已认证设备可删除该设备实现远程吊销）。
+- 同一账号下待批准请求上限 8 条，超出拒绝新 request；批准成功后同 user_code 的其他 pending 请求不受影响。
+- Provider 配置引导复用现有 Provisioning 单向下发语义：批准后由批准设备经 relay E2E 通道推送一份配置，daemon 端零新增配置逻辑；远端配置的自权威化管理属 R4 后续，不阻塞接入。
 
 ## 6. 桌面互控（desktop ↔ desktop）
 
@@ -277,6 +316,7 @@ sequenceDiagram
 | 鉴权请求体 | 16 KiB，超限 413 |
 | 并发 HTTP 请求 | 512，超限 503 |
 | 验证码发送 / 登录尝试 | §3.2 限流表 |
+| 设备授权 | user_code 8 位数字、15 分钟、单次使用；request 5 次/分钟/IP、每账号待批准上限 8 条；poll 30 次/分钟/device_code；approve 10 次/分钟/IP |
 | refresh 旋转 | 30/分钟/IP；重放撤销家族 |
 | WS 连接 | 256/进程；握手 15s deadline；ping 5s±1s / pong 45s 超时 |
 | WS 单消息 | 1 MiB（含密文膨胀预算） |
@@ -319,14 +359,35 @@ sequenceDiagram
 - 被控端无 relay 侧改动（terminal 协议已泛化），仅需验证单 active terminal 替换语义与被控端多来源（手机 + 桌面）配对切换。
 - 验收：§6.5 全部场景；控制端与被控端 `desktop-continuous` / replayable 双语义回归；架构检查确认控制端不新增跨域导入（控制端 main 复用现有 attachment/bridge 路径，不经 renderer 直连）。
 
+### R4 source-server 即设备（R3 外壳退役）
+
+V3 交付后的目标架构：远端 source-server daemon 经 §5.5 设备授权注册为与桌面同权的一等 relay 设备，桌面与手机均以控制端身份 attach 它。届时 R3 的部署/传输外壳整体退役。
+
+**退役范围**：SSH/WSL/Docker Transport Adapter 的隧道与握手职责（`ssh2 forwardOut`、stdio 桥、ingress token、一次性 capability ticket、双端 compatibility manifest 协商、`connectServerRemote` 隧道主链）。SSH 降级为可选便利路径：桌面检测到可达 SSH 时执行"部署 + 自动弹出设备授权批准"，仅是 UI 便利，不再是架构依赖。
+
+**平移保留的 R3 资产**（与传输层无关，原样继续使用）：
+
+- `serve --daemon` 生命周期：launchd/systemd --user 注册、detached fallback、`ensureDaemon`（R2/R3 已实现的 daemon 保活语义，见 `docs/architecture/r3-source-server-remote-architecture.md` §2）；
+- Provider Provisioning 单向下发语义（批准时经 relay E2E 推送，§5.5）；
+- running-task guard、远端原子升级与失败回滚（`zcode update --from-archive`）。
+
+**数据面协议扩展**（R4 立项条件，设计另立 spec）：
+
+1. 二进制分块帧：文件上传下载走带流控与断点续传的分块传输，不再受 JSON 信封约束；终端流保持现有信封（小帧）。
+2. 局域网直连 relay 模式（§1 非目标中提及的嵌入形态）作为大文件兜底与 relay 不可用时的降级路径。
+3. 远端任务事件（完成/权限请求）经 relay 推送为控制端一等通知，补齐 R3"任务完成推送"缺口。
+
+**验收边界**：headless 三环境（SSH 便利路径、WSL 命令行、Docker exec）完成 device-auth 接入并跑通密文任务链路；远程吊销（手机删除设备）即时生效；数据面分块传输在弱网下可续传。与 §1 总纲一致，R4 不做长期双链并存：daemon 升级到具备设备授权能力的版本即注册为 relay 设备，存量 R3 连接随客户端版本升级一次性迁移，同一 Source 不同时暴露两条接入路径。
+
 ## 10. 开放问题
 
-1. **公钥替换 MITM**：是否在二维码中加入设备公钥指纹、手机端显示比对？增加 UX 成本，OpenBitFun 未做；建议 P2 真机验证后决定。
+1. **公钥替换 MITM**：headless 设备授权已在批准界面强制公钥指纹核对（§5.5）；手机扫码场景是否同样显示比对（增加 UX 成本，OpenBitFun 未做），建议 P2 真机验证后决定。
 2. **短信成本**：自部署者需自备 Aliyun 凭据；closed-registration + `relay-admin` 预建账号是默认兜底，是否够用待观察。
 3. **桌面 relay 账号与 OAuth 账号并存**的设置页信息架构（两个"登录"概念需要 UI 区分），P1 前与设计对齐。
 4. **多实例扩展**：单进程假设（内存 owner）上限约 256 连接；若需扩容，路径是把 owner/token 迁到 Redis 并引入 sticky 路由，本期不做、接口设计不预设阻碍。
 5. **JWT 算法**：单实例 HS256 + 环境变量密钥已够；若未来多实例，换 EdDSA 并公钥化校验。
 6. **多 terminal 并发**：第一版单 active terminal（后到者优先，§5.2）。家庭/团队"多人同时看一台电脑"需要设备侧维护多份会话密钥与扇出广播，涉及被控端 transport 较大改动；若 P4 后有真实需求再立项。
+7. **数据面分块帧与流控**：R4 的文件传输需要二进制分块、流控与断点续传设计（信封格式、密钥派生是否分域），另立 spec；局域网直连模式作为兜底路径同步立项。
 
 ## 11. 风险登记
 
@@ -336,3 +397,4 @@ sequenceDiagram
 | 客户端两端（桌面/手机）协议版本漂移 | 信封 `v`/`alg` 严格校验，未知值按协议错误断开；两端共享同一 shared 协议模块与 fixture，不各自手写编解码 |
 | 私钥持久化位置不当（进同步/进日志） | 仅存 main 进程用户数据目录；回归测试断言不出现在设置同步与日志（含 `debug` 级） |
 | 限流缺失导致自部署实例被刷 | §8 限额为编译期常量，P0 即带测试；部署文档强制反代 TLS |
+| 设备授权被钓鱼滥用（诱导用户批准恶意公钥） | 批准界面强制显示公钥指纹与设备摘要（§5.5）、approve 二次确认、request/poll/approve 三级限流、每账号待批准上限 |
