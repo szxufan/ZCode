@@ -1,4 +1,6 @@
-# Relay V2 共享契约与配对
+# 【已归档】Relay V2 共享契约与配对
+
+> 已归档（2026-11）：Relay V2 客户端链路已随 Relay V3 落地移除，本页仅作语义参考（V3 重建时的状态机/边界语义来源），不再作为有效契约维护。现行契约见 [Relay V3 设计](../relay-server/relay-v3-design.md)。
 
 本页定义 [Relay V2](../issues/web-remote-control-relay-v2/01-relay-v2-login-pairing.md) 的最终共享契约、连接行为与验收边界。桌面 device、手机 terminal 与 shared 均只使用 V2。
 

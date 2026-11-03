@@ -1,4 +1,6 @@
-# Web Remote Login V2
+# 【已归档】Web Remote Login V2
+
+> 已归档（2026-11）：OAuth 远控登录链路已随 Relay V3 落地移除（V3 为 relay 自有账号：手机号+验证码，见 [Relay V3 设计](../relay-server/relay-v3-design.md) §3）。本页仅作语义参考。
 
 `/remote/v4`（含尾斜杠）是手机远控唯一正式 OAuth/二维码入口。手机只使用 Relay V2；`/web-remote`、其回调与等待页、remoteControlToken/relayOrigin bootstrap 已移除。普通 Web + Server 的 `/ws`、`/ws/remote/:id` 保持不变。
 

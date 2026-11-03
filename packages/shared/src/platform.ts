@@ -7,6 +7,14 @@ import type {
 } from "./remoteTarget.js";
 import type { PluginSandboxPlatformPort } from "./mcp-apps/contract.js";
 import type {
+  RelayV3AccountActionResult,
+  RelayV3DesktopStatus,
+  RelayV3StartTicketResult,
+  RelayV3TerminalStatus,
+  RelayV3WorkspaceSyncEntry,
+} from "./remote-relay-v3/desktop.js";
+import type { RelayV3Device as RelayV3DeviceLite } from "./remote-relay-v3/contract.js";
+import type {
   LoadCliMcpFromUserDirectoryRequest,
   LoadCliMcpFromUserDirectoryResult,
   MigrateLegacyCommonMcpRequest,
@@ -814,6 +822,72 @@ export interface IPlatformService {
 
   /** 释放当前窗口里已创建的远程 session */
   disposeRemoteSession(sessionId: string): Promise<void>;
+
+  // ----- Relay V3 自托管远控（device 侧；docs/relay-server/relay-v3-design.md P1） -----
+
+  /** 同步当前窗口 workspace 目录（全量快照）给 main 的 relay V3 manager。 */
+  relayV3SyncWorkspaces?(workspaces: RelayV3WorkspaceSyncEntry[]): void;
+
+  /** 查询 relay V3 远控状态投影（不含凭据）。 */
+  relayV3GetStatus?(): Promise<RelayV3DesktopStatus>;
+
+  /** 订阅状态变化推送，返回 disposer。 */
+  onRelayV3StatusChanged?(handler: (status: RelayV3DesktopStatus) => void): () => void;
+
+  /** 发送短信验证码。 */
+  relayV3SendSmsCode?(phone: string): Promise<RelayV3AccountActionResult>;
+
+  /** 手机号+验证码登录 relay 账号。 */
+  relayV3Login?(phone: string, code: string): Promise<RelayV3AccountActionResult>;
+
+  /** 登出 relay 账号（撤销 refresh 家族并停止远控）。 */
+  relayV3Logout?(): Promise<RelayV3AccountActionResult>;
+
+  /** 请求启动授权（一次性票据，绑定当前窗口与目标 workspace）。 */
+  relayV3AuthorizeStart?(target: {
+    workspacePath: string;
+    workspaceIdentity?: string;
+  }): Promise<RelayV3StartTicketResult>;
+
+  /** 凭票据启动远控。 */
+  relayV3StartAuthorized?(ticket: string): Promise<{ accepted: boolean; reason?: string }>;
+
+  /** 停止远控并清除启用意图。 */
+  relayV3Stop?(): Promise<void>;
+
+  // ----- Relay V3 控制端（P4，§6：桌面作为 terminal 连接其他电脑） -----
+
+  /** 列出同账号可控制设备。 */
+  relayV3TerminalList?(): Promise<{
+    ok: boolean;
+    devices?: RelayV3DeviceLite[];
+    message?: string;
+  }>;
+
+  /** 连接目标设备（terminal 角色）。 */
+  relayV3TerminalConnect?(deviceSid: string): Promise<{ ok: boolean; message?: string }>;
+
+  /** 断开控制连接。 */
+  relayV3TerminalDisconnect?(): Promise<void>;
+
+  /** 打开目标 workspace bridge。 */
+  relayV3TerminalOpenWorkspace?(workspaceKey: string): Promise<{
+    ok: boolean;
+    bridgeSessionId?: string;
+    bridgeGeneration?: number;
+    message?: string;
+  }>;
+
+  /** 订阅控制状态变化，返回 disposer。 */
+  onRelayV3TerminalStatusChanged?(
+    handler: (status: RelayV3TerminalStatus) => void,
+  ): () => void;
+
+  /** 设备授权（R4 §5.5）：按 user_code 批准 headless 设备，回显公钥指纹。 */
+  relayV3DeviceAuthApprove?(userCode: string): Promise<
+    | { ok: true; fingerprint: string; deviceSid: string }
+    | { ok: false; message?: string; businessCode?: number }
+  >;
 
   /** 检查本机 Docker daemon 是否可用 */
   isDockerAvailable(): Promise<boolean>;

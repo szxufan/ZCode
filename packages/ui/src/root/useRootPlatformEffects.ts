@@ -305,6 +305,21 @@ export function useRootPlatformEffects({
       .filter((tab) => !tab.remoteSessionId && !tab.workspaceIdentity && !tab.remoteTarget)
       .map((tab) => tab.workspacePath);
     platform.syncWindowTabs(paths);
+
+    // Relay V3 远控：把当前窗口 workspace 目录（本地 + 已连接远程）全量同步给 main 的
+    // device manager；workspaceKey 统一为 identity?.trim() || path（AGENTS Workspace Identity）。
+    const relayEntries = tabs.filter(isWorkspaceTab).map((tab) => {
+      const identity = tab.workspaceIdentity?.trim();
+      return {
+        workspaceKey: identity || tab.workspacePath,
+        workspacePath: tab.workspacePath,
+        ...(identity ? { workspaceIdentity: identity } : {}),
+        ...(tab.remoteSessionId ? { remoteSessionId: tab.remoteSessionId } : {}),
+        // 远程 workspace 需 remoteSessionId + identity 双全才可 bridge（Host scope 契约）。
+        bridgeable: tab.remoteSessionId ? Boolean(identity) : true,
+      };
+    });
+    platform.relayV3SyncWorkspaces?.(relayEntries);
   }, [hasCompletedFullTabRestore, isDesktop, platform, tabs]);
 
 

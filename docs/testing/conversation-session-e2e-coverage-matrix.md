@@ -465,7 +465,7 @@ Header 按钮。文件搜索候选必须先从 fixture 所属项目建立草稿�
 | MP03–MP04、MP09      | 五类真实业务状态、本地/代表性远程工作区、多窗口     | planned | 尚未执行 |
 | MP07–MP08、MP10–MP12 | 上游错误、身份/代次竞态、跨 Pod、未知协议和点击校验 | planned | 尚未执行 |
 
-`packages/desktop/test/e2e/conversation-session/manual-review/pending/mobile-event-push.test.ts` 验证 HTTP 资格查询不创建 WS、开启远控建立连接、关闭后释放连接。HTTP 上报、回执及失败不重发原由定向单测覆盖，App 业务单测已退役，待 E2E 补充。删除 WebSocket 通知遗留并与远控连接解耦后，HTTP 协议连接子集通过 Electron 回归：`desktop-e2e-20261021130936133-p92242-29b61df14b9503b6`，1/1 通过；真实手机送达、点击及远程工作区全组合仍 planned，未转正或加入 CI。
+MP 桌面侧的 pending 用例 `mobile-event-push.test.ts` 已随 Relay V2 客户端链路移除而删除（2026-11；V3 远控链路见 [Relay V3 设计](../relay-server/relay-v3-design.md)）；上表远控连接相关行待 V3 链路重新验证后回填。
 
 ## 项目与任务草稿生命周期（PD，2026-10-16）
 

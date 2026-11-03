@@ -23,6 +23,7 @@ import {
   Keyboard,
   FileSearch,
   RefreshCw,
+  Smartphone,
   User,
 } from "lucide-react";
 import { isSettingsSectionEnabled, type SettingsSectionId } from "@/lib/settingsNavigation.js";
@@ -164,6 +165,14 @@ const BASE_SETTINGS_SECTIONS: SettingsSectionDefinition[] = [
     titleId: "settings.computerUse.title",
     groupId: "basics",
   },
+  // Relay V3 远程控制（手机/其他桌面控制本机）：设备侧入口，仅桌面显示
+  //（docs/relay-server/relay-v3-design.md P1）。
+  {
+    id: "remoteControl",
+    icon: Smartphone,
+    titleId: "settings.remoteControl.title",
+    groupId: "basics",
+  },
   // 键盘快捷键紧跟「电脑控制」：同属本机操控/效率配置，收纳在基础设置尾部。
   {
     id: "shortcuts",
@@ -214,9 +223,13 @@ const BASE_SETTINGS_SECTIONS: SettingsSectionDefinition[] = [
 ];
 
 // 兼容既有只读消费者：默认配置代表不带桌面平台能力的 Web 视图；
-// macOS/Windows/Linux 必须继续通过 createSettingsPageConfig 动态加入 Computer Use。
+// macOS/Windows/Linux 必须继续通过 createSettingsPageConfig 动态加入 Computer Use
+// 与 Relay V3 远程控制（device 侧仅桌面存在）。
 export const SETTINGS_SECTIONS = BASE_SETTINGS_SECTIONS.filter(
-  (section) => section.id !== "computerUse" && isSettingsSectionEnabled(section.id),
+  (section) =>
+    section.id !== "computerUse" &&
+    section.id !== "remoteControl" &&
+    isSettingsSectionEnabled(section.id),
 );
 
 export interface SettingsPageConfigOptions {
@@ -233,6 +246,8 @@ export function createSettingsPageConfig({
   const showComputerUse = isDesktop || isMacDesktop || isWindowsDesktop;
   const settingsSections = BASE_SETTINGS_SECTIONS.filter((section) => {
     if (section.id === "computerUse" && !showComputerUse) return false;
+    // Relay V3 远控（device）依赖桌面 main 的 IPC 面；Web 视图不显示。
+    if (section.id === "remoteControl" && !isDesktop) return false;
     return isSettingsSectionEnabled(section.id);
   });
   const settingsSectionGroups = BASE_SETTINGS_SECTION_GROUPS.map((group) => ({

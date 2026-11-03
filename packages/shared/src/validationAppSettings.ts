@@ -93,6 +93,25 @@ const skippedElectronUpdateVersionsSchema = z
   .partialRecord(electronReleaseChannelSchema, nonEmptyStringSchema)
   .default({});
 
+const relayV3HttpOriginUrl = z
+  .string()
+  .trim()
+  .regex(/^https?:\/\/[^\s/]+$/iu, "relay origin must be an http(s) origin without path");
+
+/** Relay V3 远控设置：非敏感配置与启用意图；凭据与私钥不进设置（所有权见设计文档 §2）。 */
+const relayV3SettingsSchema = z
+  .object({
+    endpointOrigin: relayV3HttpOriginUrl.optional(),
+    staticPageBaseUrl: z.string().trim().min(1).optional(),
+    lastEnabled: z
+      .object({
+        workspacePath: z.string().min(1),
+        workspaceIdentity: z.string().optional(),
+      })
+      .optional(),
+  })
+  .strict();
+
 const remoteWorkspaceTargetSchema = z.discriminatedUnion("kind", [
   z.object({
     kind: z.literal("ssh"),
@@ -589,6 +608,7 @@ const appSettingsObjectSchema = z.object({
   skippedElectronUpdateVersions: skippedElectronUpdateVersionsSchema,
   settingsSyncFirstRunPromptHandled: z.boolean().optional(),
   zcodeEndpointOrigin: zcodeEndpointOriginSchema.optional(),
+  relayV3: relayV3SettingsSchema.optional(),
 });
 
 export const appSettingsSchema = z.preprocess(
@@ -700,4 +720,5 @@ export const appSettingsPatchSchema = z.object({
     .optional(),
   settingsSyncFirstRunPromptHandled: z.boolean().optional(),
   zcodeEndpointOrigin: zcodeEndpointOriginSchema.optional(),
+  relayV3: relayV3SettingsSchema.optional(),
 });

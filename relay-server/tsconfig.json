@@ -1,0 +1,12 @@
+{
+  "extends": "../tsconfig.base.json",
+  "compilerOptions": {
+    "outDir": "./dist",
+    "rootDir": "./src",
+    "types": ["node"],
+    "strict": true
+  },
+  "include": ["src/**/*.ts"],
+  // 消费 @zcode/shared 的声明产物，避免把 shared 源码拖进本工程重复检查。
+  "references": [{ "path": "../packages/shared" }]
+}

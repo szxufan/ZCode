@@ -167,6 +167,17 @@ export async function runServerCli(
       return 0;
     }
     switch (command) {
+      case "login": {
+        // R4：headless 设备授权接入（docs/relay-server/relay-v3-design.md §5.5）。
+        const relayIndex = parsed.argv.indexOf("--relay");
+        const relayOrigin =
+          relayIndex >= 0 ? parsed.argv[relayIndex + 1] : process.env.ZCODE_RELAY_V3_ORIGIN;
+        if (!relayOrigin) {
+          throw new Error("login requires --relay <origin> or ZCODE_RELAY_V3_ORIGIN");
+        }
+        const { runRelayV3LoginCommand } = await import("./relay-v3/loginCommand.js");
+        return await runRelayV3LoginCommand(io, json, layout.serverRoot, relayOrigin);
+      }
       case "serve":
         return await runServe(parsed.argv.slice(1), io, json, layout, runtimeOptions);
       case "stop":
