@@ -821,24 +821,28 @@ async function main() {
   const { os, arch, linuxTargets, skipPrepare, skipBuild, dryRun } = parseArgs(
     process.argv.slice(2),
   );
+  // Bug 原因：此前把 target 名作为裸位置参数追加（拼出 --linux --x64 deb），
+  // electron-builder 26 CLI 对被 --x64 隔开的裸位置参数报 "Unknown argument: deb"，
+  // linux-x64 发版 job 首次执行即失败（v3.22.0 run 41858150307）。
+  // 修复机制：target 以官方赋值形式 --linux=<target1>,<target2> 传入，不再追加位置参数。
+  const osFlag = linuxTargets
+    ? `${osBuilderFlagMap[os]}=${linuxTargets.join(",")}`
+    : osBuilderFlagMap[os];
   const buildArgs = [
     "exec",
     "electron-builder",
     "--config",
     "electron-builder.config.js",
-    osBuilderFlagMap[os],
+    osFlag,
     archBuilderFlagMap[arch],
   ];
-  // electron-builder 的 CLI 允许在 --linux 后追加 target 名，覆盖配置文件的 target 列表。
+  // electron-builder 支持以 --linux=<targets> 覆盖配置文件的 target 列表。
   // GitHub hosted ubuntu 上 rpm/pacman 目标阶段会静默退出（fpm 工具链问题），
   // 发版流水线据此只构建 AppImage+deb，内部 runner 仍走全量 target。
 
   console.log(
     `[bundle] target=${os}/${arch}${linuxTargets ? ` targets=${linuxTargets.join(",")}` : ""}`,
   );
-  if (linuxTargets) {
-    buildArgs.push(...linuxTargets);
-  }
   console.log(`[bundle] skipPrepare=${skipPrepare} skipBuild=${skipBuild}`);
 
   const { buildEnv, electronBuilderEnv } = createBundleProcessEnvs({

@@ -31,9 +31,19 @@ async function resolvePushBase(root, head, remote) {
 }
 
 async function firstPushBase(root, head) {
-  // 首次推送没有 remote SHA；只使用已确认的集成分支，缺失时严格报错，不猜测其他分支。
-  const staging = await commit(root, "origin/staging");
-  return (await git(root, ["merge-base", staging, head])).toString().trim();
+  // 首次推送（新 ref，如全新 tag）没有 remote SHA；按已确认的集成分支链取第一个
+  // 存在者（与 scripts/architecture/default-branch.mjs 同链）。本 fork 无 origin/staging，
+  // 集成分支是 upstream/main——硬编码单一 staging 会让每次 tag 推送都严格报错。
+  for (const candidate of ["origin/staging", "origin/main", "upstream/main"]) {
+    try {
+      const base = await commit(root, candidate);
+      return (await git(root, ["merge-base", base, head])).toString().trim();
+    } catch (error) {
+      if (!/无法解析基线或提交/u.test(error.message)) throw error;
+      // 候选分支不存在：尝试下一个。
+    }
+  }
+  throw new Error("无法解析首次推送基线：origin/staging / origin/main / upstream/main 均不存在");
 }
 
 /** 只解析比较基线；改动文件与关联测试全部由 Vitest 官方选择。 */
