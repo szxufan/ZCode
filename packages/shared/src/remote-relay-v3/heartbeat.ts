@@ -46,26 +46,38 @@ export function getRelayV3HeartbeatDelayMs(
 export class RelayV3Heartbeat {
   private heartbeat?: ReturnType<typeof setTimeout>;
   private watchdog?: ReturnType<typeof setTimeout>;
+  private readonly scheduleTimeout: (callback: () => void, ms: number) => ReturnType<typeof setTimeout>;
+  private readonly cancelTimeout: (handle: ReturnType<typeof setTimeout>) => void;
   constructor(
     private readonly query: () => void,
     private readonly expired: () => void,
-    private readonly timing: { intervalMs?: number; jitterMs?: number; ackTimeoutMs?: number } = {},
-  ) {}
+    private readonly timing: {
+      intervalMs?: number;
+      jitterMs?: number;
+      ackTimeoutMs?: number;
+      /** 计时器注入（transport-core 统一传入手动时钟；默认全局 setTimeout）。 */
+      setTimeout?: (callback: () => void, ms: number) => ReturnType<typeof setTimeout>;
+      clearTimeout?: (handle: ReturnType<typeof setTimeout>) => void;
+    } = {},
+  ) {
+    this.scheduleTimeout = timing.setTimeout ?? ((callback, ms) => setTimeout(callback, ms));
+    this.cancelTimeout = timing.clearTimeout ?? ((handle) => clearTimeout(handle));
+  }
   acknowledged(): void {
-    if (this.watchdog) clearTimeout(this.watchdog);
-    this.watchdog = setTimeout(
+    if (this.watchdog) this.cancelTimeout(this.watchdog);
+    this.watchdog = this.scheduleTimeout(
       this.expired,
       this.timing.ackTimeoutMs ?? RELAY_V3_HEARTBEAT_ACK_TIMEOUT_MS,
     );
     if (!this.heartbeat) this.schedule();
   }
   stop(): void {
-    clearTimeout(this.heartbeat);
-    clearTimeout(this.watchdog);
+    if (this.heartbeat) this.cancelTimeout(this.heartbeat);
+    if (this.watchdog) this.cancelTimeout(this.watchdog);
     this.heartbeat = this.watchdog = undefined;
   }
   private schedule(): void {
-    this.heartbeat = setTimeout(
+    this.heartbeat = this.scheduleTimeout(
       () => {
         this.heartbeat = undefined;
         this.query();

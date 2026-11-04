@@ -88,6 +88,7 @@ import { AgentPromptSection } from "@/settings/AgentPromptSection.js";
 import { PersonalizationSection } from "@/settings/PersonalizationSection.js";
 import { BrowserSettingsSection } from "@/settings/BrowserSettingsSection.js";
 import { ComputerUseSection } from "@/settings/ComputerUseSection.js";
+import { RemoteControlSettingsSection } from "@/remote-relay-v3/RemoteControlSettingsSection.js";
 import { ShortcutSettingsSection } from "@/settings/ShortcutSettingsSection.js";
 import { MigrationSection } from "@/settings/MigrationSection.js";
 import { SETTINGS_FRAME_CONTENT_CLASSNAME } from "@/settings/SettingsPageParts.js";
@@ -2298,6 +2299,11 @@ export function SettingsPage({
                               remoteSessionId={activeWorkspaceTab?.remoteSessionId}
                               remoteTarget={activeWorkspaceTab?.remoteTarget}
                               localWorkspacePath={activeWorkspaceTab?.localWorkspacePath}
+                            />
+                          ) : activeSection === "remoteControl" ? (
+                            <RemoteControlSettingsSection
+                              workspacePath={activeWorkspacePath}
+                              workspaceIdentity={activeWorkspaceIdentity}
                             />
                           ) : null}
                         </div>

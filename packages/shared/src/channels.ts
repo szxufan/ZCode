@@ -249,6 +249,36 @@ export const PlatformChannels = {
   SyncActiveTaskSession: "zcode:sync-active-task-session",
   /** Renderer → Main：同步 main 进程需即时感知的应用设置 */
   SyncAppSettings: "zcode:sync-app-settings",
+  /** Relay V3 远控（device）：Renderer → Main 同步当前窗口 workspace 目录（全量快照） */
+  RelayV3SyncWorkspaces: "zcode:relay-v3-sync-workspaces",
+  /** Relay V3 远控（device）：Renderer → Main 查询远控状态投影 */
+  RelayV3GetStatus: "zcode:relay-v3-get-status",
+  /** Relay V3 远控（device）：Main → Renderer 状态变化推送 */
+  RelayV3StatusChanged: "zcode:relay-v3-status-changed",
+  /** Relay V3 远控（device）：Renderer → Main 发送验证码 */
+  RelayV3AccountSendCode: "zcode:relay-v3-account-send-code",
+  /** Relay V3 远控（device）：Renderer → Main 手机号+验证码登录 */
+  RelayV3AccountLogin: "zcode:relay-v3-account-login",
+  /** Relay V3 远控（device）：Renderer → Main 登出 relay 账号 */
+  RelayV3AccountLogout: "zcode:relay-v3-account-logout",
+  /** Relay V3 远控（device）：Renderer → Main 请求启动授权（一次性票据） */
+  RelayV3AuthorizeStart: "zcode:relay-v3-authorize-start",
+  /** Relay V3 远控（device）：Renderer → Main 凭票据启动远控 */
+  RelayV3StartAuthorized: "zcode:relay-v3-start-authorized",
+  /** Relay V3 远控（device）：Renderer → Main 停止远控并清除启用意图 */
+  RelayV3Stop: "zcode:relay-v3-stop",
+  /** Relay V3 控制端（P4）：Renderer → Main 列同账号可控制设备 */
+  RelayV3TerminalList: "zcode:relay-v3-terminal-list",
+  /** Relay V3 控制端：Renderer → Main 连接目标设备（terminal 角色） */
+  RelayV3TerminalConnect: "zcode:relay-v3-terminal-connect",
+  /** Relay V3 控制端：Renderer → Main 断开控制连接 */
+  RelayV3TerminalDisconnect: "zcode:relay-v3-terminal-disconnect",
+  /** Relay V3 控制端：Renderer → Main 打开目标 workspace bridge */
+  RelayV3TerminalOpenWorkspace: "zcode:relay-v3-terminal-open-workspace",
+  /** Relay V3 控制端：Main → Renderer 控制状态变化 */
+  RelayV3TerminalStatusChanged: "zcode:relay-v3-terminal-status-changed",
+  /** Relay V3 设备授权（R4 §5.5）：Renderer → Main 按 user_code 批准 headless 设备 */
+  RelayV3DeviceAuthApprove: "zcode:relay-v3-device-auth-approve",
   /** Renderer → Main：快捷键设置页录制态开关；true = main 暂时摘除可配置菜单 accelerator */
   SetShortcutRecordingActive: "zcode:set-shortcut-recording-active",
   /** Main → Renderer：聚焦到指定 workspace 路径的 tab */
@@ -559,6 +589,8 @@ export const InternalChannels = {
   TaskNotificationSound: "zcode:task-notification-sound",
   /** main → 宿主 renderer：插件 UI 沙箱的 MessagePort 组（port2[]），payload { sandboxId, initId, names } */
   PluginSandboxPorts: "zcode:plugin-sandbox-ports",
+  /** main → 控制端 renderer：Relay V3 控制连接的 workspace bridge MessagePort（P4） */
+  RelayV3TerminalServicePort: "zcode:relay-v3-terminal-service-port",
 } as const;
 
 /** @deprecated `/ws` 已忽略该头；保留常量仅供旧客户端兼容。 */
@@ -853,6 +885,75 @@ export interface PlatformChannelMap {
   };
   [PlatformChannels.SyncWindowUnreadCount]: {
     request: number;
+    response: void;
+  };
+  [PlatformChannels.RelayV3TerminalList]: {
+    request: void;
+    response:
+      | { ok: true; devices: import("./remote-relay-v3/contract.js").RelayV3Device[] }
+      | { ok: false; message: string };
+  };
+  [PlatformChannels.RelayV3TerminalConnect]: {
+    request: { deviceSid: string };
+    response: { ok: boolean; message?: string };
+  };
+  [PlatformChannels.RelayV3TerminalDisconnect]: {
+    request: void;
+    response: void;
+  };
+  [PlatformChannels.RelayV3TerminalOpenWorkspace]: {
+    request: { workspaceKey: string };
+    response: {
+      ok: boolean;
+      bridgeSessionId?: string;
+      bridgeGeneration?: number;
+      message?: string;
+    };
+  };
+  [PlatformChannels.RelayV3TerminalStatusChanged]: {
+    request: import("./remote-relay-v3/desktop.js").RelayV3TerminalStatus;
+    response: void;
+  };
+  [PlatformChannels.RelayV3DeviceAuthApprove]: {
+    request: { userCode: string };
+    response:
+      | { ok: true; fingerprint: string; deviceSid: string }
+      | { ok: false; message?: string; businessCode?: number };
+  };
+  [PlatformChannels.RelayV3SyncWorkspaces]: {
+    request: import("./remote-relay-v3/desktop.js").RelayV3WorkspaceSyncPayload;
+    response: void;
+  };
+  [PlatformChannels.RelayV3GetStatus]: {
+    request: void;
+    response: import("./remote-relay-v3/desktop.js").RelayV3DesktopStatus;
+  };
+  [PlatformChannels.RelayV3StatusChanged]: {
+    request: import("./remote-relay-v3/desktop.js").RelayV3DesktopStatus;
+    response: void;
+  };
+  [PlatformChannels.RelayV3AccountSendCode]: {
+    request: { phone: string };
+    response: import("./remote-relay-v3/desktop.js").RelayV3AccountActionResult;
+  };
+  [PlatformChannels.RelayV3AccountLogin]: {
+    request: { phone: string; code: string };
+    response: import("./remote-relay-v3/desktop.js").RelayV3AccountActionResult;
+  };
+  [PlatformChannels.RelayV3AccountLogout]: {
+    request: void;
+    response: import("./remote-relay-v3/desktop.js").RelayV3AccountActionResult;
+  };
+  [PlatformChannels.RelayV3AuthorizeStart]: {
+    request: { workspacePath: string; workspaceIdentity?: string };
+    response: import("./remote-relay-v3/desktop.js").RelayV3StartTicketResult;
+  };
+  [PlatformChannels.RelayV3StartAuthorized]: {
+    request: { ticket: string };
+    response: { accepted: boolean; reason?: string };
+  };
+  [PlatformChannels.RelayV3Stop]: {
+    request: void;
     response: void;
   };
   [PlatformChannels.SyncAppSettings]: {

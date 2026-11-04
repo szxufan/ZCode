@@ -75,6 +75,11 @@ modules:
       - packages/shared/src/remote-relay-v3/contract.ts
       - packages/shared/src/remote-relay-v3/crypto.ts
       - packages/shared/src/remote-relay-v3/heartbeat.ts
+      - packages/shared/src/remote-relay-v3/payload.ts
+      - packages/shared/src/remote-relay-v3/rpc-frame.ts
+      - packages/shared/src/remote-relay-v3/transport-core.ts
+      - packages/shared/src/remote-relay-v3/http-client.ts
+      - packages/shared/src/remote-relay-v3/qr.ts
     layers: {app: "."}
     owner: remote-control
   - id: relay-server
@@ -87,6 +92,44 @@ modules:
       - relay-server/src/config.ts
       - relay-server/src/admin/operations.ts
     layers: {app: "src"}
+    owner: remote-control
+  # Relay V3 桌面被控端（P1）：main 侧账号/身份/transport/manager 与 IPC 面。
+  - id: desktop-remote-relay-v3
+    roots: [packages/desktop/src/main/remote-relay-v3]
+    managed: true
+    requires: [shared, remote-relay-v3, services]
+    publicEntrypoints:
+      - packages/desktop/src/main/remote-relay-v3/index.ts
+    layers: {app: "."}
+    owner: remote-control
+  # Relay V3 远控设置节（P1）：relay 账号登录/启停/二维码的 renderer UI。
+  - id: ui-remote-relay-v3
+    roots: [packages/ui/src/remote-relay-v3]
+    managed: true
+    requires: [shared, remote-relay-v3, ui]
+    publicEntrypoints:
+      - packages/ui/src/remote-relay-v3/RemoteControlSettingsSection.tsx
+    layers: {app: "."}
+    owner: remote-control
+  # Relay V3 手机页面 /remote/v4（P2）：terminal transport + 账号 + 设备目录 + 页面。
+  - id: web-remote-relay-v3
+    roots: [packages/web/src, packages/web/vite.config.ts]
+    managed: true
+    requires: [shared, remote-relay-v3, rpc]
+    publicEntrypoints:
+      - packages/web/src/main.tsx
+      - packages/web/src/app.tsx
+    layers: {app: "."}
+    owner: remote-control
+  # Relay V3 daemon 设备接入（R4）：zcode server login + daemon device transport。
+  - id: server-cli-relay-v3
+    roots: [packages/zcode-server-cli/src/relay-v3]
+    managed: true
+    requires: [shared, remote-relay-v3]
+    publicEntrypoints:
+      - packages/zcode-server-cli/src/relay-v3/deviceAuth.ts
+      - packages/zcode-server-cli/src/relay-v3/deviceTransport.ts
+    layers: {app: "."}
     owner: remote-control
   # sqlite-migrations：由 architecture:adopt 登记
   - id: conversation-telemetry-engine

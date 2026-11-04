@@ -102,6 +102,45 @@ export function createDesktopPlatform(options: {
     syncWindowUnreadCount: (count) => window.zcode.syncWindowUnreadCount(count),
     syncActiveTaskSession: (sessionId) => window.zcode.syncActiveTaskSession(sessionId),
     syncAppSettings: (patch) => window.zcode.syncAppSettings?.(patch),
+    // Relay V3 远控（device）：桥缺失（旧 preload）时按能力缺席处理，UI 不暴露入口。
+    relayV3SyncWorkspaces: (workspaces) => window.zcode.relayV3SyncWorkspaces?.(workspaces),
+    relayV3GetStatus: () =>
+      window.zcode.relayV3GetStatus?.() ??
+      Promise.reject(new Error("relay v3 bridge unavailable")),
+    onRelayV3StatusChanged: (handler) =>
+      window.zcode.onRelayV3StatusChanged?.(handler) ?? (() => {}),
+    relayV3SendSmsCode: (phone) =>
+      window.zcode.relayV3SendSmsCode?.(phone) ??
+      Promise.resolve({ ok: false, message: "relay v3 bridge unavailable" }),
+    relayV3Login: (phone, code) =>
+      window.zcode.relayV3Login?.(phone, code) ??
+      Promise.resolve({ ok: false, message: "relay v3 bridge unavailable" }),
+    relayV3Logout: () =>
+      window.zcode.relayV3Logout?.() ??
+      Promise.resolve({ ok: false, message: "relay v3 bridge unavailable" }),
+    relayV3AuthorizeStart: (target) =>
+      window.zcode.relayV3AuthorizeStart?.(target) ??
+      Promise.reject(new Error("relay v3 bridge unavailable")),
+    relayV3StartAuthorized: (ticket) =>
+      window.zcode.relayV3StartAuthorized?.(ticket) ??
+      Promise.resolve({ accepted: false, reason: "relay v3 bridge unavailable" }),
+    relayV3Stop: () => window.zcode.relayV3Stop?.() ?? Promise.resolve(),
+    // Relay V3 控制端（P4）：桥缺失时按能力缺席处理。
+    relayV3TerminalList: () =>
+      window.zcode.relayV3TerminalList?.() ?? Promise.resolve({ ok: false, message: "unavailable" }),
+    relayV3TerminalConnect: (deviceSid) =>
+      window.zcode.relayV3TerminalConnect?.(deviceSid) ??
+      Promise.resolve({ ok: false, message: "unavailable" }),
+    relayV3TerminalDisconnect: () =>
+      window.zcode.relayV3TerminalDisconnect?.() ?? Promise.resolve(),
+    relayV3TerminalOpenWorkspace: (workspaceKey) =>
+      window.zcode.relayV3TerminalOpenWorkspace?.(workspaceKey) ??
+      Promise.resolve({ ok: false, message: "unavailable" }),
+    onRelayV3TerminalStatusChanged: (handler) =>
+      window.zcode.onRelayV3TerminalStatusChanged?.(handler) ?? (() => {}),
+    relayV3DeviceAuthApprove: (userCode) =>
+      window.zcode.relayV3DeviceAuthApprove?.(userCode) ??
+      Promise.resolve({ ok: false as const, message: "unavailable" }),
     // 桥缺失（旧 preload 升级窗口）时按 supported 兜底，与 Windows 现状一致，设置开关可用。
     getCloseToTrayCapability: () =>
       window.zcode.getCloseToTrayCapability?.() ??

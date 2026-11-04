@@ -434,4 +434,19 @@ export interface AppSettings {
   settingsSyncFirstRunPromptHandled?: boolean;
   /** 设置页里的临时 endpoint override；正式/测试默认 base url 由 ZCODE_BASE_URL env 管理。 */
   zcodeEndpointOrigin?: string;
+  /**
+   * Relay V3 自托管远控（docs/relay-server/relay-v3-design.md P1）。
+   * 只存非敏感配置与启用意图；X25519 私钥与账号凭据仅落 main 进程用户数据目录，不进设置。
+   */
+  relayV3?: {
+    /** relay 实例 origin，如 `https://relay.example.com`（无尾斜杠）。 */
+    endpointOrigin?: string;
+    /** 二维码 base URL；缺省用 endpointOrigin 根路径（relay 静态页，§5.4）。 */
+    staticPageBaseUrl?: string;
+    /** 上次启用意图（一次启动成功后记录；用户明确停止后清除）。remoteSessionId 不跨重启持久化。 */
+    lastEnabled?: {
+      workspacePath: string;
+      workspaceIdentity?: string;
+    };
+  };
 }

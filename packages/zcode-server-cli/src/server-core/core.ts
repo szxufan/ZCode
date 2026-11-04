@@ -16,6 +16,7 @@ import { resolveCoreServerId } from "./serverIdentity.js";
 import { createTaskActivityTracker } from "./taskActivityTracker.js";
 import { CORE_HEARTBEAT_INTERVAL_MS } from "../contracts.js";
 import { resolveServerLayout } from "../runtime/paths.js";
+import { startRelayV3DaemonTransportIfConfigured } from "../relay-v3/deviceTransport.js";
 
 declare const __ZCODE_BUILTIN_PROVIDER_CONFIG_JSON__: string | undefined;
 
@@ -94,6 +95,18 @@ export async function runServerCore(generation: number): Promise<void> {
   });
   let shutdownStarted = false;
   let lastRunningTaskCount = taskActivityTracker.readRunningTaskCount();
+  // R4：Relay V3 daemon 设备接入（docs/relay-server/relay-v3-design.md §5.5/§9 R4）。
+  // 凭据由 `zcode server login` 落盘（server root 0600）；ZCODE_RELAY_V3_ORIGIN 指定
+  // relay 实例。未登录/未配置时 no-op；任务事件经 sendDeviceEvent 推送（数据面 §6）。
+  const relayV3Origin = process.env.ZCODE_RELAY_V3_ORIGIN?.trim();
+  let relayV3Transport: Awaited<ReturnType<typeof startRelayV3DaemonTransportIfConfigured>> = null;
+  if (relayV3Origin) {
+    relayV3Transport = startRelayV3DaemonTransportIfConfigured({
+      relayOrigin: relayV3Origin,
+      serverRoot: layout.serverRoot,
+      version: ZCODE_VERSION,
+    });
+  }
   const activitySubscription = taskActivityTracker.onDidChangeRunningTaskCount(
     (runningTaskCount) => {
       lastRunningTaskCount = runningTaskCount;
@@ -141,6 +154,7 @@ export async function runServerCore(generation: number): Promise<void> {
     shutdownStarted = true;
     disposeParentDisconnectHandler();
     clearInterval(heartbeat);
+    relayV3Transport?.stop();
     activitySubscription.dispose();
     taskActivityTracker.dispose();
     await http.close().catch(() => undefined);

@@ -1,6 +1,6 @@
 # Relay V3 自托管设计与架构
 
-状态：P0 已实现（`relay-server/` 全量 + `packages/shared/src/remote-relay-v3/` 协议/加密模块 + `fake-relay-v3` fixture 与双跑一致性矩阵）；P1 起的客户端里程碑未实现。本文是 Relay V3 的产品规则、协议契约、状态所有权与验收边界的 spec 源；实现后随行为变更同步更新。已落地的两处契约澄清：§5.2 auth_init 两角色均携带 `device_sid`；relay 在 `pair_status_ack` 中向 device 透传 `terminal_public_key`。
+状态：P0 已实现（`relay-server/` 全量 + `packages/shared/src/remote-relay-v3/` 协议/加密模块 + `fake-relay-v3` fixture 与双跑一致性矩阵）；P1 已实现（桌面 device：`packages/desktop/src/main/remote-relay-v3/` 登录/身份/transport/manager + IPC 面、`packages/ui/src/remote-relay-v3/` 设置节、`AppSettings.relayV3` 字段、fake-relay 集成测试 `packages/desktop/test/relayV3DeviceManager.test.ts`）；P2 已实现（`packages/web` 新工程：`/remote/v4` 登录/设备列表/连接/会话页 + terminal 一次性密钥 transport + ChannelClient over E2E rpc-frame，产物交 `RELAY_STATIC_DIR` 托管，集成测试 `packages/web/test/terminalTransport.test.ts`；完整 v4 会话 UI 栈（SessionPane/Root）接入为后续增强，数据通路已完整）；P4 已实现（桌面控制端：`packages/desktop/src/main/remote-relay-v3/relayV3TerminalManager.ts` + IPC/端口投递 + `packages/ui/src/remote-relay-v3/useRelayV3Terminal.ts` 设备切换器，集成测试 `packages/desktop/test/relayV3TerminalManager.test.ts`；控制端任务首页/会话页宽屏布局复用 P2 同级数据通路，完整 Root 接入为后续增强）；R4 已实现（设备授权接入 + daemon transport + 分块帧数据面，spec 见 [relay-v3-data-plane.md](./relay-v3-data-plane.md)；R3 外壳退役随存量 daemon 升级推进，见 §9 R4）。本文是 Relay V3 的产品规则、协议契约、状态所有权与验收边界的 spec 源；实现后随行为变更同步更新。已落地的两处契约澄清：§5.2 auth_init 两角色均携带 `device_sid`；relay 在 `pair_status_ack` 中向 device 透传 `terminal_public_key`。
 
 V3 是全新协议，**不兼容现有闭源 Relay V2**，不与 V2 共存或灰度迁移：客户端（桌面 main、手机 Web、Android 壳）一次性切换到 V3，V2 transport 与其 OAuth 登录链路在客户端切换完成后移除。本文不承担 V2 兼容义务，契约设计只以 V3 自身需求为准；V2 文档（[Relay V2 共享契约与配对](../web-remote-control/relay-v2-pairing.md)）仅作语义参考。
 
@@ -360,6 +360,10 @@ sequenceDiagram
 - 验收：§6.5 全部场景；控制端与被控端 `desktop-continuous` / replayable 双语义回归；架构检查确认控制端不新增跨域导入（控制端 main 复用现有 attachment/bridge 路径，不经 renderer 直连）。
 
 ### R4 source-server 即设备（R3 外壳退役）
+
+R4 已实现（2026-11-04）：`zcode server login`（`packages/zcode-server-cli/src/relay-v3/`，request→批准→poll 交付凭据，凭据/私钥落 server root 0600）；daemon device transport（`deviceTransport.ts`，serve 启动钩子 `ZCODE_RELAY_V3_ORIGIN` + 凭据存在时拉起，任务事件 `device-event` 推送面）；数据面分块帧（`packages/shared/src/remote-relay-v3/chunk-frame.ts`，spec 见 [relay-v3-data-plane.md](./relay-v3-data-plane.md)：512 KiB 帧、双层 CRC、信用窗口、断点续传）；桌面批准入口（设置节「批准无屏设备」按 user_code 批准并回显公钥指纹）。测试：`packages/zcode-server-cli/test/relayV3DeviceAuth.test.ts`（批准/过期/无凭据不启动）+ `packages/shared/test/remote-relay-v3/chunk-frame.test.ts`。
+
+**R3 外壳退役边界（未完成，随 daemon 版本 rollout 推进）**：SSH/WSL/Docker Transport Adapter 与 `connectServerRemote` 隧道主链当前保留——存量 Source 尚未升级到具备设备授权能力的 daemon，按本节「同一 Source 不同时暴露两条接入路径」的约束，退役在存量 daemon 升级后一次性执行（移除 `ssh2 forwardOut`/stdio 桥/ingress token/capability ticket/compatibility manifest 协商）。局域网直连模式（数据面 spec §5）同为后续增强。
 
 V3 交付后的目标架构：远端 source-server daemon 经 §5.5 设备授权注册为与桌面同权的一等 relay 设备，桌面与手机均以控制端身份 attach 它。届时 R3 的部署/传输外壳整体退役。
 

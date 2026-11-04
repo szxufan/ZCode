@@ -88,6 +88,12 @@ import {
   InternalChannels,
 } from "@zcode/shared";
 import { logger, flushLocalTtftLogs } from "./logger.js";
+import {
+  RelayV3DeviceManager,
+  RelayV3TerminalManager,
+  registerRelayV3DeviceIpc,
+  registerRelayV3TerminalIpc,
+} from "./remote-relay-v3/index.js";
 import { markMainLaunchAppReady } from "./desktopLaunchMarks.js";
 import { createCuaPipFocusRouter, resolveCuaPipWindowKey } from "./cuaPipFocusRouter.js";
 import {
@@ -695,6 +701,97 @@ const UPDATE_STATUS_WINDOW_PROGRESS_HEIGHT = 224;
 const UPDATE_STATUS_WINDOW_READY_HEIGHT = UPDATE_STATUS_WINDOW_PROGRESS_HEIGHT - 54;
 const UPDATE_STATUS_WINDOW_TRAFFIC_LIGHT_POSITION = { x: 10, y: 10 } as const;
 const mainSettingService = createSettingService();
+// Relay V3 自托管远控（device 侧，docs/relay-server/relay-v3-design.md P1）：
+// main 为设备身份、relay 连接与 bridge attachment 的唯一 owner；renderer 只经 IPC 交互。
+// relayV3 配置走同步缓存（启动读取 + 设置通道刷新），凭据与私钥只落用户数据目录。
+let relayV3SettingsCache: import("@zcode/shared").AppSettings["relayV3"] | undefined;
+const relayV3DeviceManager = new RelayV3DeviceManager({
+  logger,
+  appVersion: ZCODE_VERSION || app.getVersion(),
+  getRelayConfig: () => ({
+    endpointOrigin: relayV3SettingsCache?.endpointOrigin ?? null,
+    staticPageBaseUrl: relayV3SettingsCache?.staticPageBaseUrl ?? null,
+  }),
+  settings: {
+    read: () => mainSettingService.get(),
+    patch: async (patch) => {
+      await mainSettingService.update(patch);
+      relayV3SettingsCache = (await mainSettingService.get()).relayV3;
+    },
+  },
+  hostname: hostname(),
+  platform: process.platform,
+  resolveDeviceMid: () => ensureDesktopDeviceMidSync(),
+  attachHostPort: ({ windowId, attachmentId, terminalOwnerId, scope, port }) => {
+    const host = windowHostProcessMap.get(windowId);
+    if (!host) {
+      throw new Error(`未找到窗口 Local Host，windowId=${windowId}`);
+    }
+    host.postMessage(
+      {
+        type: HostMessageTypes.AttachServicePort,
+        requestId: randomUUID(),
+        attachmentId,
+        clientMode: "web-remote-replayable",
+        terminalOwnerId,
+        scope,
+      },
+      [port as Electron.MessagePortMain],
+    );
+  },
+  detachHostPort: (attachmentId) => {
+    // 归属窗口可能已关；遍历存活 Host 幂等 detach（Host 侧对未知 attachment 忽略）。
+    for (const host of windowHostProcessMap.values()) {
+      host.postMessage({ type: HostMessageTypes.DetachServicePort, attachmentId });
+    }
+  },
+  broadcastStatus: (status) => {
+    for (const win of getApplicationWindowsExcludingCuaIndicator()) {
+      if (!win.isDestroyed()) {
+        win.webContents.send(PlatformChannels.RelayV3StatusChanged, status);
+      }
+    }
+  },
+});
+registerRelayV3DeviceIpc(relayV3DeviceManager);
+// Relay V3 控制端（P4，§6）：与被控端共用 relay 账号；bridge port 终结在控制端
+// renderer（等价手机浏览器），不启动本地 Host/Agent。
+const relayV3TerminalManager = new RelayV3TerminalManager({
+  logger,
+  getRelayConfig: () => ({
+    endpointOrigin: relayV3SettingsCache?.endpointOrigin ?? null,
+  }),
+  account: relayV3DeviceManager.getAccountService(),
+  deliverBridgePort: (session) => {
+    for (const win of getApplicationWindowsExcludingCuaIndicator()) {
+      if (win.isDestroyed()) continue;
+      win.webContents.postMessage(
+        InternalChannels.RelayV3TerminalServicePort,
+        {
+          bridgeSessionId: session.bridgeSessionId,
+          workspaceKey: session.workspaceKey,
+          bridgeGeneration: session.bridgeGeneration,
+        },
+        [session.port as Electron.MessagePortMain],
+      );
+    }
+  },
+  onStatusChanged: (status) => {
+    for (const win of getApplicationWindowsExcludingCuaIndicator()) {
+      if (!win.isDestroyed()) {
+        win.webContents.send(PlatformChannels.RelayV3TerminalStatusChanged, status);
+      }
+    }
+  },
+});
+registerRelayV3TerminalIpc(relayV3TerminalManager);
+void mainSettingService
+  .get()
+  .then((settings) => {
+    relayV3SettingsCache = settings.relayV3;
+    return relayV3DeviceManager.restoreOnLaunch();
+  })
+  .catch((error) => logger.warn("relay-v3 restore on launch failed", { error }));
 const appLaunchGate = createAppLaunchGate();
 const appLaunchCoordinator = createAppLaunchCoordinator(appLaunchGate);
 const appTelemetryCredentialService = createCredentialService();
@@ -927,6 +1024,11 @@ function syncCloseToTrayOnWindows(value: unknown) {
 
 function syncImmediateAppSettings(patch: ReturnType<typeof appSettingsPatchSchema.parse>) {
   syncCloseToTrayOnWindows(patch.closeToTrayOnWindows);
+
+  if (patch.relayV3 !== undefined) {
+    // relay V3 endpoint/静态页 base 变化即时生效（远控 manager 的同步配置缓存）。
+    relayV3SettingsCache = patch.relayV3;
+  }
 
   if (typeof patch.keepAwakeWhileRunning === "boolean") {
     keepAwakeWhileRunning = patch.keepAwakeWhileRunning;

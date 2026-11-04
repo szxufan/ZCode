@@ -6,6 +6,7 @@ import {
 } from "@zcode/shared";
 /* eslint-disable max-lines -- preload bridge 集中暴露桌面平台 IPC，拆散会让 contextBridge 权限边界更难审计。 */
 import { contextBridge, ipcRenderer, webFrame, webUtils } from "electron";
+import type { MessagePortMain } from "electron";
 import {
   installArmsRumBridgeIpcForward,
   scheduleArmsEventBridgePatch,
@@ -355,6 +356,88 @@ contextBridge.exposeInMainWorld("zcode", {
   /** 同步需要 main 进程即时感知的应用设置 */
   syncAppSettings: (patch: Partial<AppSettings>) =>
     ipcRenderer.send(PlatformChannels.SyncAppSettings, patch),
+  /** Relay V3 远控（device）：同步当前窗口 workspace 目录快照 */
+  relayV3SyncWorkspaces: (
+    workspaces: import("@zcode/shared/remote-relay-v3/desktop.js").RelayV3WorkspaceSyncEntry[],
+  ) =>
+    ipcRenderer.send(PlatformChannels.RelayV3SyncWorkspaces, {
+      workspaces,
+    }),
+  /** Relay V3 远控（device）：查询状态投影 */
+  relayV3GetStatus: (): Promise<import("@zcode/shared/remote-relay-v3/desktop.js").RelayV3DesktopStatus> =>
+    ipcRenderer.invoke(PlatformChannels.RelayV3GetStatus),
+  /** Relay V3 远控（device）：订阅状态变化 */
+  onRelayV3StatusChanged: (
+    callback: (status: import("@zcode/shared/remote-relay-v3/desktop.js").RelayV3DesktopStatus) => void,
+  ): (() => void) => {
+    const handler = (_event: unknown, payload: unknown) =>
+      callback(payload as import("@zcode/shared/remote-relay-v3/desktop.js").RelayV3DesktopStatus);
+    ipcRenderer.on(PlatformChannels.RelayV3StatusChanged, handler);
+    return () => ipcRenderer.removeListener(PlatformChannels.RelayV3StatusChanged, handler);
+  },
+  /** Relay V3 远控（device）：发送短信验证码 */
+  relayV3SendSmsCode: (phone: string) =>
+    ipcRenderer.invoke(PlatformChannels.RelayV3AccountSendCode, { phone }),
+  /** Relay V3 远控（device）：手机号+验证码登录 */
+  relayV3Login: (phone: string, code: string) =>
+    ipcRenderer.invoke(PlatformChannels.RelayV3AccountLogin, { phone, code }),
+  /** Relay V3 远控（device）：登出 relay 账号 */
+  relayV3Logout: () => ipcRenderer.invoke(PlatformChannels.RelayV3AccountLogout),
+  /** Relay V3 远控（device）：请求启动授权（一次性票据） */
+  relayV3AuthorizeStart: (target: { workspacePath: string; workspaceIdentity?: string }) =>
+    ipcRenderer.invoke(PlatformChannels.RelayV3AuthorizeStart, target),
+  /** Relay V3 远控（device）：凭票据启动 */
+  relayV3StartAuthorized: (ticket: string) =>
+    ipcRenderer.invoke(PlatformChannels.RelayV3StartAuthorized, { ticket }),
+  /** Relay V3 远控（device）：停止远控 */
+  relayV3Stop: () => ipcRenderer.invoke(PlatformChannels.RelayV3Stop),
+  /** Relay V3 控制端（P4）：列同账号可控制设备 */
+  relayV3TerminalList: (): Promise<{
+    ok: boolean;
+    devices?: import("@zcode/shared/remote-relay-v3").RelayV3Device[];
+    message?: string;
+  }> => ipcRenderer.invoke(PlatformChannels.RelayV3TerminalList),
+  /** Relay V3 控制端：连接目标设备 */
+  relayV3TerminalConnect: (deviceSid: string): Promise<{ ok: boolean; message?: string }> =>
+    ipcRenderer.invoke(PlatformChannels.RelayV3TerminalConnect, { deviceSid }),
+  /** Relay V3 控制端：断开控制连接 */
+  relayV3TerminalDisconnect: (): Promise<void> =>
+    ipcRenderer.invoke(PlatformChannels.RelayV3TerminalDisconnect),
+  /** Relay V3 控制端：打开目标 workspace bridge */
+  relayV3TerminalOpenWorkspace: (
+    workspaceKey: string,
+  ): Promise<{ ok: boolean; bridgeSessionId?: string; bridgeGeneration?: number; message?: string }> =>
+    ipcRenderer.invoke(PlatformChannels.RelayV3TerminalOpenWorkspace, { workspaceKey }),
+  /** Relay V3 控制端：订阅控制状态变化 */
+  onRelayV3TerminalStatusChanged: (
+    callback: (status: import("@zcode/shared/remote-relay-v3/desktop.js").RelayV3TerminalStatus) => void,
+  ): (() => void) => {
+    const handler = (_event: unknown, payload: unknown) =>
+      callback(payload as import("@zcode/shared/remote-relay-v3/desktop.js").RelayV3TerminalStatus);
+    ipcRenderer.on(PlatformChannels.RelayV3TerminalStatusChanged, handler);
+    return () => ipcRenderer.removeListener(PlatformChannels.RelayV3TerminalStatusChanged, handler);
+  },
+  /** Relay V3 设备授权（R4）：按 user_code 批准 headless 设备并回显公钥指纹 */
+  relayV3DeviceAuthApprove: (userCode: string) =>
+    ipcRenderer.invoke(PlatformChannels.RelayV3DeviceAuthApprove, { userCode }),
+  /** Relay V3 控制端：接收 main 投递的 workspace bridge MessagePort */
+  onRelayV3TerminalPort: (
+    callback: (
+      payload: import("@zcode/shared/remote-relay-v3/desktop.js").RelayV3TerminalPortPayload,
+      port: MessagePortMain,
+    ) => void,
+  ): (() => void) => {
+    const handler = (
+      _event: unknown,
+      payload: import("@zcode/shared/remote-relay-v3/desktop.js").RelayV3TerminalPortPayload,
+      ports?: MessagePortMain[],
+    ) => {
+      const port = ports?.[0];
+      if (port) callback(payload, port);
+    };
+    ipcRenderer.on(InternalChannels.RelayV3TerminalServicePort, handler);
+    return () => ipcRenderer.removeListener(InternalChannels.RelayV3TerminalServicePort, handler);
+  },
   /** 查询关闭驻留托盘能力（Linux 置灰判断；spec：docs/desktop/linux-close-to-tray.md） */
   getCloseToTrayCapability: () => ipcRenderer.invoke(PlatformChannels.GetCloseToTrayCapability),
   /** 快捷键设置页录制态开关：main 暂时摘除可配置菜单 accelerator，防止录制按键触发原命令 */

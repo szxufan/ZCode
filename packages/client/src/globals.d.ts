@@ -137,6 +137,73 @@ declare global {
       syncActiveTaskSession(sessionId: string | null): void;
       /** 同步需要 main 进程即时感知的应用设置 */
       syncAppSettings?(patch: Partial<AppSettings>): void;
+      /** Relay V3 远控（device）：同步当前窗口 workspace 目录快照 */
+      relayV3SyncWorkspaces?(
+        workspaces: import("@zcode/shared/remote-relay-v3/desktop.js").RelayV3WorkspaceSyncEntry[],
+      ): void;
+      /** Relay V3 远控（device）：查询状态投影 */
+      relayV3GetStatus?(): Promise<
+        import("@zcode/shared/remote-relay-v3/desktop.js").RelayV3DesktopStatus
+      >;
+      /** Relay V3 远控（device）：订阅状态变化，返回 disposer */
+      onRelayV3StatusChanged?(
+        handler: (status: import("@zcode/shared/remote-relay-v3/desktop.js").RelayV3DesktopStatus) => void,
+      ): () => void;
+      /** Relay V3 远控（device）：发送短信验证码 */
+      relayV3SendSmsCode?(
+        phone: string,
+      ): Promise<import("@zcode/shared/remote-relay-v3/desktop.js").RelayV3AccountActionResult>;
+      /** Relay V3 远控（device）：手机号+验证码登录 */
+      relayV3Login?(
+        phone: string,
+        code: string,
+      ): Promise<import("@zcode/shared/remote-relay-v3/desktop.js").RelayV3AccountActionResult>;
+      /** Relay V3 远控（device）：登出 relay 账号 */
+      relayV3Logout?(): Promise<
+        import("@zcode/shared/remote-relay-v3/desktop.js").RelayV3AccountActionResult
+      >;
+      /** Relay V3 远控（device）：请求启动授权（一次性票据） */
+      relayV3AuthorizeStart?(target: {
+        workspacePath: string;
+        workspaceIdentity?: string;
+      }): Promise<import("@zcode/shared/remote-relay-v3/desktop.js").RelayV3StartTicketResult>;
+      /** Relay V3 远控（device）：凭票据启动 */
+      relayV3StartAuthorized?(ticket: string): Promise<{ accepted: boolean; reason?: string }>;
+      /** Relay V3 远控（device）：停止远控 */
+      relayV3Stop?(): Promise<void>;
+      /** Relay V3 控制端（P4）：列同账号可控制设备 */
+      relayV3TerminalList?(): Promise<{
+        ok: boolean;
+        devices?: import("@zcode/shared/remote-relay-v3").RelayV3Device[];
+        message?: string;
+      }>;
+      /** Relay V3 控制端：连接目标设备（terminal 角色） */
+      relayV3TerminalConnect?(deviceSid: string): Promise<{ ok: boolean; message?: string }>;
+      /** Relay V3 控制端：断开控制连接 */
+      relayV3TerminalDisconnect?(): Promise<void>;
+      /** Relay V3 控制端：打开目标 workspace bridge */
+      relayV3TerminalOpenWorkspace?(workspaceKey: string): Promise<{
+        ok: boolean;
+        bridgeSessionId?: string;
+        bridgeGeneration?: number;
+        message?: string;
+      }>;
+      /** Relay V3 控制端：订阅控制状态变化，返回 disposer */
+      onRelayV3TerminalStatusChanged?(
+        handler: (status: import("@zcode/shared/remote-relay-v3/desktop.js").RelayV3TerminalStatus) => void,
+      ): () => void;
+      /** Relay V3 设备授权（R4 §5.5）：按 user_code 批准 headless 设备 */
+      relayV3DeviceAuthApprove?(userCode: string): Promise<
+        | { ok: true; fingerprint: string; deviceSid: string }
+        | { ok: false; message?: string; businessCode?: number }
+      >;
+      /** Relay V3 控制端：接收 main 投递的 workspace bridge MessagePort，返回 disposer */
+      onRelayV3TerminalPort?(
+        handler: (
+          payload: import("@zcode/shared/remote-relay-v3/desktop.js").RelayV3TerminalPortPayload,
+          port: MessagePort,
+        ) => void,
+      ): () => void;
       /** 查询关闭驻留托盘能力（Linux 置灰判断；spec：docs/desktop/linux-close-to-tray.md） */
       getCloseToTrayCapability?(): Promise<import("@zcode/shared").DesktopCloseToTrayCapability>;
       /** 注册 main 进程要求聚焦指定 workspace tab 的回调，返回 disposer */
