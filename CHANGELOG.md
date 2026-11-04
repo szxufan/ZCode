@@ -1,5 +1,27 @@
 # Changelog
 
+## [3.22.0](https://github.com/szxufan/ZCode/compare/v3.21.0...v3.22.0) (2026-11-04)
+
+### Features
+
+* **desktop:** 发版流水线支持 Linux x64 构建并限定 deb 目标 ([9e87bf0](https://github.com/szxufan/ZCode/commit/9e87bf0f58f986cc9e352e9b1c65252bb34abfa4))
+
+* **relay:** Relay V3 P0 —— 自托管中继服务端、共享协议模块与 fake fixture ([03486bb](https://github.com/szxufan/ZCode/commit/03486bb3c423b7ede03bace0c576d3e7c0590f2e))
+  * relay-server/：全新 Fastify + ws + node:sqlite 自托管中继 workspace 包，
+  * packages/shared/src/remote-relay-v3/：V3 契约（HTTP/WS 消息 zod 校验）、
+  * packages/shared/test/fixtures/：fake-relay-v3 测试接缝与 fake/真实实现
+  * 清理 fork 已移除的旧 web 远控链路遗留测试（mobileLog / actionRequests）。
+  * architecture-policy.yaml 登记 remote-relay-v3 与 relay-server 模块边界；
+
+* **relay:** Relay V3 P1–P4/R4 —— 桌面被控端、手机 Web、桌面互控、headless 设备授权与数据面分块帧 ([b72e56f](https://github.com/szxufan/ZCode/commit/b72e56fe3384121689b89b2ae3fcf5ec25eecff5))
+  * fake-relay-v3 双跑矩阵）已交付；本提交实现剩余全部客户端与 R4 里程碑。V2 客户端
+  * shared remote-relay-v3：新增 payload（bootstrap/bridge/view-state 业务契约）、
+  * P1 桌面被控端：main 侧 relay 账号登录（refresh 旋转+重放撤销家族）、X25519
+  * P2 手机 Web：新建 packages/web（/remote/v4），手机号+验证码登录、设备列表
+  * P4 桌面互控：relayTerminalManager（与被控端独立）、bridge port 投递控制端
+  * R4：zcode server login（设备授权 request→批准→poll，凭据/私钥落 server root
+  * P3：部署指南 docs/relay-server/deployment.md；V2 文档归档、孤儿测试与 stale
+
 ## [3.21.0](https://github.com/szxufan/ZCode/compare/v3.20.0...v3.21.0) (2026-10-31)
 
 ### Miscellaneous
