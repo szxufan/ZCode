@@ -304,6 +304,41 @@ describe("runtime request reminders", () => {
     expect(buildRuntimeModeReminderBody([], "build")).toBeNull();
   });
 
+  // 适配说明：上游 v3.17.2 新增五阶段英文工作流断言；fork 的系统提示词中文化将工作流
+  // 收敛为中文四阶段（阶段 4 合并最终计划与收尾），此处按 fork 实现断言阶段结构完整渲染。
+  it("renders the complete four-phase plan workflow without a template exception", () => {
+    const body = buildRuntimeModeReminderBody([], "plan")!;
+    expect(body.match(/^### 阶段 \d：.+$/gm)).toEqual([
+      "### 阶段 1：初步理解",
+      "### 阶段 2：设计",
+      "### 阶段 3：评审",
+      "### 阶段 4：调用 ExitPlanMode",
+    ]);
+    expect(body).toContain("本阶段只允许使用 Explore 子代理类型");
+    expect(body).toContain("阅读关键文件加深理解");
+    expect(body).toContain("必须调用 ExitPlanMode 告知用户你已完成规划");
+    expect(body).toContain("只用于澄清需求或在方案之间做选择");
+    expect(body).not.toMatch(/^### Phase /m);
+  });
+
+  // 修复原因：子会话继承 Plan 后收到主会话的五阶段提醒，被要求再派生 Explore、以
+  // AskUserQuestion 或 ExitPlanMode 收尾，而子会话没有这些工具。
+  // 断言按 fork 中文文案适配：完整提醒首段仍是“计划模式已激活……”。
+  it("gives subagent children a read-only plan reminder without the main workflow", () => {
+    for (const askUserQuestionAvailable of [true, false]) {
+      const body = buildRuntimeModeReminderBody([], "build", true, { askUserQuestionAvailable })!;
+      expect(body).toContain("计划模式已激活");
+      expect(body).toContain("read-only");
+      expect(body).not.toMatch(/### 阶段|ExitPlanMode|Explore 子代理/);
+      if (askUserQuestionAvailable) expect(body).toContain("AskUserQuestion");
+      else expect(body).not.toContain("AskUserQuestion");
+    }
+    expect(
+      buildRuntimeModeReminderBody([], "build", false, { askUserQuestionAvailable: true }),
+    ).toBeNull();
+    expect(buildRuntimeModeReminderBody([], "plan")).toContain("### 阶段 4：调用 ExitPlanMode");
+  });
+
   it("builds model anomaly reminder bodies without wrapping", () => {
     const budgetBody = buildToolCallBudgetReminderBody(42);
     const repeatedBody = buildRepeatedToolCallReminderBody("Read", 3);
