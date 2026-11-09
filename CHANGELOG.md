@@ -1,5 +1,11 @@
 # Changelog
 
+## [3.23.0](https://github.com/szxufan/ZCode/compare/v3.22.0...v3.23.0) (2026-11-09)
+
+### Chores
+
+* sync ZCode source v3.17.2 ([a9fe401](https://github.com/szxufan/ZCode/commit/a9fe401eede6e6e5e01be9048679c206fe6f02d9))
+
 ## [3.22.0](https://github.com/szxufan/ZCode/compare/v3.21.0...v3.22.0) (2026-11-04)
 
 ### Features
