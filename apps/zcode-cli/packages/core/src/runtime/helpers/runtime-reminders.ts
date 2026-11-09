@@ -9,6 +9,7 @@ import {
 import type {
   CollaborationMode,
   OutputStylePromptConfig,
+  SessionTaskType,
   SyntheticUserMessageSource,
   TodoItem,
 } from "../deps.js";
@@ -72,6 +73,19 @@ const PLAN_MODE_FULL_REMINDER = [
 const PLAN_MODE_SPARSE_REMINDER = [
   `计划模式仍然生效（完整说明见会话前文）。只读。遵循四阶段工作流。回合以 ${ASK_USER_QUESTION_TOOL_NAME}（澄清）或 ${EXIT_PLAN_MODE_TOOL_NAME}（请求计划批准）结束。绝不通过文本或 AskUserQuestion 询问计划是否批准。`,
 ];
+
+/** 子会话的 Plan 提醒：只保留只读约束，不含主会话的工作流阶段与收尾要求。 */
+function buildSubagentPlanModeReminder(askUserQuestionAvailable: boolean): string {
+  return [
+    PLAN_MODE_FULL_REMINDER[0],
+    "Only take read-only actions, and answer the delegated query comprehensively.",
+    ...(askUserQuestionAvailable
+      ? [
+          `If you need clarification, use the ${ASK_USER_QUESTION_TOOL_NAME} tool and ask all of your clarifying questions before proceeding.`,
+        ]
+      : []),
+  ].join("\n\n");
+}
 
 const PLAN_MODE_EXIT_REMINDER = [
   "## 已退出计划模式",
@@ -186,10 +200,39 @@ export function buildTodoReminderBody(todos: readonly TodoItem[]): string {
   return lines.join("\n");
 }
 
+/**
+ * Plan 提醒按会话类型选择正文；轮内收集与 compact 后重发共用，避免一处漏掉子会话。
+ * tools 传本轮可见工具，用来判断子会话能否用 AskUserQuestion。
+ */
+export function buildRuntimeModeReminderBodyForTask(
+  entries: readonly RuntimeMessageEntry[],
+  input: {
+    mode: CollaborationMode;
+    planEnabled: boolean;
+    taskType: SessionTaskType | undefined;
+    tools: readonly { name: string }[];
+  },
+): string | null {
+  return buildRuntimeModeReminderBody(
+    entries,
+    input.mode,
+    input.planEnabled,
+    input.taskType === "subagent_child"
+      ? {
+          askUserQuestionAvailable: input.tools.some(
+            (tool) => tool.name === ASK_USER_QUESTION_TOOL_NAME,
+          ),
+        }
+      : undefined,
+  );
+}
+
 export function buildRuntimeModeReminderBody(
   entries: readonly RuntimeMessageEntry[],
   mode: CollaborationMode,
   planEnabled = mode === "plan",
+  /** 子会话传入：只发精简提醒；askUserQuestionAvailable 表示子会话能看到 AskUserQuestion。 */
+  subagent?: { askUserQuestionAvailable: boolean },
 ): string | null {
   if (!planEnabled) return null;
 
@@ -201,6 +244,10 @@ export function buildRuntimeModeReminderBody(
   ) {
     return null;
   }
+
+  // 修复原因：子会话继承父会话 Plan 后收到了主会话的完整工作流提醒，被要求再派生 Explore、只能以
+  // AskUserQuestion 或 ExitPlanMode 收尾，而子会话没有 ExitPlanMode，也不能再派生子 agent。
+  if (subagent) return buildSubagentPlanModeReminder(subagent.askUserQuestionAvailable);
 
   const nextReminderCount = countRuntimeModeReminders(entries) + 1;
   const reminderLines =
