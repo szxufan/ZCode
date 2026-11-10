@@ -12,14 +12,20 @@ import {
   useRef,
   useState,
 } from "react";
-import { ChevronRightIcon, Ellipsis, EyeIcon, FileCode2Icon } from "lucide-react";
+import { ChevronRightIcon, Ellipsis, EyeIcon, FileCode2Icon, PencilIcon } from "lucide-react";
 import { nanoid } from "nanoid";
 import { Button } from "@/components/ui/button.js";
 import { toast } from "@/components/ui/toast.js";
 import { cn } from "@/components/lib/utils.js";
-import type { FileBinaryPreview, FileMediaPreview, FileTextSlice } from "@zcode/shared";
+import type {
+  FileBinaryPreview,
+  FileMediaPreview,
+  FileTextSlice,
+  TextEditBlockReason,
+} from "@zcode/shared";
 import { TID_PREVIEW_PANE } from "@zcode/shared/test-ids";
 import { useWorkspaceServices } from "@/hooks/useWorkspaceServices.js";
+import { usePlatform } from "@/hooks/usePlatform.js";
 import { usePptxFileWatch } from "@/hooks/usePptxFileWatch.js";
 import { useZCodeIntl } from "@/i18n/IntlProvider.js";
 import { usePdfViewerLabels, usePptxViewerLabels } from "@/hooks/usePreviewViewerLabels.js";
@@ -54,6 +60,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu.js";
 import { PreviewPaneContent } from "@/previewPaneContent.js";
+import { PreviewPaneTextEditor, confirmAllUnsavedSessions } from "@/preview-pane/index.js";
 import {
   dispatchCodeCommentAddToChat,
   dispatchCodeCommentRemoveFromChat,
@@ -113,6 +120,16 @@ function isMarkdownFilePath(path?: string): boolean {
   const normalizedPath = path.toLowerCase();
   return normalizedPath.endsWith(".md") || normalizedPath.endsWith(".markdown");
 }
+
+/** Host 返回的不可编辑原因 → 本地化文案；缺一个键会让禁用入口的 title 变成 undefined。 */
+const EDIT_BLOCK_REASON_MESSAGE_ID: Record<TextEditBlockReason, string> = {
+  binary: "codeViewer.edit.blocked.binary",
+  "too-large": "codeViewer.edit.blocked.tooLarge",
+  "not-lossless": "codeViewer.edit.blocked.notLossless",
+  "mixed-line-endings": "codeViewer.edit.blocked.mixedLineEndings",
+  "partial-read": "codeViewer.edit.blocked.partialRead",
+  "host-unsupported": "codeViewer.edit.blocked.hostUnsupported",
+};
 
 export function isPreviewPaneMissingFileError(error: unknown): boolean {
   if (typeof error === "object" && error !== null && "code" in error) {
@@ -518,6 +535,7 @@ export function PreviewPane({
   markdownSelectionTarget?: MarkdownSelectionTarget;
 }) {
   const { intl } = useZCodeIntl();
+  const platform = usePlatform();
   const theme = useZCodeStore((state) => state.theme);
   const codePreviewSettings = useZCodeStore((state) => state.codePreviewSettings);
   const source = useMemo(
@@ -576,6 +594,13 @@ export function PreviewPane({
   const [markdownViewMode, setMarkdownViewMode] = useState<"preview" | "code">("preview");
   const [svgViewMode, setSvgViewMode] = useState<"preview" | "code">("preview");
   const [wrapLongLinesOverride, setWrapLongLinesOverride] = useState<boolean | null>(null);
+  // 用正在编辑的 path 而非 boolean 表示编辑态：source 对象引用变化但 path 未变时
+  // （上游 store 重建 source）不应销毁编辑会话，否则会静默丢掉未保存改动。
+  const [editSessionPath, setEditSessionPath] = useState<string | null>(null);
+  const [editSessionDirty, setEditSessionDirty] = useState(false);
+  // 每个 PreviewPane 实例一个稳定的会话 id：同一文件在多个 tab 中并存时，
+  // unsavedEditGuard 需要能分别追踪各自的脏状态。
+  const [editSessionId] = useState(() => nanoid());
   const [breadcrumbMaskState, setBreadcrumbMaskState] = useState<BreadcrumbMaskState>("none");
   const breadcrumbScrollRef = useRef<HTMLDivElement | null>(null);
   const breadcrumbContentRef = useRef<HTMLDivElement | null>(null);
@@ -618,6 +643,36 @@ export function PreviewPane({
     !pptxSource &&
     !mediaSource
       ? source
+      : null;
+  const markdownEditAllowed =
+    !fileSource?.path || !isMarkdownFilePath(fileSource.path) || markdownViewMode === "code";
+  const svgEditAllowed =
+    !fileSource?.path || !isSvgFilePath(fileSource.path) || svgViewMode === "code";
+  // 编辑能力 = 平台能力 + 文件源 + Host 无损往返判定 + 当前处于源码视图。
+  // 旧 Host / 二进制 / 超限 / 混合换行都会在 editCapability 上返回不可编辑原因。
+  const canEditTextFile = Boolean(
+    platform.canEditTextFiles &&
+    source?.type === "file" &&
+    fileSource &&
+    filePreview?.editCapability?.editable &&
+    markdownEditAllowed &&
+    svgEditAllowed,
+  );
+  // 编辑态是否作用于当前 source：source 切换的瞬间 editSessionPath 仍是旧值，
+  // 此时不能再把编辑器渲染到新文件上。
+  const editSessionActive = editSessionPath !== null && editSessionPath === source?.path;
+  // 平台带编辑能力、文件源本身可预览，但 Host 判定不可无损编辑时，
+  // 仍渲染禁用入口并 hover 说明原因（spec 验收场景 7）；
+  // markdown / SVG 的渲染视图不在此列——切到源码视图即可编辑，显示禁用原因反而误导。
+  const editBlockReason =
+    platform.canEditTextFiles &&
+    source?.type === "file" &&
+    fileSource &&
+    markdownEditAllowed &&
+    svgEditAllowed &&
+    filePreview?.editCapability &&
+    !filePreview.editCapability.editable
+      ? (filePreview.editCapability.reason ?? "host-unsupported")
       : null;
   const codeCommentBucket = useMemo(
     () =>
@@ -695,6 +750,51 @@ export function PreviewPane({
     );
     setWrapLongLinesOverride(null);
   }, [source]);
+
+  // 切换文件时退出编辑态。未保存保护收口在 useAppPanels 的 source 写入入口
+  // （handleOpenCodeViewer / handleOpenCodeViewers / handleNavigateFileManager /
+  // handleCloseCodeViewer / 工作区切换），这里只在绕过拦截时留下可观测证据，
+  // 避免将来新增入口时静默丢改动而无从排查。
+  useEffect(() => {
+    if (editSessionPath === null || editSessionPath === source?.path) {
+      return;
+    }
+    if (editSessionDirty) {
+      logger.error(
+        `[PreviewPane] 编辑会话被 source 切换销毁，存在未保存改动 editing=${editSessionPath} next=${source?.path ?? "none"}`,
+      );
+    }
+    setEditSessionPath(null);
+    setEditSessionDirty(false);
+  }, [editSessionDirty, editSessionPath, source?.path]);
+
+  // markdown / SVG 只有源码视图可编辑；切回渲染视图必须退出编辑态，
+  // 否则编辑入口的可编辑判定会被绕过，渲染视图上仍挂着编辑器。
+  // 正常的视图切换由菜单先走未保存确认，这里只兜底 source 切换等间接触发。
+  useEffect(() => {
+    if (editSessionPath === null || editSessionPath !== source?.path || !fileSource?.path) {
+      return;
+    }
+    const isRenderedMarkdown = isMarkdownFilePath(fileSource.path) && markdownViewMode !== "code";
+    const isRenderedSvg = isSvgFilePath(fileSource.path) && svgViewMode !== "code";
+    if (!isRenderedMarkdown && !isRenderedSvg) {
+      return;
+    }
+    if (editSessionDirty) {
+      logger.warn(
+        `[PreviewPane] 切回渲染视图时退出编辑态，存在未保存改动 path=${editSessionPath}`,
+      );
+    }
+    setEditSessionPath(null);
+    setEditSessionDirty(false);
+  }, [
+    editSessionDirty,
+    editSessionPath,
+    fileSource?.path,
+    markdownViewMode,
+    source?.path,
+    svgViewMode,
+  ]);
 
   const handleSubmitCodeComment = useCallback(
     (params: { range: CodeCommentRange; selectedText: string; comment: string }) => {
@@ -1482,6 +1582,21 @@ export function PreviewPane({
         }
       : undefined;
 
+  // markdown / SVG 切到渲染视图会退出编辑态，因此切换前先走未保存确认；
+  // 用户取消时不写入 viewMode，受控的 RadioGroup 会自动回到原选项。
+  const switchViewModeGuarded = useCallback(
+    (next: "preview" | "code", apply: (value: "preview" | "code") => void) => {
+      if (next === "preview" && editSessionPath !== null) {
+        void confirmAllUnsavedSessions().then((allowed) => {
+          if (allowed) apply(next);
+        });
+        return;
+      }
+      apply(next);
+    },
+    [editSessionPath],
+  );
+
   const viewMenuItems = hasMoreMenu ? (
     <>
       {canToggleMarkdownView ? (
@@ -1492,7 +1607,7 @@ export function PreviewPane({
           <DropdownMenuRadioGroup
             value={markdownViewMode}
             onValueChange={(value) => {
-              setMarkdownViewMode(value as "preview" | "code");
+              switchViewModeGuarded(value as "preview" | "code", setMarkdownViewMode);
             }}
           >
             <DropdownMenuRadioItem value="preview">
@@ -1517,7 +1632,7 @@ export function PreviewPane({
           <DropdownMenuRadioGroup
             value={svgViewMode}
             onValueChange={(value) => {
-              setSvgViewMode(value as "preview" | "code");
+              switchViewModeGuarded(value as "preview" | "code", setSvgViewMode);
             }}
           >
             <DropdownMenuRadioItem value="preview">
@@ -1585,11 +1700,52 @@ export function PreviewPane({
               <FileDisplayIcon src={breadcrumb.fileIconSrc} size={14} className="shrink-0" />
             ) : null}
             <span className="truncate">{breadcrumb?.fileLabel ?? source.title}</span>
+            {editSessionActive && editSessionDirty ? (
+              // 纯装饰的 span 上 aria-label 不会被朗读，必须给 role 才能暴露可访问名。
+              <span
+                role="img"
+                className="size-1.5 shrink-0 rounded-full bg-foreground"
+                aria-label={intl.formatMessage({ id: "codeViewer.edit.unsaved" })}
+              />
+            ) : null}
           </span>
         </div>
       </div>
 
       <div className="flex shrink-0 pr-1.5 items-center gap-2">
+        {canEditTextFile && !editSessionActive ? (
+          <Button
+            type="button"
+            size="default"
+            variant="ghost"
+            className="shrink-0 rounded-lg text-foreground-subtle hover:text-foreground"
+            onClick={() => {
+              if (source?.type === "file" && source.path) {
+                setEditSessionPath(source.path);
+              }
+            }}
+            title={intl.formatMessage({ id: "codeViewer.edit.enter" })}
+            aria-label={intl.formatMessage({ id: "codeViewer.edit.enter" })}
+          >
+            <PencilIcon className="size-3.5" data-icon="inline-start" />
+            <span>{intl.formatMessage({ id: "codeViewer.edit.enter" })}</span>
+          </Button>
+        ) : null}
+        {editBlockReason ? (
+          // 不可编辑时保留入口并说明原因，避免用户以为功能缺失（spec 验收场景 7）。
+          <Button
+            type="button"
+            size="default"
+            variant="ghost"
+            className="shrink-0 rounded-lg text-foreground-subtle"
+            disabled
+            title={intl.formatMessage({ id: EDIT_BLOCK_REASON_MESSAGE_ID[editBlockReason] })}
+            aria-label={intl.formatMessage({ id: EDIT_BLOCK_REASON_MESSAGE_ID[editBlockReason] })}
+          >
+            <PencilIcon className="size-3.5" data-icon="inline-start" />
+            <span>{intl.formatMessage({ id: "codeViewer.edit.enter" })}</span>
+          </Button>
+        ) : null}
         {canOpenDiffFilePreview ? (
           <Button
             type="button"
@@ -1659,7 +1815,22 @@ export function PreviewPane({
     >
       {headerContainer ? createPortal(header, headerContainer) : header}
       <div className="min-h-0 flex-1">
-        {renderHeavyContent ? (
+        {editSessionActive && source?.type === "file" && fileSource ? (
+          <PreviewPaneTextEditor
+            key={source.path}
+            path={source.path}
+            sessionId={editSessionId}
+            workspacePath={sourceWorkspacePath}
+            fileService={fileService}
+            fileWatcherService={fileWatcherService}
+            dark={resolvedTheme === "dark"}
+            onDirtyChange={setEditSessionDirty}
+            onExit={() => {
+              setEditSessionPath(null);
+              setEditSessionDirty(false);
+            }}
+          />
+        ) : renderHeavyContent ? (
           <PreviewPaneContent
             source={pptxSource ?? imageSource ?? pdfSource ?? mediaSource ?? source}
             filePreview={filePreview}

@@ -3,6 +3,7 @@ import {
   chmod,
   lstat,
   mkdir,
+  open,
   writeFile,
   rename,
   rm,
@@ -28,6 +29,10 @@ export interface AtomicWriteTextOptions {
   lockMaxWaitMs?: number;
   tempFileStaleMs?: number;
   useFileLock?: boolean;
+  /** rename 前把临时文件 chmod 到该权限位，用于保留被替换文件的 mode（如脚本的执行位）。 */
+  mode?: number;
+  /** rename 前 fsync 临时文件内容；默认关闭，避免拖慢既有的配置/会话快照写入。 */
+  syncBeforeRename?: boolean;
   beforeRename?: () => void | Promise<void>;
   runRename?: (renameFile: () => Promise<void>) => Promise<void>;
 }
@@ -165,10 +170,11 @@ async function cleanupStaleTempFilesForTarget(
  * rename 在同文件系统上是原子的，避免读者看到半份内容；read-modify-write 需由调用方
  * 用 withAtomicFileLock 包住读取、合并及写入，并给内部原子写传 useFileLock: false。
  * 临时文件写在目标文件同目录下，避免 Windows 跨卷 rename 失败。
+ * content 传 Uint8Array 时按原始字节写入，用于非 UTF-8 编码（如 GBK）的无损回写。
  */
 export async function atomicWriteText(
   filePath: string,
-  content: string,
+  content: string | Uint8Array,
   options?: AtomicWriteTextOptions,
 ): Promise<void> {
   const dir = dirname(filePath);
@@ -199,7 +205,25 @@ export async function atomicWriteText(
       options?.tempFileStaleMs ?? DEFAULT_TEMP_FILE_STALE_MS,
     );
     maybeThrowInjectedFsFault({ operation: "writeFile", path: tempFile });
-    await writeFile(tempFile, content, "utf-8");
+    if (typeof content === "string") {
+      await writeFile(tempFile, content, "utf-8");
+    } else {
+      // 非 UTF-8 编码（如 GBK）的无损回写必须按原始字节落盘，再走一次 utf-8 编码会破坏内容。
+      await writeFile(tempFile, content);
+    }
+    // 临时文件是新 inode，不复制原 mode 会把 0755 脚本改成默认权限。
+    if (options?.mode !== undefined) {
+      await chmod(tempFile, options.mode & 0o777);
+    }
+    // fsync 保证 rename 之后即使掉电也不留半截内容；只在调用方显式要求时付出这次开销。
+    if (options?.syncBeforeRename) {
+      const handle = await open(tempFile, "r+");
+      try {
+        await handle.sync();
+      } finally {
+        await handle.close();
+      }
+    }
     await options?.beforeRename?.();
     // Windows Defender、索引服务或另一个窗口可能短暂占用目标 JSON，
     // 导致原子替换 rename 抛 EPERM/EBUSY/EACCES。这里只对这类临时锁做短暂重试，

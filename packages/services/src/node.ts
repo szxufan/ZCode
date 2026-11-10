@@ -63,7 +63,7 @@ export {
 } from "./zcode-agent/topicResourcePeers.js";
 export { createTopicResourceRelayChannel } from "./zcode-agent/topicResourceRelayChannel.js";
 
-export { createFileService } from "./file/fileService.js";
+export { createFileService } from "./file/index.js";
 export {
   attributeHostProcessTree,
   createProcessResourceSampler,
@@ -73,13 +73,13 @@ export {
   type ProcessResourceSampler,
 } from "./process/processResourceSampler.js";
 export { createMediaPreviewService } from "./media-preview/mediaPreview.js";
-export type { CreateFileServiceOptions } from "./file/fileService.js";
+export type { CreateFileServiceOptions } from "./file/index.js";
 export {
   defaultWorkspaceFileSearchFilter,
   type WorkspaceFileSearchDecision,
   type WorkspaceFileSearchEntry,
   type WorkspaceFileSearchFilter,
-} from "./file/workspaceFileMentionFilter.js";
+} from "./file/index.js";
 export {
   createFsFaultInjector,
   getProcessFsFaultInjector,
@@ -331,7 +331,7 @@ import {
 import { SourceServerWorkspaceAliasRepo } from "./session/sourceServerWorkspaceAliasRepo.js";
 import { SourceServerWorkspaceIdentityMapper } from "./source-server-workspace/sourceServerWorkspaceIdentityChannelServer.js";
 import { ServiceCollection } from "./collection.js";
-import { IFileService } from "./file/file.js";
+import { IFileService } from "./file/index.js";
 import { IMediaPreviewService } from "./media-preview/mediaPreview.js";
 import { IGitService } from "./git/git.js";
 import { IGitCheckpointService } from "./git/gitCheckpoint.js";
@@ -366,9 +366,9 @@ import { IMemoryService } from "./memory/memory.js";
 import { IOutputStyleService } from "./output-style/outputStyle.js";
 import { ISettingsSyncService } from "./settings-sync/settingsSync.js";
 import { IPromptAttachmentTransferService } from "./prompt-attachment-transfer/promptAttachmentTransfer.js";
-import { createFileService } from "./file/fileService.js";
+import { createFileService } from "./file/index.js";
 import { createMediaPreviewService } from "./media-preview/mediaPreview.js";
-import type { WorkspaceFileSearchFilter } from "./file/workspaceFileMentionFilter.js";
+import type { WorkspaceFileSearchFilter } from "./file/index.js";
 import { createGitService } from "./git/gitService.js";
 import { GitCommitMessageGenerator } from "./git/gitCommitMessageGenerator.js";
 import { createGitCheckpointService } from "./git/gitCheckpointService.js";

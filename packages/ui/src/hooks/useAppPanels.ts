@@ -95,6 +95,7 @@ import { useIsOfficeMode } from "@/hooks/useInterfaceMode.js";
 import { clearSelectionSideChat } from "@/lib/selectionSideChatRuntime.js";
 import { clearConversationSelectionReferenceScope } from "@/lib/conversationSelectionReference.js";
 import { subscribeTaskLifecycle } from "@/lib/taskLifecycleEvents.js";
+import { confirmAllUnsavedSessions, hasUnsavedEdits } from "@/preview-pane/index.js";
 
 export interface BrowserNavigationRequest {
   id: string;
@@ -362,13 +363,32 @@ export function useAppPanels(options: {
 
     // tabs/折叠态已在提交时保存，切换只恢复目标 workspace，不再用旧组件快照覆盖 memory。
     // 同一 workspace 内切换 task 不应该影响 side pane，所以 key 已经不再按 task 维度切分。
-    const restored = readTaskSidePaneMemoryState(sidePaneMemoryKey);
-    activeSidePaneMemoryKeyRef.current = sidePaneMemoryKey;
-    const collapsed =
-      getSidePaneCollapsedPreference(restored, sidePaneOwnerIdRef.current) ??
-      restored.isSidePaneCollapsed;
-    setIsSidePaneCollapsed(collapsed);
-    commitSidePaneState(() => restored.sidePaneState);
+    const applyRestored = () => {
+      const restored = readTaskSidePaneMemoryState(sidePaneMemoryKey);
+      activeSidePaneMemoryKeyRef.current = sidePaneMemoryKey;
+      const collapsed =
+        getSidePaneCollapsedPreference(restored, sidePaneOwnerIdRef.current) ??
+        restored.isSidePaneCollapsed;
+      setIsSidePaneCollapsed(collapsed);
+      commitSidePaneState(() => restored.sidePaneState);
+    };
+
+    // 切换工作区会整体替换 tabs，从而卸载其中的就地编辑会话。
+    // 有脏会话时先确认；取消则不前移 memory key，用户再次切换仍可重试。
+    if (hasUnsavedEdits()) {
+      let stale = false;
+      void confirmAllUnsavedSessions().then((allowed) => {
+        // 确认期间工作区可能又变了，或组件已卸载，此时放弃这次过期的恢复。
+        if (stale || !allowed) return;
+        if (activeSidePaneMemoryKeyRef.current !== previousKey) return;
+        applyRestored();
+      });
+      return () => {
+        stale = true;
+      };
+    }
+
+    applyRestored();
   }, [commitSidePaneState, sidePaneMemoryKey]);
 
   useEffect(() => {
@@ -461,14 +481,21 @@ export function useAppPanels(options: {
   }, [pendingFileManagerTarget, activeWorkspaceKey, consumeFileManager, handleOpenFileManager]);
 
   const handleNavigateFileManager = useCallback(
-    (tabId: string, source: CodeViewerSource) => {
+    async (tabId: string, source: CodeViewerSource) => {
+      // 导航会替换 file-manager tab 内 PreviewPane 的 source，从而卸载就地编辑会话；
+      // 收口在这里而不是各个 UI 入口，避免新增调用点时漏掉未保存确认。
+      if (!(await confirmAllUnsavedSessions())) return;
       commitSidePaneState((current) => navigateFileManagerSidePane(current, tabId, source));
     },
     [commitSidePaneState],
   );
 
   const handleOpenCodeViewer = useCallback(
-    (source: CodeViewerSource) => {
+    async (source: CodeViewerSource) => {
+      // openCodeViewerSidePane 会按 sourceKey 复用已有 code-viewer tab 并整体替换其 source。
+      // 聊天文件链接、工具卡片、命令面板、Agent 产物自动打开等 20+ 条路径都经此入口，
+      // 其中 Agent 产物自动打开是无用户交互的，不拦截会静默吃掉正在进行的编辑。
+      if (!(await confirmAllUnsavedSessions())) return;
       revealSidePaneForCurrentOwner();
       commitOpenedSidePaneState((current) => {
         const next = openCodeViewerSidePane(current, source, sidePaneOwnerIdRef.current);
@@ -485,8 +512,9 @@ export function useAppPanels(options: {
   );
 
   const handleOpenCodeViewers = useCallback(
-    (sources: readonly CodeViewerSource[]) => {
+    async (sources: readonly CodeViewerSource[]) => {
       if (sources.length === 0) return;
+      if (!(await confirmAllUnsavedSessions())) return;
       revealSidePaneForCurrentOwner();
       commitOpenedSidePaneState((current) => {
         const next = openCodeViewerSidePanes(current, sources, sidePaneOwnerIdRef.current, 0);
@@ -1403,7 +1431,10 @@ export function useAppPanels(options: {
     );
   }, [commitSidePaneState, currentSidePaneScope, setIsSidePaneCollapsed, workspaceAbsPath]);
 
-  const handleCloseCodeViewer = useCallback(() => {
+  const handleCloseCodeViewer = useCallback(async () => {
+    // 关闭 code-viewer 会卸载其中的就地编辑会话，必须经过未保存确认，
+    // 不能绕过 closeSelectedSidePaneTabs 那条统一入口。
+    if (!(await confirmAllUnsavedSessions())) return;
     logger.info(`[App] 关闭右侧面板 mode=code-viewer workspace=${workspaceAbsPath}`);
     commitSidePaneState((current) => {
       const next = closeCodeViewerSidePane(current);
@@ -1535,6 +1566,14 @@ export function useAppPanels(options: {
   const closeSelectedSidePaneTabs = useCallback(
     async (closingTabs: WorkspaceSidePaneTab[], preferredTabId?: string) => {
       if (closingTabs.length === 0) return;
+      // 关闭 file-manager / code-viewer tab 会卸载其中的就地编辑会话；
+      // 先让所有脏会话完成"保存 / 放弃 / 取消"确认，取消则中止关闭，避免静默丢弃未保存改动。
+      if (
+        closingTabs.some((tab) => tab.type === "file-manager" || tab.type === "code-viewer") &&
+        !(await confirmAllUnsavedSessions())
+      ) {
+        return;
+      }
       const scope = currentSidePaneScope();
       if (!(await closeBrowserTabsWithAuthority(closingTabs))) return;
       for (const tab of closingTabs) {

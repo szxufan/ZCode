@@ -741,6 +741,12 @@ export interface IPlatformService {
   canSelectFilePath?: boolean;
 
   /**
+   * 当前客户端是否带就地文本编辑能力（Monaco bundle）。
+   * 这是客户端能力而非文件系统能力：Web / 手机为 undefined，桌面为 true。
+   */
+  canEditTextFiles?: boolean;
+
+  /**
    * 插件 UI 沙箱平台端口。只有桌面端实现；
    * web / 手机远控为 undefined，plugin-ui 据此回退到普通 MCP 工具卡片。
    */

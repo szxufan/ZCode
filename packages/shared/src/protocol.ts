@@ -39,6 +39,13 @@ export interface FileWatchEvent {
   changedPath?: string;
 }
 
+/**
+ * 文本预览与就地编辑共用的单次读取上限（256KB）。
+ * Host 的 readTextFile / readTextEditSnapshot 与 renderer 的可编辑判定必须同源，
+ * 否则会出现"UI 认为可编辑但 Host 拒绝"或反之的错位。
+ */
+export const FILE_TEXT_MAX_BYTES = 256 * 1024;
+
 export interface FileTextSlice {
   path: string;
   content: string;
@@ -47,6 +54,103 @@ export interface FileTextSlice {
   totalBytes: number;
   truncated: boolean;
   isBinary: boolean;
+  /**
+   * 就地编辑的只读元信息：仅当本次读取覆盖完整文件且不是二进制时返回。
+   * 旧远端 Host 不返回这些字段，调用方必须按"不可编辑（host-unsupported）"处理。
+   */
+  editCapability?: TextEditCapability;
+  encoding?: FileTextEncoding;
+  lineEndings?: FileLineEndings;
+  revision?: FileRevision;
+}
+
+/**
+ * 文件版本：mtime + size + 内容哈希，用于编辑保存的乐观校验。
+ * `id` 与 CLI `FileSystemRevision` 同构（`mtime:<trunc mtimeMs>:size:<sizeBytes>`），
+ * 跨进程/跨 Host 传输时只依赖这三个字段，不依赖文件系统 inode。
+ */
+export interface FileRevision {
+  id: string;
+  mtimeMs: number;
+  sizeBytes: number;
+  /** 完整字节的 `sha256:<hex>`；内容相同即视为同一版本。 */
+  hash: string;
+}
+
+/** 编辑态可无损往返的文本编码。 */
+export type FileTextEncoding = "utf8" | "gb2312" | "gbk" | "gb18030";
+
+/** 换行风格；混合换行不允许进入编辑态。 */
+export type FileLineEndings = "LF" | "CRLF";
+
+export type TextEditBlockReason =
+  | "binary"
+  | "too-large"
+  | "not-lossless"
+  | "mixed-line-endings"
+  /** 本次读取未覆盖全文（分段读取），无法判定无损往返；与 Host 能力无关。 */
+  | "partial-read"
+  | "host-unsupported";
+
+export interface TextEditCapability {
+  editable: boolean;
+  reason?: TextEditBlockReason;
+}
+
+/** 进入编辑态时读取的完整快照；`content` 统一为 LF 换行。 */
+export interface FileTextEditSnapshot {
+  path: string;
+  content: string;
+  encoding: FileTextEncoding;
+  lineEndings: FileLineEndings;
+  revision: FileRevision;
+  totalBytes: number;
+}
+
+export interface WriteTextFileParams {
+  path: string;
+  /** 编辑器内的 LF 换行文本；Host 按 `lineEndings` 还原后写入。 */
+  content: string;
+  encoding: FileTextEncoding;
+  lineEndings: FileLineEndings;
+  baseRevision: FileRevision;
+}
+
+export type TextEditErrorCode =
+  | "stale_file"
+  | "permission_denied"
+  | "io_error"
+  | "file_not_found"
+  | "symlink_refused"
+  | "not_editable";
+
+export interface WriteTextFileSuccess {
+  ok: true;
+  revision: FileRevision;
+}
+
+export interface WriteTextFileFailure {
+  ok: false;
+  code: TextEditErrorCode;
+  message: string;
+}
+
+export type WriteTextFileResult = WriteTextFileSuccess | WriteTextFileFailure;
+
+export interface TextFormatCapability {
+  /** 只支持 Host 内置固定版本 Prettier；无静态配置时为 null。 */
+  formatter: "prettier" | null;
+  configPath?: string;
+}
+
+export type TextFormatSkipReason = "no-config" | "unsupported-language";
+
+export interface TextFormatResult {
+  /** 格式化成功时为最终文本；跳过或失败时为 null。 */
+  content: string | null;
+  skippedReason?: TextFormatSkipReason;
+  /** 格式化抛错时的说明；调用方应继续用原文保存。 */
+  error?: string;
 }
 
 export interface FileMediaPreview {

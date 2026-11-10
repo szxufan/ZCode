@@ -15,6 +15,7 @@ export function createDesktopPlatform(options: {
   return {
     canSelectFilePath: true,
     canOpenLocalFiles: true,
+    canEditTextFiles: true,
     pluginSandbox: createDesktopPluginSandboxPlatform(),
     createLocalMediaPreviewUrl: buildLocalMediaPreviewUrl,
     isLocalDevelopmentRuntime: options.isLocalDevelopmentRuntime,
