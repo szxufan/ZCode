@@ -1,5 +1,11 @@
 # Changelog
 
+## [3.24.0](https://github.com/szxufan/ZCode/compare/v3.23.0...v3.24.0) (2026-11-10)
+
+### Features
+
+* 新增文件预览就地编辑功能模块 ([7e9effc](https://github.com/szxufan/ZCode/commit/7e9effc603ef7d9f12d9e702a60dea66de39014f))
+
 ## [3.23.0](https://github.com/szxufan/ZCode/compare/v3.22.0...v3.23.0) (2026-11-09)
 
 ### Chores
