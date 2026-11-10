@@ -1,6 +1,6 @@
 /* eslint-disable max-lines -- codeViewer 集中维护文件、文本、图片和 diff 预览提取；本次只收敛 tool identity，不顺手拆文件以免扩大回归面。 */
 import type { BundledLanguage } from "shiki";
-import { getMediaPreviewFormat, type MediaPreviewKind } from "@zcode/shared";
+import { FILE_TEXT_MAX_BYTES, getMediaPreviewFormat, type MediaPreviewKind } from "@zcode/shared";
 import type { TaskChatToolCall as ChatToolCall } from "@/lib/taskChatMessageTypes.js";
 import type { CodeViewerWorkspaceScope } from "@/lib/codeViewerWorkspaceScope.js";
 import {
@@ -22,7 +22,9 @@ import {
 
 export { buildUnifiedDiff } from "@/lib/toolDiffPreview.js";
 
-export const FILE_VIEWER_MAX_TEXT_BYTES = 256 * 1024;
+// 上限与 Host 的 readTextFile / readTextEditSnapshot 同源（@zcode/shared），
+// 否则 renderer 的可编辑判定会与 Host 的截断判定错位。
+export const FILE_VIEWER_MAX_TEXT_BYTES = FILE_TEXT_MAX_BYTES;
 export interface FileCodeViewerSource extends CodeViewerWorkspaceScope {
   type: "file";
   title: string;

@@ -79,6 +79,8 @@ export function FileManagerPane({
     id: showNavigation ? "fileManager.hideNavigation" : "fileManager.showNavigation",
   });
   const navigate = (nextSource: CodeViewerSource) => {
+    // 未保存确认统一收口在 useAppPanels 的 handleNavigateFileManager；
+    // 这里再确认一次会在同一次导航中弹两遍对话框。
     onNavigate({
       ...nextSource,
       workspacePath: target.workspacePath,

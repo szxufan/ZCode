@@ -5,6 +5,19 @@ export type {
   FileMediaPreview,
   FileStat,
   FileTextSlice,
+  FileTextEditSnapshot,
+  FileRevision,
+  FileTextEncoding,
+  FileLineEndings,
+  TextEditBlockReason,
+  TextEditCapability,
+  TextEditErrorCode,
+  WriteTextFileParams,
+  WriteTextFileResult,
+  WriteTextFileFailure,
+  TextFormatCapability,
+  TextFormatSkipReason,
+  TextFormatResult,
   FileWatchEvent,
   WorkspaceFileEntry,
   SystemInfo,
@@ -28,7 +41,7 @@ export type {
   PersistedWorkspaceSessionEntry,
 } from "./protocol.js";
 export type { WorkspacePurpose } from "./workspacePurpose.js";
-export { DEFAULT_LOCALE } from "./protocol.js";
+export { DEFAULT_LOCALE, FILE_TEXT_MAX_BYTES } from "./protocol.js";
 export { ZCODE_VERSION, ZCODE_COMMIT, ZCODE_BUILD_TIME } from "./version.js";
 export type { HelloMessage, HelloAckMessage } from "./handshake.js";
 export type { ArmsRumEnv, ZCodeEnv, ZCodeProductFlavor } from "./env.js";

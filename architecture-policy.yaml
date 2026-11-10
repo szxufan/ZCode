@@ -1080,6 +1080,36 @@ modules:
     layers:
       adapters: .
     owner: desktop
+  # file-text-edit：由 architecture:adopt 登记
+  - id: file-text-edit
+    roots:
+      - packages/services/src/file
+    managed: true
+    requires:
+      - services
+      - shared
+    publicEntrypoints:
+      - packages/services/src/file/index.ts
+      - packages/services/src/file/contract.ts
+    layers:
+      adapters: .
+    owner: services
+  # ui-preview-edit：由 architecture:adopt 登记
+  - id: ui-preview-edit
+    roots:
+      - packages/ui/src/preview-pane
+    managed: true
+    requires:
+      - rpc
+      - services
+      - shared
+      - ui
+    publicEntrypoints:
+      - packages/ui/src/preview-pane/index.ts
+      - packages/ui/src/preview-pane/contract.ts
+    layers:
+      ui: .
+    owner: ui
 
 global:
   # 临时时间戳（2026-09-10）：unmanaged-new-file 只约束此日期之后首次入库的文件。

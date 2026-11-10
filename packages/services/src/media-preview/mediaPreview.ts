@@ -1,5 +1,5 @@
 import { getMediaPreviewFormat, ServiceChannels, type MediaPreviewKind } from "@zcode/shared";
-import type { IFileService } from "../file/file.js";
+import type { IFileService } from "../file/index.js";
 import { createServiceDescriptor } from "../descriptors.js";
 
 export type MediaPreviewPreparation =

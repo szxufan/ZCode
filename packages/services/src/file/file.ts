@@ -3,8 +3,13 @@ import type {
   FileEntry,
   FileMediaPreview,
   FileStat,
+  FileTextEditSnapshot,
+  TextFormatCapability,
+  TextFormatResult,
   WorkspaceFileEntry,
   FileTextSlice,
+  WriteTextFileParams,
+  WriteTextFileResult,
 } from "@zcode/shared";
 import { ServiceChannels } from "@zcode/shared";
 import { createServiceDescriptor } from "../descriptors.js";
@@ -33,6 +38,25 @@ export interface IFileService {
   createDefaultWorkspace(): Promise<{ path: string }>;
   createScratchWorkspace(params: { name: string }): Promise<{ path: string }>;
   readTextFile(params: { path: string; offset?: number; length?: number }): Promise<FileTextSlice>;
+  /** 读取可无损回写的完整文本快照（内容统一 LF），供就地编辑使用。 */
+  readTextEditSnapshot(params: { path: string }): Promise<FileTextEditSnapshot>;
+  /**
+   * 以 baseRevision 做乐观校验后原子写回；保留原文件权限位并拒绝写软链。
+   * 冲突等失败以结构化结果返回，不抛异常，便于 UI 区分处理。
+   */
+  writeTextFile(params: WriteTextFileParams): Promise<WriteTextFileResult>;
+  /** 手动格式化入口的可用性判定；只读项目静态 Prettier 配置。 */
+  getTextFormatCapability(params: {
+    path: string;
+    /** 配置发现上界；缺省时可能读到 workspace 之外的全局配置。 */
+    workspacePath?: string;
+  }): Promise<TextFormatCapability>;
+  /** 保存与手动格式化共用；跳过或失败时返回原因，不阻塞保存。 */
+  formatTextContent(params: {
+    path: string;
+    content: string;
+    workspacePath?: string;
+  }): Promise<TextFormatResult>;
   readMediaPreview(params: { path: string; maxBytes?: number }): Promise<FileMediaPreview>;
   /**
    * 按偏移读取文件的一段原始字节，供大二进制文件（如 PDF）按需分段加载。

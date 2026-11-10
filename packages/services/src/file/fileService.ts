@@ -1,4 +1,3 @@
-/* eslint-disable max-lines */
 import type { Dirent } from "node:fs";
 import { mkdir, open, readFile, readdir, realpath, stat } from "node:fs/promises";
 import { homedir } from "node:os";
@@ -7,10 +6,19 @@ import type {
   FileBinaryPreview,
   FileEntry,
   FileMediaPreview,
+  FileTextEditSnapshot,
   FileTextSlice,
+  TextFormatCapability,
+  TextFormatResult,
   WorkspaceFileEntry,
+  WriteTextFileParams,
+  WriteTextFileResult,
 } from "@zcode/shared";
-import { getMediaPreviewFormat, REMOTE_WORKSPACE_PREPARATION_TIMEOUT_MS } from "@zcode/shared";
+import {
+  FILE_TEXT_MAX_BYTES,
+  getMediaPreviewFormat,
+  REMOTE_WORKSPACE_PREPARATION_TIMEOUT_MS,
+} from "@zcode/shared";
 import { packWorkspaceFileEntries } from "@zcode/shared/workspaceFileEntriesCodec";
 import type { IFileService, WorkspaceFileSearchParams } from "./file.js";
 import { WORKSPACE_FILE_SEARCH_DISPLAY_CAP } from "@zcode/shared/workspaceFileSearch";
@@ -29,8 +37,20 @@ import {
 } from "./workspaceFileIgnore.js";
 import { createServiceLogger } from "../logger/serviceLogger.js";
 import { getConversationWorkspaceDir } from "../paths.js";
+import {
+  blockReasonForRead,
+  buildFileRevision,
+  formatTextContent as formatTextContentImpl,
+  getTextFormatCapability as getTextFormatCapabilityImpl,
+  hashBytes,
+  inspectTextBuffer,
+  isProbablyBinary,
+  readTextEditSnapshot as readTextEditSnapshotImpl,
+  writeTextFile as writeTextFileImpl,
+} from "./textEdit.js";
 const DEFAULT_TEXT_READ_BYTES = 128 * 1024;
-const MAX_TEXT_READ_BYTES = 256 * 1024;
+// 与 renderer 的可编辑判定同源，避免出现"UI 认为可编辑但 Host 截断"的错位。
+const MAX_TEXT_READ_BYTES = FILE_TEXT_MAX_BYTES;
 const DEFAULT_MEDIA_PREVIEW_BYTES = 4 * 1024 * 1024;
 const MAX_MEDIA_PREVIEW_BYTES = 8 * 1024 * 1024;
 const DEFAULT_BINARY_READ_BYTES = 256 * 1024;
@@ -82,24 +102,6 @@ function inferMediaTypeFromPath(path: string): string {
     getMediaPreviewFormat(path)?.mediaType ??
     "application/octet-stream"
   );
-}
-function isProbablyBinary(buffer: Buffer): boolean {
-  if (buffer.length === 0) {
-    return false;
-  }
-  let suspiciousBytes = 0;
-  for (const value of buffer) {
-    if (value === 0) {
-      return true;
-    }
-    const isCommonWhitespace = value === 9 || value === 10 || value === 12 || value === 13;
-    const isControlChar =
-      (value >= 1 && value <= 8) || (value >= 14 && value <= 31) || value === 127;
-    if (!isCommonWhitespace && isControlChar) {
-      suspiciousBytes += 1;
-    }
-  }
-  return suspiciousBytes / buffer.length > 0.3;
 }
 const SCRATCH_WORKSPACE_ROOT_NAME = "ZCodeProject";
 function validateScratchWorkspaceName(name: string): string {
@@ -251,6 +253,7 @@ export function createFileService(options: CreateFileServiceOptions = {}): IFile
   const workspaceFileSearchFilter =
     options.workspaceFileSearchFilter ?? defaultWorkspaceFileSearchFilter;
   const workspaceIgnoreLogger = createServiceLogger("workspace-file-ignore");
+  const textEditLogger = createServiceLogger("file");
   const fileExistenceCache = new FileExistenceCache();
   // 索引归服务实例；不同 Host/注入过滤器不能通过模块全局缓存复用同路径结果。
   const workspaceFileListCache = new Map<string, WorkspaceFileIndex>();
@@ -507,6 +510,10 @@ export function createFileService(options: CreateFileServiceOptions = {}): IFile
       }
       const offset = Math.max(0, Math.trunc(params.offset ?? 0));
       if (offset >= fileStat.size) {
+        // 空文件也必须给出编辑元信息，否则新建的空文件在预览里没有编辑入口；
+        // 内容与换行基线复用 inspectTextBuffer，保持与 readTextEditSnapshot 一致。
+        const emptyChunk = Buffer.alloc(0);
+        const inspection = fileStat.size === 0 ? inspectTextBuffer(emptyChunk) : null;
         return {
           path: params.path,
           content: "",
@@ -515,6 +522,14 @@ export function createFileService(options: CreateFileServiceOptions = {}): IFile
           totalBytes: fileStat.size,
           truncated: false,
           isBinary: false,
+          ...(inspection
+            ? {
+                editCapability: inspection.capability,
+                ...(inspection.decoded ? { encoding: inspection.decoded.encoding } : {}),
+                ...(inspection.lineEndings ? { lineEndings: inspection.lineEndings } : {}),
+                revision: buildFileRevision(fileStat, hashBytes(emptyChunk)),
+              }
+            : {}),
         };
       }
       const targetLength = clampReadLength(params.length);
@@ -526,6 +541,13 @@ export function createFileService(options: CreateFileServiceOptions = {}): IFile
         const { bytesRead } = await handle.read(buffer, 0, readLength, offset);
         const chunk = buffer.subarray(0, bytesRead);
         const isBinary = isProbablyBinary(chunk);
+        const truncated = offset + bytesRead < fileStat.size;
+        // 只有从 0 开始且读完整份文件时才能给出编辑元信息；调用方据此决定是否展示编辑入口。
+        const coversWholeFile = offset === 0 && !truncated;
+        const blockReason = blockReasonForRead({ isBinary, truncated, coversWholeFile });
+        // blockReason 为 null 时 coversWholeFile 必为 true，inspection 一定非 null；
+        // 兜底分支只为满足类型收窄，正常路径不会走到。
+        const inspection = coversWholeFile && !isBinary ? inspectTextBuffer(chunk) : null;
         // 性能说明：文本读取始终受 256KB 硬上限约束，调用方可据 truncated 决定是否展示，
         // 避免大文件或远程文件一次性 readFile 把 utility process 和 renderer 一起拖慢。
         return {
@@ -534,12 +556,47 @@ export function createFileService(options: CreateFileServiceOptions = {}): IFile
           offset,
           bytesRead,
           totalBytes: fileStat.size,
-          truncated: offset + bytesRead < fileStat.size,
+          truncated,
           isBinary,
+          editCapability: blockReason
+            ? { editable: false, reason: blockReason }
+            : (inspection?.capability ?? { editable: false, reason: "host-unsupported" }),
+          ...(inspection?.decoded ? { encoding: inspection.decoded.encoding } : {}),
+          ...(inspection?.lineEndings ? { lineEndings: inspection.lineEndings } : {}),
+          ...(coversWholeFile ? { revision: buildFileRevision(fileStat, hashBytes(chunk)) } : {}),
         };
       } finally {
         await handle.close();
       }
+    },
+    async readTextEditSnapshot(params: { path: string }): Promise<FileTextEditSnapshot> {
+      return readTextEditSnapshotImpl(params);
+    },
+    async writeTextFile(params: WriteTextFileParams): Promise<WriteTextFileResult> {
+      const result = await writeTextFileImpl(params);
+      if (result.ok) {
+        textEditLogger.info("文本文件写回成功", {
+          path: params.path,
+          sizeBytes: result.revision.sizeBytes,
+        });
+      } else {
+        // 冲突是用户可恢复的常态分支，只记录状态码，不记录文件内容。
+        textEditLogger.warn("文本文件写回失败", { path: params.path, code: result.code });
+      }
+      return result;
+    },
+    async getTextFormatCapability(params: {
+      path: string;
+      workspacePath?: string;
+    }): Promise<TextFormatCapability> {
+      return getTextFormatCapabilityImpl(params.path, params.workspacePath);
+    },
+    async formatTextContent(params: {
+      path: string;
+      content: string;
+      workspacePath?: string;
+    }): Promise<TextFormatResult> {
+      return formatTextContentImpl(params);
     },
     async readFileRange(params: {
       path: string;
