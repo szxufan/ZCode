@@ -1,8 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import type { ProviderSettingsFormProvider } from "@/lib/providerSettingsFormTypes.js";
-import type {
-  ModelConnectivityResult,
-} from "@zcode/shared";
+import { toZhOrEnLocale, type ModelConnectivityResult } from "@zcode/shared";
 import { useZCodeIntl } from "@/i18n/IntlProvider.js";
 import { Button } from "@/components/ui/button.js";
 import { useConfirmDialog } from "@/hooks/useConfirmDialog.js";
@@ -207,20 +205,18 @@ export function ModelProviderSection({
     intl,
   });
 
-  const handleSelectNavItem = useCallback(
-    (item: (typeof navigationItems)[number]) => {
-      setInvalidProviderTarget(false);
-      setSelectedNodeKey(item.key);
-      setTemplatePickerOpen(false);
-    },
-    [],
-  );
+  const handleSelectNavItem = useCallback((item: (typeof navigationItems)[number]) => {
+    setInvalidProviderTarget(false);
+    setSelectedNodeKey(item.key);
+    setTemplatePickerOpen(false);
+  }, []);
 
   const handleCreateProvider = useCallback(
     async (input: { templateId?: string; providerName?: string }) => {
       setCreatingProvider(true);
       try {
-        const created = await createPersonalProvider({ ...input, locale });
+        // Provider 模板名只有中英两套，非中文界面语言用英文名。
+        const created = await createPersonalProvider({ ...input, locale: toZhOrEnLocale(locale) });
         setPendingCreatedProviderId(created.providerId);
         setSelectedNodeKey(createCustomProviderNodeKey(created.providerId));
         setTemplatePickerOpen(false);

@@ -1,10 +1,11 @@
+import { join, resolve } from "node:path";
 import { describe, expect, it } from "vitest";
 
 import {
   resolveProjectMemoryRetrievalBranch,
   type ProjectMemoryRetrievalBranch,
 } from "../src/memory/project-memory-retrieval-branch.js";
-import { loadProjectMemoryIndexContent } from "../src/runtime/methods/context.js";
+import { loadProjectMemoryIndex } from "../src/runtime/methods/context.js";
 import { MemoryFileSystem } from "./memory-test-utils.js";
 
 describe("project Memory retrieval branch", () => {
@@ -16,8 +17,8 @@ describe("project Memory retrieval branch", () => {
   });
 
   it("loads and seeds MEMORY.md only for the default-index branch", async () => {
-    const memoryRoot = "/storage/memories/projects/project-0123456789abcdef/memory";
-    const indexPath = `${memoryRoot}/MEMORY.md`;
+    const memoryRoot = resolve("/storage/memories/projects/project-0123456789abcdef/memory");
+    const indexPath = join(memoryRoot, "MEMORY.md");
     const content = "- [Database policy](database-policy.md) — use the real database";
     const defaultFileSystem = new MemoryFileSystem({ [indexPath]: content });
     const defaultReadFileState = new Map();
@@ -25,10 +26,12 @@ describe("project Memory retrieval branch", () => {
       fileSystemPort: defaultFileSystem,
       now: () => new Date("2026-07-22T00:00:00.000Z"),
       readFileState: defaultReadFileState,
-    } as Parameters<typeof loadProjectMemoryIndexContent>[0];
+    } as Parameters<typeof loadProjectMemoryIndex>[0];
 
     await expect(
-      loadProjectMemoryIndexContent(defaultRuntime, memoryRoot, "default-index"),
+      loadProjectMemoryIndex(defaultRuntime, memoryRoot, "default-index").then(
+        (read) => read.index?.content,
+      ),
     ).resolves.toBe(content);
     expect(defaultFileSystem.readRequests).toEqual([{ maxBytes: undefined, path: indexPath }]);
     expect(defaultReadFileState.size).toBe(1);
@@ -39,10 +42,12 @@ describe("project Memory retrieval branch", () => {
       fileSystemPort: semanticFileSystem,
       now: () => new Date("2026-07-22T00:00:00.000Z"),
       readFileState: semanticReadFileState,
-    } as Parameters<typeof loadProjectMemoryIndexContent>[0];
+    } as Parameters<typeof loadProjectMemoryIndex>[0];
 
     await expect(
-      loadProjectMemoryIndexContent(semanticRuntime, memoryRoot, "semantic-recall"),
+      loadProjectMemoryIndex(semanticRuntime, memoryRoot, "semantic-recall").then(
+        (read) => read.index?.content,
+      ),
     ).resolves.toBeUndefined();
     expect(semanticFileSystem.readRequests).toEqual([]);
     expect(semanticReadFileState.size).toBe(0);
@@ -53,18 +58,20 @@ describe("project Memory retrieval branch", () => {
     { content: "---\ninternal: hidden\n---\n", name: "frontmatter-only" },
     { content: "<!-- hidden top-level comment -->\n", name: "top-level-comment-only" },
   ])("does not seed read state for $name MEMORY.md", async ({ content }) => {
-    const memoryRoot = "/storage/memories/projects/project-0123456789abcdef/memory";
-    const indexPath = `${memoryRoot}/MEMORY.md`;
+    const memoryRoot = resolve("/storage/memories/projects/project-0123456789abcdef/memory");
+    const indexPath = join(memoryRoot, "MEMORY.md");
     const fileSystem = new MemoryFileSystem({ [indexPath]: content });
     const readFileState = new Map();
     const runtime = {
       fileSystemPort: fileSystem,
       now: () => new Date("2026-07-22T00:00:00.000Z"),
       readFileState,
-    } as Parameters<typeof loadProjectMemoryIndexContent>[0];
+    } as Parameters<typeof loadProjectMemoryIndex>[0];
 
     await expect(
-      loadProjectMemoryIndexContent(runtime, memoryRoot, "default-index"),
+      loadProjectMemoryIndex(runtime, memoryRoot, "default-index").then(
+        (read) => read.index?.content,
+      ),
     ).resolves.toBeUndefined();
     expect(fileSystem.readRequests).toEqual([{ maxBytes: undefined, path: indexPath }]);
     expect(readFileState.size).toBe(0);

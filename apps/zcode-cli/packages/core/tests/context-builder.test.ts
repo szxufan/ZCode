@@ -4,7 +4,10 @@ import { describe, expect, it } from "vitest";
 import {
   AGENT_COMMUNICATION_PROMPTS,
   AGENT_CONTEXT_MANAGEMENT_PROMPTS,
+  AGENT_ENV_UNTRUSTED_NOTE,
   AGENT_HARD_TO_REVERSE_PROMPT,
+  AGENT_META_USER_CLOSING,
+  AGENT_META_USER_OPENING,
   AGENT_SECURITY_NOTICE,
   agentDesktopContextCopy,
   buildAgentContextManagementBody,
@@ -23,6 +26,7 @@ import {
   buildIdentitySection,
   buildSkillsSection,
 } from "../src/context/index.js";
+import { formatMemoryIndexContent } from "../src/memory/index-content.js";
 import { readToolEntry } from "../src/tool/handlers/read.js";
 import { createToolRegistry } from "../src/tool/registry.js";
 import type { ContextBuildResult, ContextMetaUserAttachmentSource } from "../src/context/types.js";
@@ -54,10 +58,26 @@ const ADDITIONAL_ACT_DONT_REDERIVE_PROMPT = CONTEXT_MANAGEMENT_ADDITIONAL_PARAGR
 const AUTONOMY_APPENDIX_PROMPT =
   CONTEXT_MANAGEMENT_ADDITIONAL_PARAGRAPHS.slice(1).join("\n\n");
 
+// 上游 v3.18 在 system 末尾追加固定的 token 预算行；fork 的 additional 仍保留中文
+// 自主运行附录（未跟随上游移除），因此不并入上游 REMOVED_AUTONOMY_PARAGRAPHS 断言。
+const TOTAL_TOKENS_LINE = "<total_tokens>15000000 tokens left</total_tokens>";
+
+// 环境、模型、日期只产出 section，由运行时宣告；其余来源读 meta user carrier。
+const RUNTIME_ANNOUNCED_SECTIONS = {
+  environment: "env_info",
+  model: "model",
+  date: "current_date",
+} as const;
+
 function metaAttachment(
   result: ContextBuildResult,
-  source: ContextMetaUserAttachmentSource,
+  source: ContextMetaUserAttachmentSource | keyof typeof RUNTIME_ANNOUNCED_SECTIONS,
 ): string {
+  if (source in RUNTIME_ANNOUNCED_SECTIONS) {
+    const sectionSource =
+      RUNTIME_ANNOUNCED_SECTIONS[source as keyof typeof RUNTIME_ANNOUNCED_SECTIONS];
+    return result.sections.find((section) => section.source === sectionSource)?.content ?? "";
+  }
   return (
     result.metaUserAttachments.find((attachment) => attachment.source === source)?.content ?? ""
   );
@@ -122,7 +142,7 @@ describe("ContextBuilder meta user context", () => {
     expect(result.systemMessages[2]?.content).toContain("对难以逆转或对外的操作");
     expect(
       result.systemMessages[2]?.content.indexOf("对难以逆转或对外"),
-    ).toBeLessThan(result.systemMessages[2]?.content.indexOf("# 环境") ?? -1);
+    ).toBeLessThan(result.systemMessages[2]?.content.indexOf("# 上下文管理") ?? -1);
     expect(result.systemMessages[2]?.content).not.toContain("# 会话专项指导");
     expect(result.systemMessages[2]?.content).not.toContain("`! <command>`");
     expect(result.systemMessages[2]?.content).not.toContain(
@@ -131,7 +151,8 @@ describe("ContextBuilder meta user context", () => {
     expect(result.systemMessages[2]?.content).not.toContain(
       "spawn Agent with subagent_type=Explore",
     );
-    expect(result.systemMessages[2]?.content).toContain("# 环境");
+    // 上游 v3.18：环境是运行时公告（meta_user），不再进入 system。
+    expect(result.systemMessages[2]?.content).not.toContain("# 环境");
     expect(result.systemMessages[2]?.content).toContain("# 上下文管理");
     expect(result.systemMessages[2]?.content).not.toContain("# Language");
     expect(result.systemMessages[2]?.content).not.toContain("# Function Result Clearing");
@@ -140,7 +161,7 @@ describe("ContextBuilder meta user context", () => {
     expect(result.systemMessages[2]?.content).not.toContain("# Agent Identity");
   });
 
-  it("appends the exact act and autonomy prompts after context management", () => {
+  it("keeps the act and autonomy prompts after context management and ends with the token budget line", () => {
     const result = createContextBuilder({
       workingDirectory: "/workspace",
       envInfo: {
@@ -160,12 +181,16 @@ describe("ContextBuilder meta user context", () => {
     expect(contextManagement?.content).toBe(
       `${DEFAULT_CONTEXT_MANAGEMENT_PROMPT}\n\n${ADDITIONAL_ACT_DONT_REDERIVE_PROMPT}\n\n${AUTONOMY_APPENDIX_PROMPT}`,
     );
-    expect(dynamicSystem.endsWith(AUTONOMY_APPENDIX_PROMPT)).toBe(true);
+    // fork 保留自主运行附录；末尾再接上游 v3.18 的固定 token 预算行。
+    expect(dynamicSystem.endsWith(`${AUTONOMY_APPENDIX_PROMPT}\n\n${TOTAL_TOKENS_LINE}`)).toBe(
+      true,
+    );
     expect(dynamicSystem.split(ADDITIONAL_ACT_DONT_REDERIVE_PROMPT)).toHaveLength(2);
     expect(dynamicSystem.split(AUTONOMY_APPENDIX_PROMPT)).toHaveLength(2);
+    expect(dynamicSystem.split(TOTAL_TOKENS_LINE)).toHaveLength(2);
   });
 
-  it("injects the stable ZCode Desktop Context before dynamic behavior", () => {
+  it("keeps the ZCode Desktop Context as a runtime-announced section outside the system prompt", () => {
     const result = createContextBuilder({
       workingDirectory: "/workspace",
       presentationSurface: "zcode_desktop",
@@ -182,11 +207,13 @@ describe("ContextBuilder meta user context", () => {
       (section) => section.source === "desktop_context",
     );
     expect(desktopSections).toHaveLength(1);
+    // 修复原因：Desktop 段原来在 system 里；system 由 prompt 快照冻结，呈现面或灰度在两次启动之间变化时
+    // 仍发旧的段。现在正文随环境公告发送，builder 只保留 section 作开关与用量统计。
     expect(desktopSections[0]).toMatchObject({
       name: "ZCode Desktop Context",
       source: "desktop_context",
-      injectionTarget: "system",
-      cacheHint: "stable",
+      injectionTarget: "meta_user",
+      cacheHint: "dynamic",
     });
     expect(desktopSections[0]?.content).toBe(agentDesktopContextCopy(undefined));
 
@@ -197,11 +224,13 @@ describe("ContextBuilder meta user context", () => {
       (section) => section.source === "dynamic_behavior",
     );
     expect(desktopIndex).toBeGreaterThan(-1);
-    expect(desktopIndex).toBeLessThan(dynamicBehaviorIndex);
+    // v3.18：Desktop 段是 meta_user 公告；orderSectionsForInjection 把 system 段排在 meta_user 之前。
+    expect(desktopIndex).toBeGreaterThan(dynamicBehaviorIndex);
 
     expect(result.systemMessages).toHaveLength(3);
-    expect(result.systemMessages[1]?.content).toContain("# ZCode Desktop 上下文");
-    expect(result.systemMessages[2]?.content).not.toContain("# ZCode Desktop 上下文");
+    // 正文由环境公告发送：system 与 meta user 附件都不携带 Desktop 段。
+    expect(JSON.stringify(result.systemMessages)).not.toContain("# ZCode Desktop 上下文");
+    expect(JSON.stringify(result.metaUserAttachments)).not.toContain("# ZCode Desktop 上下文");
   });
 
   it("does not inject the Desktop context for the default terminal surface", () => {
@@ -280,7 +309,7 @@ describe("ContextBuilder meta user context", () => {
     expect(dynamicSystem).toContain("删除或覆盖前先查看目标内容");
     expect(dynamicSystem).toContain("如实报告结果");
     expect(dynamicSystem.indexOf("对难以逆转或对外")).toBeLessThan(
-      dynamicSystem.indexOf("# 环境"),
+      dynamicSystem.indexOf("# 上下文管理"),
     );
     expect(dynamicSystem).not.toContain("# 会话专项指导");
     expect(dynamicSystem).not.toContain("`! <command>`");
@@ -293,7 +322,7 @@ describe("ContextBuilder meta user context", () => {
     expect(dynamicSystem).not.toContain("Prefer dedicated edit/write tools");
     expect(dynamicSystem).not.toContain("Use Bash");
     expect(dynamicSystem).not.toContain("Call independent tools in parallel in a single response");
-    expect(dynamicSystem).toContain("# 环境");
+    expect(dynamicSystem).not.toContain("# 环境");
     expect(dynamicSystem).toContain("# 上下文管理");
     expect(dynamicSystem).not.toContain("不是 Git 仓库");
     expect(dynamicSystem).not.toContain("- **Git**:");
@@ -352,6 +381,8 @@ describe("ContextBuilder meta user context", () => {
     }).build();
 
     expect(result.sections.some((section) => section.source === "desktop_context")).toBe(false);
+    // 上游 v3.18：环境/模型是动态事实，使用自定义 prompt（工作流子代理）时也照常公告。
+    expect(result.sections.some((section) => section.source === "env_info")).toBe(true);
 
     expect(result.systemMessages.map((message) => message.role)).toEqual(["system", "system"]);
     expect(result.metaUserAttachments.map((attachment) => attachment.source)).toEqual([
@@ -363,13 +394,12 @@ describe("ContextBuilder meta user context", () => {
     expect(meta).not.toContain("<system-reminder>");
     expect(meta).toContain("Project instruction should stay as userContext.");
     expect(meta).toContain("以下是代码库与用户指令。");
-    expect(meta).toContain("# agentsMd");
     expect(meta).not.toContain("# claudeMd");
-    expect(meta).toContain("以下是 /workspace/AGENTS.md 的内容（工作区指令）：");
+    expect(meta).toContain("以下是 /workspace/AGENTS.md 的内容（工作区指令，随代码库提交）：");
     expect(meta).not.toContain("Project context:");
     expect(meta).not.toContain("- Package manager: pnpm");
     expect(meta).not.toContain("- `test`: vitest");
-    expect(meta).toContain("# currentDate");
+    expect(metaAttachment(result, "date")).toBe("# currentDate\n今天是 2026-06-04。");
     const providerText = [
       ...result.systemMessages.map((message) => message.content),
       ...result.metaUserAttachments.map((attachment) => attachment.content),
@@ -430,12 +460,11 @@ describe("ContextBuilder meta user context", () => {
     expect(dynamic).not.toContain("# 会话专项指导");
     expect(dynamic).not.toContain("`! <command>`");
     expect(dynamic).not.toContain("spawn Agent with subagent_type=Explore");
-    expect(dynamic.indexOf("# 记忆（Memory）")).toBeLessThan(dynamic.indexOf("# 环境"));
-    expect(dynamic.indexOf("# 环境")).toBeLessThan(dynamic.indexOf("# 输出风格：Learning"));
+    // 环境与输出风格都是运行时公告，不进 system。
+    expect(dynamic).not.toContain("# 环境");
+    expect(dynamic.indexOf("# 记忆（Memory）")).toBeLessThan(dynamic.indexOf("# 上下文管理"));
     expect(dynamic).not.toContain("# Session Guidance");
-    expect(dynamic.indexOf("# 输出风格：Learning")).toBeLessThan(dynamic.indexOf("# 上下文管理"));
-    expect(dynamic).toContain("# 输出风格：Learning\nExplain tradeoffs while solving the task.");
-    expect(dynamic).not.toContain("# 输出风格：Learning\n\n");
+    expect(dynamic).not.toContain("# 输出风格：Learning");
     expect(dynamic).not.toContain("# Language");
     expect(dynamic).not.toContain("# Function Result Clearing");
     expect(dynamic).not.toContain("# Summarize Tool Results");
@@ -508,10 +537,12 @@ describe("ContextBuilder meta user context", () => {
     );
     const contextPrefix = metaAttachment(result, "context_prefix");
     expect(contextPrefix).toContain(expected);
-    expect(contextPrefix.match(/# agentsMd/gu)).toHaveLength(1);
     expect(contextPrefix).not.toContain("# claudeMd");
-    expect(contextPrefix.indexOf("# agentsMd")).toBeLessThan(contextPrefix.indexOf("以下是 "));
-    expect(contextPrefix.indexOf(expected)).toBeLessThan(contextPrefix.indexOf("# currentDate"));
+    expect(contextPrefix.indexOf("以下是代码库与用户指令")).toBeLessThan(
+      contextPrefix.indexOf(`以下是 ${join(rootDir, "MEMORY.md")} 的内容`),
+    );
+    expect(contextPrefix).not.toContain("# currentDate");
+    expect(metaAttachment(result, "date")).toBe("# currentDate\n今天是 2026-07-22。");
     expect(contextPrefix.match(/用户自动记忆，跨会话持久保存/g)).toHaveLength(1);
   });
 
@@ -555,7 +586,7 @@ describe("ContextBuilder meta user context", () => {
     expect(contextPrefix).toContain("```markdown\n<!-- fenced comment remains -->\n```");
   });
 
-  it("renders git snapshot inside the dynamic org-cache system block after context management", () => {
+  it("renders Git in session_context while retaining the initial system behavior", () => {
     const result = createContextBuilder({
       workingDirectory: "/workspace",
       model: contextTestModel,
@@ -586,7 +617,7 @@ describe("ContextBuilder meta user context", () => {
     const stableBody = String(result.systemMessages[1]?.content ?? "");
 
     expect(stableBody).not.toContain("# 环境");
-    expect(stableBody).not.toContain("**Current model**: openai/gpt-5");
+    expect(stableBody).not.toContain("你由名为");
     expect(stableBody).not.toContain("**是否 Git 仓库**: 是");
     expect(stableBody).not.toContain("# 上下文管理");
     expect(stableBody).not.toContain(DEFAULT_COMMUNICATION_PROMPT);
@@ -594,29 +625,28 @@ describe("ContextBuilder meta user context", () => {
     expect(dynamicSystem).not.toContain("## Current Environment");
     expect(dynamicSystem).toMatch(/^\n\n# 与用户沟通/);
     expect(dynamicSystem).toContain("对难以逆转或对外的操作");
-    expect(dynamicSystem).toContain("# 环境");
-    expect(dynamicSystem).toContain("- 你由名为 openai/gpt-5 的模型驱动。");
-    expect(dynamicSystem).toContain("- 是否 Git 仓库: 是");
+    // 环境/模型是运行时公告（meta_user section），git 快照进 session_context 附件。
+    expect(dynamicSystem).not.toContain("# 环境");
+    expect(metaAttachment(result, "model")).toBe("- 你由名为 openai/gpt-5 的模型驱动。");
+    expect(metaAttachment(result, "environment")).toContain(" - 是否 Git 仓库: 是");
     expect(dynamicSystem).toContain("# 上下文管理");
     expect(dynamicSystem).not.toContain("# Language");
     expect(dynamicSystem).not.toContain("# Function Result Clearing");
     expect(dynamicSystem).not.toContain("# Summarize Tool Results");
-    expect(dynamicSystem).toContain("gitStatus:");
+    const sessionContext = metaAttachment(result, "session_context");
+    expect(dynamicSystem).not.toContain("gitStatus:");
+    expect(sessionContext).toContain("gitStatus: 这是会话开始时的 git 状态");
     expect(dynamicSystem.indexOf("# 上下文管理")).toBeLessThan(
       dynamicSystem.indexOf(ADDITIONAL_ACT_DONT_REDERIVE_PROMPT),
     );
     expect(dynamicSystem.indexOf(ADDITIONAL_ACT_DONT_REDERIVE_PROMPT)).toBeLessThan(
       dynamicSystem.indexOf(AUTONOMY_APPENDIX_PROMPT),
     );
-    expect(dynamicSystem.indexOf(AUTONOMY_APPENDIX_PROMPT)).toBeLessThan(
-      dynamicSystem.indexOf("gitStatus:"),
-    );
-    expect(dynamicSystem).toContain("这是会话开始时的 git 状态");
-    expect(dynamicSystem).toContain("当前分支: feature/alignment");
-    expect(dynamicSystem).toContain("主分支（通常用于发 PR）: main");
-    expect(dynamicSystem).toContain("Git 用户: ZCode Tester <tester@example.com>");
-    expect(dynamicSystem).toContain("状态:\n M package.json");
-    expect(dynamicSystem).toContain("最近提交:\nabc123 test commit");
+    expect(sessionContext).toContain("当前分支: feature/alignment");
+    expect(sessionContext).toContain("主分支（通常用于发 PR）: main");
+    expect(sessionContext).toContain("Git 用户: ZCode Tester <tester@example.com>");
+    expect(sessionContext).toContain("状态:\n M package.json");
+    expect(sessionContext).toContain("最近提交:\nabc123 test commit");
   });
 
   it("changes stable intro framing when an output style is active", () => {
@@ -649,7 +679,7 @@ describe("ContextBuilder meta user context", () => {
     expect(dynamicSystem).toMatch(/^\n\n# 与用户沟通/);
     expect(dynamicSystem).toContain("对难以逆转或对外的操作");
     expect(dynamicSystem).not.toContain("# 会话专项指导");
-    expect(dynamicSystem).toContain("# 环境");
+    expect(dynamicSystem).not.toContain("# 环境");
     expect(dynamicSystem).toContain("# 上下文管理");
   });
 
@@ -677,11 +707,8 @@ describe("ContextBuilder meta user context", () => {
     expect(stableBody).toContain("工具运行在用户选择的权限模式之后");
     expect(dynamicSystem.startsWith(`\n\n${EXPECTED_COMMUNICATION_PROMPT}`)).toBe(true);
     expect(dynamicSystem).toContain("对难以逆转或对外的操作");
-    expect(dynamicSystem).toContain("# 输出风格：Custom\nUse the custom response style.");
-    expect(dynamicSystem).not.toContain("# 输出风格：Custom\n\n");
-    expect(dynamicSystem.indexOf(EXPECTED_COMMUNICATION_PROMPT)).toBeLessThan(
-      dynamicSystem.indexOf("# 输出风格：Custom"),
-    );
+    // 输出风格改为运行时公告（output_style_instructions 附件），不再进 system 动态段。
+    expect(dynamicSystem).not.toContain("# 输出风格：Custom");
   });
 
   it("does not render legacy language guidance in the default dynamic block", () => {
@@ -800,12 +827,11 @@ describe("ContextBuilder meta user context", () => {
     expect(dynamicSystem).toMatch(/^\n\n# 与用户沟通/);
     expect(dynamicSystem).toContain("对难以逆转或对外的操作");
     expect(dynamicSystem).not.toContain("# 会话专项指导");
-    expect(dynamicSystem).toContain("# 环境");
+    expect(dynamicSystem).not.toContain("# 环境");
     expect(dynamicSystem).toContain("# 上下文管理");
     expect(stableBody).not.toContain("local AGENTS payload");
     expect(meta).not.toContain("<system-reminder>");
     expect(meta).toContain("以下是代码库与用户指令。");
-    expect(meta).toContain("# agentsMd");
     expect(meta).not.toContain("# claudeMd");
     expect(meta).not.toContain("# user_instructions");
     expect(meta).toContain("local AGENTS payload");
@@ -814,10 +840,10 @@ describe("ContextBuilder meta user context", () => {
     expect(meta).not.toContain("Package manager: pnpm");
     expect(meta).not.toContain("`test`: vitest");
     expect(meta).not.toContain("## 项目信息");
-    expect(meta).toContain("# currentDate");
-    expect(meta).toContain("今天是 2026-05-04。");
+    // 日期是运行时公告，与指令 carrier 分离。
+    expect(metaAttachment(result, "date")).toBe("# currentDate\n今天是 2026-05-04。");
     expect(meta).not.toContain("</system-reminder>");
-    expect(meta.indexOf("以下是代码库与用户指令")).toBeLessThan(meta.indexOf("# currentDate"));
+    expect(meta).not.toContain("今天是");
 
     const sectionTargets = result.sections.map((section) => ({
       name: section.name,
@@ -828,11 +854,11 @@ describe("ContextBuilder meta user context", () => {
       { name: "CLI Prefix", injectionTarget: "system", cacheHint: "stable" },
       { name: "Agent Identity", injectionTarget: "system", cacheHint: "stable" },
       { name: "Dynamic Behavior", injectionTarget: "system", cacheHint: "dynamic" },
-      { name: "Environment Info", injectionTarget: "system", cacheHint: "dynamic" },
+      { name: "Context Management", injectionTarget: "system", cacheHint: "dynamic" },
     ]);
     expect(sectionTargets).toEqual(
       expect.arrayContaining([
-        { name: "Environment Info", injectionTarget: "system", cacheHint: "dynamic" },
+        { name: "Environment Info", injectionTarget: "meta_user", cacheHint: "dynamic" },
         { name: "Context Management", injectionTarget: "system", cacheHint: "dynamic" },
         { name: "Request User Context", injectionTarget: "meta_user", cacheHint: "dynamic" },
         { name: "Current Date", injectionTarget: "meta_user", cacheHint: "dynamic" },
@@ -883,18 +909,19 @@ describe("ContextBuilder meta user context", () => {
 
     const meta = metaAttachment(result, "context_prefix");
     expect(meta).toContain("以下是代码库与用户指令。");
-    expect(meta.match(/# agentsMd/gu)).toHaveLength(1);
     expect(meta).not.toContain("# claudeMd");
-    expect(meta).toContain("以下是 /Users/test/.zcode/AGENTS.md 的内容（用户默认指令）：");
-    expect(meta).toContain("以下是 /workspace/AGENTS.md 的内容（工作区指令）：");
+    expect(meta).toContain("以下是 /Users/test/.zcode/AGENTS.md 的内容（用户全局默认指令，对所有项目生效）：");
+    expect(meta).toContain("以下是 /workspace/AGENTS.md 的内容（工作区指令，随代码库提交）：");
     expect(meta.indexOf("default instructions")).toBeLessThan(
       meta.indexOf("workspace instructions"),
     );
-    expect(meta.indexOf("# agentsMd")).toBeLessThan(meta.indexOf("default instructions"));
-    expect(meta.indexOf("以下是代码库与用户指令")).toBeLessThan(meta.indexOf("# currentDate"));
+    expect(meta.indexOf("以下是代码库与用户指令")).toBeLessThan(
+      meta.indexOf("default instructions"),
+    );
+    expect(meta).not.toContain("今天是");
   });
 
-  it("renders only currentDate when request user context has no content", () => {
+  it("keeps date separate when request user context has no content", () => {
     const result = createContextBuilder({
       workingDirectory: "/workspace",
       currentDate: "2026-05-04",
@@ -912,14 +939,11 @@ describe("ContextBuilder meta user context", () => {
       "system",
       "system",
     ]);
-    expect(result.metaUserAttachments.map((attachment) => attachment.source)).toEqual([
-      "context_prefix",
-    ]);
+    expect(result.metaUserAttachments).toEqual([]);
     const meta = metaAttachment(result, "context_prefix");
-    expect(meta).toContain("# currentDate");
-    expect(meta).toContain("今天是 2026-05-04。");
-    expect(meta).toContain("\n\n      重要：这些上下文可能与你的任务无关。");
-    expect(meta).not.toContain("\n\n重要：这些上下文可能与你的任务无关。");
+    expect(metaAttachment(result, "date")).toBe("# currentDate\n今天是 2026-05-04。");
+    expect(meta).toBe("");
+    expect(meta).not.toContain("重要：这些上下文可能与你的任务无关");
     expect(meta).not.toContain("# agentsMd");
     expect(meta).not.toContain("# claudeMd");
     expect(meta).not.toContain("# user_instructions");
@@ -956,10 +980,10 @@ describe("ContextBuilder meta user context", () => {
     expect(meta).not.toContain("的内容（");
     expect(meta).not.toContain("# user_instructions");
     expect(meta).not.toContain("## 项目信息");
-    expect(meta).toContain("# currentDate");
+    expect(metaAttachment(result, "date")).toMatch(/^# currentDate\n今天是/);
   });
 
-  it("renders a resolved instruction source under agentsMd", () => {
+  it("renders a resolved instruction source under the instruction preamble", () => {
     const result = createContextBuilder({
       workingDirectory: "/workspace",
       currentDate: "2026-05-04",
@@ -982,12 +1006,11 @@ describe("ContextBuilder meta user context", () => {
 
     const meta = metaAttachment(result, "context_prefix");
     expect(meta).toContain("以下是代码库与用户指令。");
-    expect(meta).toContain("# agentsMd");
     expect(meta).not.toContain("# claudeMd");
-    expect(meta).toContain("以下是 /workspace/CLAUDE.md 的内容（工作区指令）：");
+    expect(meta).toContain("以下是 /workspace/CLAUDE.md 的内容（工作区指令，随代码库提交）：");
     expect(meta).toContain("Workspace resolved instruction payload");
     expect(meta).not.toContain("# user_instructions");
-    expect(meta.indexOf("以下是代码库与用户指令")).toBeLessThan(meta.indexOf("# currentDate"));
+    expect(meta).not.toContain("今天是");
   });
 
   it("does not emit an empty meta user message", () => {
@@ -1025,7 +1048,7 @@ describe("ContextBuilder meta user context", () => {
     expect(result.systemMessages[2]?.content).not.toContain("# Function Result Clearing");
     expect(result.systemMessages[2]?.content).not.toContain("# Summarize Tool Results");
     expect(result.systemMessages[2]?.content).not.toContain("## Current Environment");
-    expect(result.systemMessages[2]?.content).toContain("# 环境");
+    expect(result.systemMessages[2]?.content).not.toContain("# 环境");
     expect(result.systemMessages[2]?.content).toContain("# 上下文管理");
   });
 
@@ -1096,7 +1119,6 @@ describe("ContextBuilder meta user context", () => {
     ]);
     expect(result.metaUserAttachments.map((attachment) => attachment.source)).toEqual([
       "skills_listing",
-      "context_prefix",
     ]);
     expect(result.systemMessages[0]?.content).not.toContain("demo-skill");
     expect(result.systemMessages[2]?.content).toContain("# 会话专项指导");
@@ -1111,7 +1133,8 @@ describe("ContextBuilder meta user context", () => {
     expect(metaAttachment(result, "skills_listing")).not.toContain("<system-reminder>");
     expect(metaAttachment(result, "skills_listing")).toContain("以下技能可通过 Skill 工具使用");
     expect(metaAttachment(result, "skills_listing")).toContain("demo-skill");
-    expect(metaAttachment(result, "context_prefix")).toContain("# currentDate");
+    expect(metaAttachment(result, "context_prefix")).toBe("");
+    expect(metaAttachment(result, "date")).toMatch(/^# currentDate\n今天是/);
   });
 
   it("does not mirror available subagents into meta user context", () => {
@@ -1162,13 +1185,14 @@ describe("ContextBuilder meta user context", () => {
 
     const environment = result.sections.find((section) => section.source === "env_info");
     expect(environment?.content).toContain(
-      "- 主工作目录: /workspace\n- 附加目录:\n  - /work/backend\n  - C:\\work\\shared folder\n- 是否 Git 仓库:",
+      " - 主工作目录: /workspace\n - 附加目录:\n  - /work/backend\n  - C:\\work\\shared folder\n - 是否 Git 仓库: 否",
     );
+    // 环境由运行时公告下发，builder 不再放进 system。
     expect(
       result.systemMessages.some((message) =>
         String(message.content).includes(environment!.content),
       ),
-    ).toBe(true);
+    ).toBe(false);
   });
 
   it("keeps the environment prompt unchanged for an absent or empty additional directory list", () => {
@@ -1192,34 +1216,33 @@ describe("ContextBuilder meta user context", () => {
   });
 
   it("renders environment info copy in Chinese", () => {
-    const section = buildEnvInfoSection(
-      {
-        cwd: "/workspace",
-        platform: "darwin",
-        shell: "zsh",
-        osVersion: "Darwin 25.4.0",
-        nodeVersion: "v24.14.0",
-        isGitRepository: true,
-        gitBranch: "main",
-        gitMainBranch: "main",
-        gitUser: "ZCode Tester <tester@example.com>",
-        gitStatus: "clean",
-        gitStatusLines: [],
-        recentCommits: ["abc123 test commit"],
-      },
-      contextTestModel,
-    );
+    const section = buildEnvInfoSection({
+      cwd: "/workspace",
+      platform: "darwin",
+      shell: "zsh",
+      osVersion: "Darwin 25.4.0",
+      nodeVersion: "v24.14.0",
+      isGitRepository: true,
+      gitBranch: "main",
+      gitMainBranch: "main",
+      gitUser: "ZCode Tester <tester@example.com>",
+      gitStatus: "clean",
+      gitStatusLines: [],
+      recentCommits: ["abc123 test commit"],
+    });
 
     expect(section.content).toContain("# 环境");
-    expect(section.content).toContain("- 主工作目录: /workspace");
+    expect(section.content).toContain(" - 主工作目录: /workspace");
     expect(section.content).not.toContain("Node version");
-    expect(section.content).toContain("- 你由名为 openai/gpt-5 的模型驱动。");
-    expect(section.content).toContain("- 是否 Git 仓库: 是");
+    // 模型身份是独立 model section（运行时公告），不再混入环境块。
+    expect(section.content).not.toContain("你由名为");
+    expect(section.content).toContain(" - 是否 Git 仓库: 是");
     expect(section.content).not.toContain("**Git status snapshot**");
     expect(section.content).not.toContain("**Main branch**: main");
     expect(section.content).not.toContain("**Git user**");
     expect(section.content).not.toContain("### Recent commits");
     expect(section.content).not.toContain("当前环境");
+    expect(section.content).toContain(AGENT_ENV_UNTRUSTED_NOTE);
 
     const nonGitSection = buildEnvInfoSection({
       cwd: "/workspace",
@@ -1229,12 +1252,12 @@ describe("ContextBuilder meta user context", () => {
       nodeVersion: "v24.14.0",
       isGitRepository: false,
     });
-    expect(nonGitSection.content).toContain("- 是否 Git 仓库: 否");
+    expect(nonGitSection.content).toContain(" - 是否 Git 仓库: 否");
     expect(nonGitSection.content).not.toContain("不是 Git 仓库");
     expect(nonGitSection.content).not.toContain("- **Git**:");
   });
 
-  it("renders git snapshot copy as systemContext", () => {
+  it("renders git snapshot text as session_context", () => {
     const section = buildGitSystemContextSection({
       cwd: "/workspace",
       platform: "darwin",
@@ -1258,8 +1281,10 @@ describe("ContextBuilder meta user context", () => {
       ],
     });
 
+    // 上游 v3.18：git 快照作为 session_context 附件，正文外包 meta user 载体（fork 中文文案）。
     expect(section?.content).toBe(
       [
+        AGENT_META_USER_OPENING,
         "gitStatus: 这是会话开始时的 git 状态。注意该状态是某一时刻的快照，不会在会话过程中更新。",
         "",
         "当前分支: feat/trajectory",
@@ -1271,6 +1296,8 @@ describe("ContextBuilder meta user context", () => {
         "状态:\nM docs/notes/prompt-assembly-notes.md\n M docs/notes/tool-descriptions-notes.md\n M packages/contracts/src/tools/ask-user-question.ts\n?? docs/plan/tool-prompt-plan.md",
         "",
         "最近提交:\ned2cac59d Merge branch 'feat/trajectory' of https://git.example.invalid/codegeex/z-code into feat/trajectory\n07957b58c chore: update doc",
+        "",
+        AGENT_META_USER_CLOSING,
       ].join("\n"),
     );
     expect(
@@ -1438,8 +1465,9 @@ describe("context builder — system prompt override", () => {
 
     const stableBody = String(result.systemMessages[1]?.content ?? "");
     expect(stableBody.startsWith("\n你是这个工作区的领域专家助手。")).toBe(true);
-    // Desktop Context 是 stable 缓存段，与覆盖正文同处 stable system message。
-    expect(stableBody).toContain("# ZCode Desktop 上下文");
+    // Desktop Context 是运行时公告段：system 与附件都不携带正文，section 仍保留作开关。
+    expect(JSON.stringify(result.systemMessages)).not.toContain("# ZCode Desktop 上下文");
+    expect(JSON.stringify(result.metaUserAttachments)).not.toContain("# ZCode Desktop 上下文");
 
     const dynamic = String(result.systemMessages[2]?.content ?? "");
     // 替换段不再出现。
@@ -1451,10 +1479,11 @@ describe("context builder — system prompt override", () => {
     expect(dynamic).not.toContain("# 上下文管理");
     expect(dynamic).not.toContain(buildAgentDynamicBehaviorBody());
     // 保留段照常输出。
-    expect(stableBody).toContain("# ZCode Desktop 上下文");
-    expect(dynamic).toContain("# 环境");
+    expect(result.sections.some((section) => section.source === "desktop_context")).toBe(true);
+    expect(result.sections.some((section) => section.source === "env_info")).toBe(true);
     expect(dynamic).toContain("# 记忆（Memory）");
-    expect(dynamic).toContain("# 输出风格：Terse");
+    // 输出风格是运行时公告，builder 段不再输出。
+    expect(result.sections.some((section) => section.source === "output_style")).toBe(false);
   });
 
   it("keeps the git snapshot when an override is active", () => {
@@ -1474,8 +1503,12 @@ describe("context builder — system prompt override", () => {
     }).build();
 
     const dynamic = String(result.systemMessages[2]?.content ?? "");
-    expect(dynamic).toContain("gitStatus: 这是会话开始时的 git 状态");
-    expect(dynamic).toContain("当前分支: feature/alignment");
+    // git 快照随 session_context 附件发送，不随覆盖丢弃。
+    expect(metaAttachment(result, "session_context")).toContain(
+      "gitStatus: 这是会话开始时的 git 状态",
+    );
+    expect(metaAttachment(result, "session_context")).toContain("当前分支: feature/alignment");
+    expect(dynamic).not.toContain("gitStatus:");
     expect(dynamic).not.toContain(buildAgentContextManagementBody());
   });
 
@@ -1601,8 +1634,8 @@ describe("context builder — workflow actor identity", () => {
     expect(text).not.toContain("对难以逆转或对外");
     expect(text).not.toContain("# 会话专项指导");
     expect(text).not.toContain("ZCode Desktop");
-    // 后续段照常。
-    expect(text).toContain("# 环境");
+    // 环境随运行时公告发送（meta_user），不进 system。
+    expect(text).not.toContain("# 环境");
   });
 
   it("omits the named clause and the persona block when the actor has neither", () => {
@@ -1721,4 +1754,109 @@ describe("context builder — workflow actor identity", () => {
     );
     expect(text).toContain("\n\n# 运行时框架（Harness）\n- 你在工具调用之外输出的文本");
   });
+});
+
+it("separates instruction context from session, environment, model, and date announcements", () => {
+  const result = createContextBuilder({
+    workingDirectory: "/workspace",
+    envInfo: {
+      cwd: "/workspace",
+      platform: "linux",
+      shell: "bash",
+      osVersion: "Linux",
+      nodeVersion: "24",
+      isGitRepository: true,
+      gitBranch: "main",
+      gitStatus: "clean",
+    },
+    model: contextTestModel,
+    currentDate: "2026-10-14",
+    memoryRoot: "/memory",
+    memoryIndexContent: "- [Guide](guide.md)",
+    userInstructions: {
+      filePath: "/workspace/AGENTS.md",
+      fileName: "AGENTS.md",
+      content: "Project guidance.",
+      bytesRead: 17,
+      sizeBytes: 17,
+      truncated: false,
+    },
+  }).build();
+  const bySource = new Map(
+    result.metaUserAttachments.map((item) => [String(item.source), item.content]),
+  );
+  expect(bySource.get("context_prefix")).toMatch(
+    /^在回答用户问题时，你可以使用以下上下文：\n以下是代码库与用户指令/,
+  );
+  expect(bySource.get("context_prefix")).not.toMatch(
+    /# agentsMd|# currentDate|gitStatus: 这是会话开始时/,
+  );
+  expect(metaAttachment(result, "environment")).toBe(
+    [
+      "# 环境",
+      "你已在如下环境中启动：",
+      " - 主工作目录: /workspace",
+      " - 是否 Git 仓库: 是",
+      " - 平台: linux",
+      " - Shell: bash",
+      " - 操作系统版本: Linux",
+      ` - ${AGENT_ENV_UNTRUSTED_NOTE}`,
+    ].join("\n"),
+  );
+  expect(metaAttachment(result, "model")).toBe("- 你由名为 openai/gpt-5 的模型驱动。");
+  expect(metaAttachment(result, "date")).toBe("# currentDate\n今天是 2026-10-14。");
+  expect([...bySource.keys()]).toEqual(["context_prefix", "session_context"]);
+});
+
+// 行数截断的说明文字由 persistent-agent-memory 测试覆盖（同一 formatter）。
+it("keeps retained Memory index content and reports a cut within the first line", () => {
+  const lines = Array.from({ length: 205 }, (_, index) => `Entry ${index + 1}`);
+  const actual = formatMemoryIndexContent(lines.join("\n"));
+  expect(actual).toContain(lines.slice(0, 200).join("\n"));
+  expect(formatMemoryIndexContent("x".repeat(25_001))).toContain(
+    "everything after the first 25000 characters of line 1 was cut off",
+  );
+});
+
+it("shortens the first omitted Memory line at a word boundary without splitting Unicode", () => {
+  const prefix = Array.from({ length: 200 }, (_, i) => `Entry ${i + 1}`).join("\n");
+  const longLine =
+    "This is a deliberately long index entry whose first omitted line needs a readable preview rather than a broken word";
+  expect(formatMemoryIndexContent(`${prefix}\n${longLine}`)).toContain(
+    'starting at line 201 ("This is a deliberately long index entry whose first omitted line needs a…")',
+  );
+  const unicodeLine = "x".repeat(78) + "🧪" + "x".repeat(10);
+  expect(formatMemoryIndexContent(`${prefix}\n${unicodeLine}`)).toContain(
+    `starting at line 201 ("${"x".repeat(78)}…")`,
+  );
+  // 切口正好落在空白上：词边界就是这个空白，预览保留它前面的整个词。
+  const spaceAtCut = `${"x".repeat(50)} ${"y".repeat(27)} ${"z".repeat(20)}`;
+  expect(formatMemoryIndexContent(`${prefix}\n${spaceAtCut}`)).toContain(
+    `starting at line 201 ("${"x".repeat(50)} ${"y".repeat(27)}…")`,
+  );
+});
+
+it("preserves custom meta sections in the instruction carrier", () => {
+  const result = createContextBuilder({
+    workingDirectory: "/workspace",
+    envInfo: {
+      cwd: "/workspace",
+      platform: "linux",
+      shell: "bash",
+      osVersion: "test",
+      nodeVersion: "24",
+    },
+  })
+    .addSection({
+      name: "Custom guidance",
+      source: "tools",
+      injectionTarget: "meta_user",
+      content: "custom context",
+      preview: "custom",
+    })
+    .build();
+  // fork 中文载体：context_prefix 的正文外包 AGENT_META_USER_OPENING/CLOSING。
+  expect(metaAttachment(result, "context_prefix")).toBe(
+    `${AGENT_META_USER_OPENING}\ncustom context\n\n${AGENT_META_USER_CLOSING}`,
+  );
 });

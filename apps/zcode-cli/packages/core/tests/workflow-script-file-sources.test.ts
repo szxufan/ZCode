@@ -566,7 +566,7 @@ describe("AmendWorkflow — file sources", () => {
       ).toEqual(["kept.dwf.ts"]);
       const output = outcome.result.output as CreateWorkflowOutput;
       expect(output.response).toContain("started unchanged in the background");
-      expect(output.response).toContain(`${WORKFLOW_DRAFTS_DIR}/kept.dwf.ts`);
+      expect(output.response).toContain(join(WORKFLOW_DRAFTS_DIR, "kept.dwf.ts"));
     });
 
     it("writes a fresh draft when the predecessor's file has been edited since", async () => {

@@ -5,6 +5,8 @@ import type { ProjectTask } from "@/project-sidebar/contract.js";
 export const ProjectTaskListContext = createContext<{
   activeWorkspaceKey?: string;
   mobileActiveTaskKey?: string | null;
+  /** 手机远控模式下禁用行悬浮卡（上游字段；当前 fork 不写入，保持桌面行为）。 */
+  isWebRemoteControl?: boolean;
   onOpenTaskFiles?: (task: ProjectTask, remoteSessionId?: string) => Promise<void>;
   onPin?: (task: ProjectTask, pinned: boolean, commit: () => Promise<unknown>) => Promise<void>;
 }>({});

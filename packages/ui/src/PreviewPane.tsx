@@ -1563,6 +1563,21 @@ export function PreviewPane({
     };
   }, [renderHeavyContent, source]);
 
+  // 用户取消时不写入 viewMode，受控的 RadioGroup 会自动回到原选项；
+  // 早退必须位于 Hook 之后，Hook 依赖只取 editSessionPath。
+  const switchViewModeGuarded = useCallback(
+    (next: "preview" | "code", apply: (value: "preview" | "code") => void) => {
+      if (next === "preview" && editSessionPath !== null) {
+        void confirmAllUnsavedSessions().then((allowed) => {
+          if (allowed) apply(next);
+        });
+        return;
+      }
+      apply(next);
+    },
+    [editSessionPath],
+  );
+
   if (!source) {
     return null;
   }
@@ -1583,20 +1598,6 @@ export function PreviewPane({
       : undefined;
 
   // markdown / SVG 切到渲染视图会退出编辑态，因此切换前先走未保存确认；
-  // 用户取消时不写入 viewMode，受控的 RadioGroup 会自动回到原选项。
-  const switchViewModeGuarded = useCallback(
-    (next: "preview" | "code", apply: (value: "preview" | "code") => void) => {
-      if (next === "preview" && editSessionPath !== null) {
-        void confirmAllUnsavedSessions().then((allowed) => {
-          if (allowed) apply(next);
-        });
-        return;
-      }
-      apply(next);
-    },
-    [editSessionPath],
-  );
-
   const viewMenuItems = hasMoreMenu ? (
     <>
       {canToggleMarkdownView ? (

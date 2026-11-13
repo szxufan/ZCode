@@ -12,9 +12,19 @@ export async function resolveProjectFileTarget(input: {
   project: VirtualProject;
   rootPath: string;
   isRemote: boolean;
-  props: ProjectSidebarProps;
+  props: Pick<
+    ProjectSidebarProps,
+    | "workspacePath"
+    | "workspaceIdentity"
+    | "onConnectRemote"
+    | "onSelectRemoteProject"
+    | "onCancelRemoteProject"
+  >;
   remoteService?: IRemoteProjectService;
   findSession(identity: string): { sessionId: string } | undefined;
+  waitForPendingConnection?(workspaceKey: string): Promise<void>;
+  /** 本次查看仍是最新意图；被取代后不再连接设备、绑定目录或改写 tab。 */
+  isCurrent(): boolean;
 }): Promise<SidebarFileTreeTarget | null> {
   const { project, rootPath, props } = input;
   if (!project.roots.some((root) => root.rootPath === rootPath))
@@ -30,9 +40,11 @@ export async function resolveProjectFileTarget(input: {
       workspacePath: rootPath,
       workspaceIdentity: identity,
       remoteService: input.remoteService,
+      isCurrent: input.isCurrent,
       findSession: input.findSession,
+      waitForPendingConnection: input.waitForPendingConnection,
       connect: props.onConnectRemote,
-      bind: (id, path) => props.onSelectRemoteProject(id, path, undefined, identity),
+      bind: (id, path, guard) => props.onSelectRemoteProject(id, path, undefined, identity, guard),
       cancel: props.onCancelRemoteProject,
     });
   }

@@ -1,3 +1,4 @@
+import { join, resolve } from "node:path";
 import { describe, expect, it } from "vitest";
 import { createSessionId, createTraceId } from "@zcode/contracts";
 
@@ -6,7 +7,7 @@ import { editHandler } from "../src/tool/handlers/edit.js";
 import type { ToolExecutionContext } from "../src/tool/types.js";
 import { MemoryFileSystem } from "./memory-test-utils.js";
 
-const MEMORY_ROOT = "/storage/memories/projects/project-0123456789abcdef/memory";
+const MEMORY_ROOT = resolve("/storage/memories/projects/project-0123456789abcdef/memory");
 
 describe("Memory file metadata", () => {
   it("adds the fixed node type and creating session to standard Memory frontmatter", () => {
@@ -69,7 +70,7 @@ describe("Memory file metadata", () => {
   });
 
   it("adds a missing origin session through the Edit write boundary", async () => {
-    const filePath = `${MEMORY_ROOT}/edited-memory.md`;
+    const filePath = join(MEMORY_ROOT, "edited-memory.md");
     const original = [
       "---",
       "name: edited-memory",

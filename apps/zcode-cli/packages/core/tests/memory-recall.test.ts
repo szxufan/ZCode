@@ -507,7 +507,10 @@ describe("Semantic Memory selection and content", () => {
   });
 
   it("renders the frozen relevant-memory MCS body and stale warning", async () => {
-    const fixture = readFileSync(join(TEST_DIR, "fixtures/memory/recalled-memory.md"), "utf8");
+    const fixture = readFileSync(join(TEST_DIR, "fixtures/memory/recalled-memory.md"), "utf8").replace(
+      /\r\n/gu,
+      "\n",
+    );
     const path = `${MEMORY_ROOT}/database-test-policy.md`;
     const content = `${[
       "---",

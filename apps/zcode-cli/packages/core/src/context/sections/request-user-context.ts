@@ -4,30 +4,32 @@
 
 import { join } from "node:path";
 
-import {
-  AGENT_AGENTSMD_HEADING,
-  AGENT_AGENTSMD_INTRO,
-  agentFileTruncatedNotice,
-  agentInstructionSourceHeading,
-  agentMemoryIndexHeading,
-} from "@zcode/shared";
 import { formatProjectMemoryIndexContent } from "../../memory/index-content.js";
 import type {
   ContextSection,
+  InstructionFile,
   ResolvedUserInstructionSource,
   ResolvedUserInstructions,
 } from "../types.js";
 import { estimateTokens } from "../utils.js";
+import {
+  createInstructionFile,
+  INSTRUCTION_TYPE_AUTO_MEMORY,
+  INSTRUCTION_TYPE_PROJECT,
+  INSTRUCTION_TYPE_USER,
+  renderInstructionAnnouncement,
+} from "./instruction-files.js";
 
 export function buildRequestUserContextSection(input: {
   userInstructions?: ResolvedUserInstructions;
   memoryIndexContent?: string;
   memoryRoot?: string;
 }): ContextSection | null {
-  const content = buildRequestUserContextContent(input);
-  if (!content) {
+  const instructionFiles = buildInstructionFiles(input);
+  if (instructionFiles.length === 0) {
     return null;
   }
+  const content = renderInstructionAnnouncement(instructionFiles);
 
   return {
     name: "Request User Context",
@@ -38,65 +40,40 @@ export function buildRequestUserContextSection(input: {
     tokens: estimateTokens(content),
     content,
     preview: content.slice(0, 100),
+    instructionFiles,
   };
 }
 
-function buildRequestUserContextContent(input: {
+/** 指令文件在前、Memory 索引在后；正文为空的文件不出现。 */
+function buildInstructionFiles(input: {
   userInstructions?: ResolvedUserInstructions;
   memoryIndexContent?: string;
   memoryRoot?: string;
-}): string | null {
-  const sections: string[] = [];
-
-  const instructionContent = input.userInstructions
-    ? buildInstructionContent(input.userInstructions)
-    : null;
-  if (instructionContent) {
-    sections.push(instructionContent);
-  }
-
-  const memoryIndexContent = buildProjectMemoryIndexContent(
-    input.memoryRoot,
-    input.memoryIndexContent,
-  );
-  if (memoryIndexContent) {
-    sections.push(memoryIndexContent);
-  }
-
-  if (sections.length === 0) {
-    return null;
-  }
-
-  return [
-    // 聚合字段标题不能绑定到 AGENTS.md，否则仅有 Project Memory 时缺少标题。
-    AGENT_AGENTSMD_HEADING,
-    AGENT_AGENTSMD_INTRO,
-    "",
-    sections.join("\n\n"),
-  ].join("\n");
+}): InstructionFile[] {
+  const files = input.userInstructions
+    ? normalizedInstructionSources(input.userInstructions).flatMap((source) => {
+        const file = buildInstructionSourceFile(source);
+        return file ? [file] : [];
+      })
+    : [];
+  const memoryIndexFile = buildProjectMemoryIndexFile(input.memoryRoot, input.memoryIndexContent);
+  if (memoryIndexFile) files.push(memoryIndexFile);
+  return files;
 }
 
-function buildProjectMemoryIndexContent(
+function buildProjectMemoryIndexFile(
   memoryRoot: string | undefined,
   indexContent: string | undefined,
-): string | null {
+): InstructionFile | null {
   if (!memoryRoot || indexContent === undefined) return null;
   const formatted = formatProjectMemoryIndexContent(indexContent);
   if (!formatted) return null;
 
-  return [
-    agentMemoryIndexHeading(join(memoryRoot, "MEMORY.md")),
-    "",
+  return createInstructionFile(
+    join(memoryRoot, "MEMORY.md"),
+    INSTRUCTION_TYPE_AUTO_MEMORY,
     formatted,
-  ].join("\n");
-}
-
-function buildInstructionContent(instructions: ResolvedUserInstructions): string | null {
-  const sections = normalizedInstructionSources(instructions)
-    .map((source) => buildInstructionSourceContent(source))
-    .filter((content): content is string => content !== null);
-
-  return sections.length > 0 ? sections.join("\n\n") : null;
+  );
 }
 
 export function normalizedInstructionSources(
@@ -119,18 +96,18 @@ export function normalizedInstructionSources(
   ];
 }
 
-function buildInstructionSourceContent(source: ResolvedUserInstructionSource): string | null {
+function buildInstructionSourceFile(source: ResolvedUserInstructionSource): InstructionFile | null {
   const body = source.truncated
-    ? `${source.content}\n\n${agentFileTruncatedNotice(source.fileName)}`
+    ? `${source.content}\n\n[File truncated: ${source.fileName}]`
     : source.content;
   const trimmedBody = body.trim();
   if (!trimmedBody) {
     return null;
   }
 
-  return [
-    agentInstructionSourceHeading(source.filePath, source.scope),
-    "",
+  return createInstructionFile(
+    source.filePath,
+    source.scope === "user" ? INSTRUCTION_TYPE_USER : INSTRUCTION_TYPE_PROJECT,
     trimmedBody,
-  ].join("\n");
+  );
 }

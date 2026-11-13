@@ -1,3 +1,4 @@
+import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import {
   GET_WORKFLOW_RUN_TOOL_NAME,
@@ -248,7 +249,7 @@ describe("GetWorkflowRun handler — running snapshot", () => {
     };
     const output = await call("dwfrun-running", stubDetailPort({ "dwfrun-running": detail }));
 
-    expect(output.scriptPath).toBe(".zcode/workflow-drafts/audit.dwf.ts");
+    expect(output.scriptPath).toBe(join(".zcode", "workflow-drafts", "audit.dwf.ts"));
   });
 
   it("keeps a script file outside the working directory absolute", async () => {

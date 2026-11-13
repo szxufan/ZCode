@@ -33,6 +33,7 @@ describe("memory extraction prompt", () => {
       new URL("./fixtures/memory/extraction-prompt.md", import.meta.url),
       "utf8",
     )
+      .replace(/\r\n/gu, "\n")
       .trimEnd()
       .replace("<TIMESTAMP>", timestamp);
 

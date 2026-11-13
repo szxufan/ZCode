@@ -3,6 +3,9 @@ export interface RemoteServerBundleValidationInput {
   source: string;
 }
 
+// keyring 需要按目标平台加载原生模块，不能被 esbuild 展开成所有平台的 .node 文件。
+export const REMOTE_SERVER_NATIVE_EXTERNALS = ["@napi-rs/keyring"];
+
 const unresolvedUndiciRuntimeImportPattern = /\b(?:require|import)\d*\(["']undici["']\)/;
 // prettier 及其语言插件由 @zcode/services 的精确版本依赖随 Host 发放；
 // 远端只上传单个 zcode-server.cjs，残留裸 prettier 运行时导入说明打包时被外部化。

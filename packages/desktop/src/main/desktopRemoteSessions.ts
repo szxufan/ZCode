@@ -429,6 +429,17 @@ export function createRemoteWorkspaceSessionManager(options: {
         sessionId: payload.sessionId,
         attachmentId: payload.attachmentId,
       });
+      // Bug 原因：Main 放弃 attachment 并删除 route（如换代 ready 超时）后，Renderer 才处理 port 并登记 session。
+      // 这条 session 已没有 route 和 Host 连接，导航却仍按目录找到它：点击任务报“未找到”，查看文件读已关闭的连接。
+      // ACK 在登记之后发出，由它触发释放不会早于登记，不需要超时或墓碑；route 还在时由当前 attachment 负责，不释放。
+      if (!route) {
+        const win = BrowserWindow.getAllWindows().find(
+          (candidate) => candidate.webContents.id === webContentsId,
+        );
+        if (win && !win.isDestroyed() && !win.webContents.isDestroyed()) {
+          win.webContents.send(InternalChannels.ScopedServicePortReleased, payload);
+        }
+      }
       return;
     }
 
@@ -666,6 +677,16 @@ export function createRemoteWorkspaceSessionManager(options: {
           remoteSessionId: descriptor.remoteSessionId,
           error,
         });
+        // Bug 原因：窗口只收到过旧 session 的可恢复断连。这里回收换代 session 后不再通知，窗口的 tab
+        // 一直留着旧 id、“连接中”不结束，导航一直等待，重连入口也因 tab 仍有 id 而跳过。
+        // 换代无法交付就是这次恢复的终点：按终止断连通知窗口与手机，由各自 owner 收尾。
+        publishRemoteSessionClosed(win, {
+          remoteSessionId: previousRemoteSessionId,
+          exitCode: null,
+          signal: null,
+          error: error instanceof Error ? error.message : String(error),
+          recoverable: false,
+        });
       });
   }
 
@@ -756,20 +777,52 @@ export function createRemoteWorkspaceSessionManager(options: {
     }
   }
 
+  interface RemoteSessionClosedNotice {
+    remoteSessionId: string;
+    exitCode?: number | null;
+    signal?: string | null;
+    error?: string;
+    recoverable?: boolean;
+    recoveryAttempt?: number;
+    recoveryLimit?: number;
+    recoveryBudgetExhausted?: boolean;
+    reasonCode?: string;
+    retryable?: boolean;
+  }
+
+  /** 把 session 断连通知给窗口；终止断连同时结束手机 bridge 上的同一 session。 */
+  function publishRemoteSessionClosed(
+    win: BrowserWindow | undefined,
+    event: RemoteSessionClosedNotice,
+  ): void {
+    if (win && !win.isDestroyed() && !win.webContents.isDestroyed()) {
+      win.webContents.send(PlatformChannels.RemoteSessionClosed, {
+        sessionId: event.remoteSessionId,
+        reason: "host-exit" as const,
+        exitCode: event.exitCode ?? null,
+        signal: event.signal ?? null,
+        ...(event.error ? { error: event.error } : {}),
+        ...(event.recoverable !== undefined ? { recoverable: event.recoverable } : {}),
+        ...(event.recoveryAttempt ? { recoveryAttempt: event.recoveryAttempt } : {}),
+        ...(event.recoveryLimit ? { recoveryLimit: event.recoveryLimit } : {}),
+        ...(event.recoveryBudgetExhausted !== undefined
+          ? { recoveryBudgetExhausted: event.recoveryBudgetExhausted }
+          : {}),
+        ...(event.reasonCode ? { reasonCode: event.reasonCode } : {}),
+        ...(event.retryable !== undefined ? { retryable: event.retryable } : {}),
+      });
+      emitConnectionLog(win, {
+        sessionId: event.remoteSessionId,
+        level: "warn",
+        message: event.error || "远程 workspace 连接已断开",
+      });
+    }
+  }
+
   function handleClosed(
     webContentsId: number,
-    event: {
-      remoteSessionId: string;
+    event: RemoteSessionClosedNotice & {
       reason: "connection-closed" | "disposed" | "connect-cancelled";
-      exitCode?: number | null;
-      signal?: string | null;
-      error?: string;
-      recoverable?: boolean;
-      recoveryAttempt?: number;
-      recoveryLimit?: number;
-      recoveryBudgetExhausted?: boolean;
-      reasonCode?: string;
-      retryable?: boolean;
     },
   ): void {
     const route = routesBySessionId.get(event.remoteSessionId);
@@ -797,31 +850,10 @@ export function createRemoteWorkspaceSessionManager(options: {
       "session-connection-closed",
       new Error(`远程 workspace 已关闭，sessionId=${event.remoteSessionId}`),
     );
-    const win = BrowserWindow.getAllWindows().find(
-      (candidate) => candidate.webContents.id === webContentsId,
+    publishRemoteSessionClosed(
+      BrowserWindow.getAllWindows().find((candidate) => candidate.webContents.id === webContentsId),
+      event,
     );
-    if (win && !win.isDestroyed() && !win.webContents.isDestroyed()) {
-      win.webContents.send(PlatformChannels.RemoteSessionClosed, {
-        sessionId: event.remoteSessionId,
-        reason: "host-exit" as const,
-        exitCode: event.exitCode ?? null,
-        signal: event.signal ?? null,
-        ...(event.error ? { error: event.error } : {}),
-        ...(event.recoverable !== undefined ? { recoverable: event.recoverable } : {}),
-        ...(event.recoveryAttempt ? { recoveryAttempt: event.recoveryAttempt } : {}),
-        ...(event.recoveryLimit ? { recoveryLimit: event.recoveryLimit } : {}),
-        ...(event.recoveryBudgetExhausted !== undefined
-          ? { recoveryBudgetExhausted: event.recoveryBudgetExhausted }
-          : {}),
-        ...(event.reasonCode ? { reasonCode: event.reasonCode } : {}),
-        ...(event.retryable !== undefined ? { retryable: event.retryable } : {}),
-      });
-      emitConnectionLog(win, {
-        sessionId: event.remoteSessionId,
-        level: "warn",
-        message: event.error || "远程 workspace 连接已断开",
-      });
-    }
   }
 
   function ensureHostListener(child: ElectronUtilityProcess, webContentsId: number): void {

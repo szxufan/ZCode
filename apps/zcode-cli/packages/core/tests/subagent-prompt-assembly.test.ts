@@ -1,3 +1,4 @@
+import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { createTestModelSelection } from "./test-model-selection.js";
 import {
@@ -84,6 +85,32 @@ function createParentContextSourcePort() {
         },
       };
     },
+    async resolveEnvironment(request: {
+      effectiveShellDisplayName?: string;
+      envInfo?: {
+        cwd: string;
+        platform: string;
+        shell: string;
+        osVersion: string;
+        nodeVersion: string;
+        isGitRepository?: boolean;
+      };
+      workingDirectory: string;
+    }) {
+      const environment = request.envInfo ?? {
+        cwd: request.workingDirectory,
+        platform: "darwin",
+        shell: "zsh",
+        osVersion: "Darwin 24.3.0",
+        nodeVersion: "24.14.0",
+        isGitRepository: true,
+      };
+      return {
+        ...environment,
+        cwd: request.workingDirectory,
+        shell: request.effectiveShellDisplayName ?? environment.shell,
+      };
+    },
   };
 }
 
@@ -127,22 +154,19 @@ function expectInjectedAgentsMd(request: any, childTask: string): void {
 
   const contextText = modelMessageContentToText(messages[contextIndex]?.content);
   expect(contextText).toContain("<system-reminder>");
-  expect(contextText).toContain("# agentsMd");
   expect(contextText).toContain("以下是代码库与用户指令。");
   expect(contextText).toContain(USER_AGENTS_INSTRUCTION);
   expect(contextText).toContain(WORKSPACE_AGENTS_INSTRUCTION);
   expect(contextText.indexOf(USER_AGENTS_INSTRUCTION)).toBeLessThan(
     contextText.indexOf(WORKSPACE_AGENTS_INSTRUCTION),
   );
-  expect(contextText.indexOf("# agentsMd")).toBeLessThan(
+  expect(contextText.indexOf("以下是代码库与用户指令。")).toBeLessThan(
     contextText.indexOf(USER_AGENTS_INSTRUCTION),
   );
-  expect(contextText.indexOf(WORKSPACE_AGENTS_INSTRUCTION)).toBeLessThan(
-    contextText.indexOf("# currentDate"),
-  );
+  expect(allMessageText(request)).toContain("# currentDate");
 
   const text = allMessageText(request);
-  expect(countOccurrences(text, "# agentsMd")).toBe(1);
+  expect(countOccurrences(text, "# agentsMd")).toBe(0);
   expect(text).not.toContain("# claudeMd");
   expect(countOccurrences(text, USER_AGENTS_INSTRUCTION)).toBe(1);
   expect(countOccurrences(text, WORKSPACE_AGENTS_INSTRUCTION)).toBe(1);
@@ -247,19 +271,14 @@ describe("subagent provider-visible prompt assembly", () => {
     expect(systems[1]).toContain("\n\nNotes:");
     expect(systems[1]).toContain("Agent threads always have their cwd reset between bash calls");
     expect(systems[1]).toContain("the parent agent reads your text output");
-    expect(systems[1]).toContain(
-      "\n\nHere is useful information about the environment you are running in:",
-    );
-    expect(systems[1]).toContain("Working directory: /Users/dev/Desktop/Z/z-code/apps/zcode-cli");
-    expect(systems[1]).toContain("Is directory a git repo: Yes");
-    expect(systems[1]).toContain("Platform: darwin");
-    expect(systems[1]).toContain("Shell: Git Bash");
-    expect(systems[1]).toContain("OS Version: Darwin 24.3.0");
-    expect(systems[1]).toContain(
-      "You are powered by the model named anthropic/claude-haiku-4-5-20251001-cc.",
-    );
-
     const text = allMessageText(childRequests[0]);
+    expect(text).toContain("# 环境");
+    expect(text).toContain("主工作目录: /Users/dev/Desktop/Z/z-code/apps/zcode-cli");
+    expect(text).toContain("是否 Git 仓库: 是");
+    expect(text).toContain("平台: darwin");
+    expect(text).toContain("Shell: Git Bash");
+    expect(text).toContain("操作系统版本: Darwin 24.3.0");
+    expect(text).toContain("你由名为 anthropic/claude-haiku-4-5-20251001-cc 的模型驱动。");
     expect(text).not.toContain(
       "You help the user with software engineering work in the current workspace.",
     );
@@ -347,8 +366,9 @@ describe("subagent provider-visible prompt assembly", () => {
     expect(systems[1]).not.toContain("fully--don't gold-plate");
     expect(systems[1]).not.toContain("key findings; the caller");
     expect(systems[1]).toContain("Agent threads always have their cwd reset between bash calls");
-    expect(systems[1]).toContain("Working directory: /repo/current");
-    expect(systems[1]).not.toContain("Working directory: /repo/initial");
+    const childText = allMessageText(childRequests[0]);
+    expect(childText).toContain("主工作目录: /repo/current");
+    expect(childText).not.toContain("主工作目录: /repo/initial");
     expectInjectedAgentsMd(childRequests[0], "Research how child runtimes are created.");
   });
 
@@ -444,9 +464,10 @@ describe("subagent provider-visible prompt assembly", () => {
       expect(systems).toHaveLength(2);
       expect(systems[0]).toBe("你是 ZCode，一个交互式编码智能体");
       expect(systems[1]).toMatch(
-        /^\nYou are a focused code researcher\. Return concise findings\.\n\nNotes:/u,
+        /^\nYou are a focused code researcher\. Return concise findings\.\n\nMessages from the agent that launched you/u,
       );
-      expect(systems[1]).toContain("Is directory a git repo: No");
+      expect(systems[1]).toContain("\n\nNotes:");
+      expect(allMessageText(childRequests[0])).toContain("是否 Git 仓库: 否");
       if (expectedToInject) {
         expectInjectedAgentsMd(childRequests[0], "Research the custom profile path.");
       } else {
@@ -472,9 +493,10 @@ describe("subagent provider-visible prompt assembly", () => {
     const systems = systemContents({ messages: result.systemMessages });
     expect(systems).toHaveLength(2);
     expect(systems[0]).toBe("你是 ZCode，一个交互式编码智能体");
-    expect(systems[1]).toMatch(/^\n\nNotes:/u);
-    expect(systems[1]).toContain(
-      "\n\nHere is useful information about the environment you are running in:",
+    expect(systems[1]).toMatch(/^\n\nMessages from the agent that launched you/u);
+    expect(systems[1]).toContain("\n\nNotes:");
+    expect(result.sections.find((section) => section.source === "env_info")?.content).toContain(
+      "# 环境",
     );
     expect(systems.join("")).toBe(
       result.sections
@@ -496,7 +518,7 @@ describe("subagent provider-visible prompt assembly", () => {
         workspaceRoot: "/repo",
       });
       const fileSystemPort = new MemoryFileSystem({
-        [`${memoryRoot}/MEMORY.md`]: "- [Review style](review-style.md) — keep reviews concise",
+        [join(memoryRoot, "MEMORY.md")]: "- [Review style](review-style.md) — keep reviews concise",
       });
       const parentRequests: any[] = [];
       const childRequests: any[] = [];
@@ -577,7 +599,7 @@ describe("subagent provider-visible prompt assembly", () => {
                       name: "Write",
                       input: {
                         content: "Keep reviews concise.",
-                        file_path: `${memoryRoot}/review-style.md`,
+                        file_path: join(memoryRoot, "review-style.md"),
                       },
                     },
                   ],
@@ -602,7 +624,11 @@ describe("subagent provider-visible prompt assembly", () => {
         rootDir: memoryRoot,
         scope,
       });
-      expect(systemContents(childRequests[0])[1]?.split("\n\nNotes:")[0]).toBe(
+      expect(
+        systemContents(childRequests[0])[1]?.split(
+          "\n\nMessages from the agent that launched you",
+        )[0],
+      ).toBe(
         `\n${expectedMemoryPrompt}`,
       );
       const childToolNames = childRequests[0].tools.map((tool: any) => tool.name);
@@ -611,7 +637,7 @@ describe("subagent provider-visible prompt assembly", () => {
       expect(childToolNames).not.toContain("Edit");
       expect(childToolNames).not.toContain("Read");
       expect(fileSystemPort.createdDirectories).toContain(memoryRoot);
-      expect(fileSystemPort.files[`${memoryRoot}/review-style.md`]).toBe("Keep reviews concise.");
+      expect(fileSystemPort.files[join(memoryRoot, "review-style.md")]).toBe("Keep reviews concise.");
       expect(
         parentRequests[0].messages
           .map((message: any) => modelMessageContentToText(message.content))
@@ -672,12 +698,14 @@ describe("subagent provider-visible prompt assembly", () => {
       expect(systems).toHaveLength(2);
       expect(systems[0]).toBe("你是 ZCode，一个交互式编码智能体");
       expect(systems[1]).toMatch(
-        /^\nYou are a focused child agent\. Keep the result concise\.\n\nNotes:/u,
+        /^\nYou are a focused child agent\. Keep the result concise\.\n\nMessages from the agent that launched you/u,
       );
+      expect(systems[1]).toContain("\n\nNotes:");
       expect(systems[1]).toContain("Agent threads always have their cwd reset between bash calls");
-      expect(systems[1]).toContain("Working directory: /repo/current");
-      expect(systems[1]).toContain(
-        "You are powered by the model named anthropic/claude-haiku-4-5-20251001-cc.",
+      const requestText = allMessageText(request);
+      expect(requestText).toContain("主工作目录: /repo/current");
+      expect(requestText).toContain(
+        "你由名为 anthropic/claude-haiku-4-5-20251001-cc 的模型驱动。",
       );
       expect(allMessageText(request)).not.toContain(
         "You help the user with software engineering work in the current workspace.",

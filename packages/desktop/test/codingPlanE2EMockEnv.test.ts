@@ -23,15 +23,15 @@ describe("Coding Plan E2E mock env", () => {
     ).toBe(false);
   });
   it.each([
-    "settings/settings-ui-polish.test.ts",
-    "ui-shell/side-pane-tabs-responsive-interactions.test.ts",
+    "settings/general/settings-ui-polish.test.ts",
+    "ui-shell/panels/side-pane-tabs-responsive-interactions.test.ts",
   ])("Logo 外观回归隔离模拟账号控制面：%s", (spec) => {
     expect(shouldPrepareCodingPlanTeamMock([`./test/e2e/${spec}`])).toBe(true);
   });
   it("定时任务创建遥测回归隔离账号控制面", () => {
     expect(
       shouldPrepareCodingPlanTeamMock([
-        "./test/e2e/conversation-session/conversation-session-automation-run-title-stable.test.ts",
+        "./test/e2e/conversation-session/automations/conversation-session-automation-run-title-stable.test.ts",
       ]),
     ).toBe(true);
   });
@@ -43,6 +43,9 @@ describe("Coding Plan E2E mock env", () => {
     "./test/e2e/**/*.test.ts",
     "test/e2e/**/*.test.ts",
     ".\\test\\e2e\\**\\*.test.ts",
+    "./test/e2e/conversation-session/queue/**/*.test.ts",
+    "./test/e2e/settings/providers/*.test.ts",
+    ".\\test\\e2e\\automations\\off-peak\\*.test.ts",
   ])("prepares the mock before workers expand the suite glob %s", (spec) => {
     expect(shouldPrepareCodingPlanTeamMock([spec])).toBe(true);
   });
@@ -50,8 +53,8 @@ describe("Coding Plan E2E mock env", () => {
   it("prepares the mock for the formal CI suite without opting unrelated workers in", () => {
     const unrelatedSpecs = [
       "./test/e2e/plugins/*.test.ts",
-      "./test/e2e/workspace-file-tree-refresh.test.ts",
-      "./test/e2e/conversation-session/conversation-session-background.test.ts",
+      "./test/e2e/workspace/files/workspace-file-tree-refresh.test.ts",
+      "./test/e2e/conversation-session/background/conversation-session-background.test.ts",
     ];
     expect(
       shouldPrepareCodingPlanTeamMock([
@@ -132,8 +135,8 @@ describe("Coding Plan E2E mock env", () => {
   it("prepares the team mock for targeted provider transition cases", () => {
     expect(
       shouldPrepareCodingPlanTeamMock([
-        "./test/e2e/conversation-session/conversation-session-model-provider-restart-recovery.test.ts",
-        "./test/e2e/conversation-session/conversation-session-model-provider-turbo-switch.test.ts",
+        "./test/e2e/conversation-session/models/conversation-session-model-provider-restart-recovery.test.ts",
+        "./test/e2e/conversation-session/models/conversation-session-model-provider-turbo-switch.test.ts",
       ]),
     ).toBe(true);
   });

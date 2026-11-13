@@ -1,3 +1,4 @@
+import { resolve } from "node:path";
 import { describe, expect, it, vi } from "vitest";
 import {
   CoreErrorType,
@@ -16,7 +17,7 @@ import { readHandler, readToolEntry } from "../src/tool/handlers/read.js";
 import type { ToolExecutionContext } from "../src/tool/types.js";
 import { createTestRuntimeModel } from "./test-runtime-model.js";
 
-const PDF_PATH = "/tmp/report.pdf";
+const PDF_PATH = resolve("/tmp/report.pdf");
 
 describe("Read PDF handling", () => {
   it("returns the page summary followed by ordered prepared page images", async () => {

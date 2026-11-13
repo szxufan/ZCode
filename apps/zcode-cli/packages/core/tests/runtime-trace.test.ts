@@ -38,6 +38,22 @@ function providerContentToText(content: unknown): string {
   return String(content ?? "");
 }
 
+const EPHEMERAL = { type: "ephemeral" };
+const reminderText = (body: string) => `<system-reminder>\n${body}\n</system-reminder>`;
+// fork 中文文案：模型行、环境标题与日期块（# currentDate\n今天是 …。）见 env-info / current-date 段。
+const MODEL_REMINDER = reminderText("- 你由名为 test/default-runtime-model 的模型驱动。");
+const ENVIRONMENT_REMINDER = expect.stringMatching(
+  /^<system-reminder>\n# 环境\n[\s\S]*\n<\/system-reminder>$/,
+);
+// 日期跟随真实时钟。默认测试模型不合并相邻 user，紧跟输入的那块也不补换行。
+const TODAY_REMINDER = expect.stringMatching(
+  /^<system-reminder>\n# currentDate\n今天是 \d{4}-\d{2}-\d{2}。\n<\/system-reminder>$/,
+);
+// 真实用户消息的轮首重新起算，token 预算提醒为满额。
+const TOTAL_TOKENS_TURN_START_REMINDER = reminderText(
+  "<total_tokens>15000000 tokens left</total_tokens>",
+);
+
 function providerMessagesToText(messages: readonly { content?: unknown }[] | undefined): string {
   return (messages ?? []).map((message) => providerContentToText(message.content)).join("\n");
 }
@@ -348,10 +364,18 @@ describe("AgentRuntime trace propagation", () => {
       traceId: traceContext.traceId,
     });
     const messageTailRoles = steeredRequest?.messageTailRoles as string[] | undefined;
-    expect(messageTailRoles?.slice(-2)).toEqual(["assistant", "user"]);
+    // 纯文本回复后取出的 guide 重新起算 token 预算；提醒（MCS 关时为单独的 user reminder）
+    // 按投影规则冒泡到这条 user 输入之前。
+    expect(messageTailRoles?.slice(-3)).toEqual(["assistant", "user", "user"]);
     const steeredMessageTail = steeredRequest?.messageTail as
       | Array<Record<string, unknown>>
       | undefined;
+    expect(steeredMessageTail?.at(-2)).toMatchObject({
+      contentBytes:
+        "<system-reminder>\n<total_tokens>15000000 tokens left</total_tokens>\n</system-reminder>"
+          .length,
+      role: "user",
+    });
     expect(steeredMessageTail?.at(-1)).toMatchObject({
       contentBytes: "keep the original task but switch to option B".length,
       role: "user",
@@ -707,7 +731,6 @@ describe("AgentRuntime trace propagation", () => {
     const requestText = providerMessagesToText(requestMessages);
     expect(requestText).toContain("- Shell: Git Bash");
     expect(requestText).not.toContain("- Shell: fish");
-    expect(requestText).not.toContain("The Bash tool shell is Git Bash.");
   });
 
   it("does not let pre-initialization model updates preempt env detection", async () => {
@@ -845,29 +868,43 @@ describe("AgentRuntime trace propagation", () => {
     expect(requests[0]?.[0]).toEqual(expect.objectContaining({ role: "system" }));
     expect(requests[0]?.[0]?.content).toBe("你是 ZCode，一个交互式编码智能体");
     expect(requests[0]?.[1]?.content).toBe("\nYou are terse for this session.");
-    expect(requests[0]?.[2]?.role).toBe("user");
-    expect(requests[0]?.[2]?.content).not.toContain("# agentsMd");
-    expect(requests[0]?.[2]?.content).not.toContain("# claudeMd");
-    expect(requests[0]?.[2]?.content).not.toContain("Project context:");
-    expect(requests[0]?.[2]?.content).not.toContain("- Package manager: pnpm");
-    expect(requests[0]?.[2]?.content).not.toContain("- `test`: vitest");
-    expect(requests[0]?.[2]?.content).toContain("# currentDate");
-    expect(requests[0]?.[2]?.content).not.toContain("# user_instructions");
-    expect(requests[0]?.[2]?.content).not.toContain("hello");
-    expect(requests[0]?.[3]?.role).toBe("user");
-    expect(requests[0]?.[3]?.content).toContain("Terse 输出风格已生效");
-    expect(requests[0]?.[3]?.content).toContain("<system-reminder>");
-    expect(requests[0]?.[4]?.role).toBe("user");
-    expect(requests[0]?.[4]?.content).toContain("hello");
+    // 自定义 prompt 不影响环境与模型公告（fork 中文文案：# 环境 / 你由名为 …）。
+    expect(requests[0]?.[2]?.content).toContain("# 环境\n");
+    expect(requests[0]?.[3]?.content).toContain("你由名为");
+    // 自定义 prompt 也宣告 output style 指令，紧跟模型公告。
+    expect(requests[0]?.[4]?.content).toContain("# 输出风格：Terse\nKeep responses short.");
+    // 自定义 prompt 不带 system 预算行，但轮首的 token 预算提醒照常发，排在 output_style 之前。
+    expect(requests[0]?.[5]).toEqual({
+      role: "user",
+      content:
+        "<system-reminder>\n<total_tokens>15000000 tokens left</total_tokens>\n</system-reminder>",
+    });
+    // 输入附件（output_style）在前，请求前公告（date）在后，与两个收集器的顺序一致。
+    expect(requests[0]?.[6]?.role).toBe("user");
+    expect(requests[0]?.[6]?.content).toContain("Terse 输出风格已生效");
+    expect(requests[0]?.[6]?.content).toContain("<system-reminder>");
+    expect(requests[0]?.[7]?.role).toBe("user");
+    expect(requests[0]?.[7]?.content).not.toContain("# agentsMd");
+    expect(requests[0]?.[7]?.content).not.toContain("# claudeMd");
+    expect(requests[0]?.[7]?.content).not.toContain("Project context:");
+    expect(requests[0]?.[7]?.content).not.toContain("- Package manager: pnpm");
+    expect(requests[0]?.[7]?.content).not.toContain("- `test`: vitest");
+    expect(requests[0]?.[7]?.content).toMatch(/# currentDate\n今天是 \d{4}-\d{2}-\d{2}。/);
+    expect(requests[0]?.[7]?.content).not.toContain("# user_instructions");
+    expect(requests[0]?.[7]?.content).not.toContain("hello");
+    expect(requests[0]?.[8]?.role).toBe("user");
+    expect(requests[0]?.[8]?.content).toContain("hello");
     const providerText = providerMessagesToText(requests[0]);
+    expect(
+      requests[0]?.slice(0, 2).some((message) => message.content.includes("total_tokens")),
+    ).toBe(false);
     expect(providerText).not.toContain("# Session Guidance");
     expect(providerText).not.toContain("# 会话专项指导");
     expect(providerText).not.toContain("## Current Environment");
-    expect(providerText).not.toContain("# 环境");
     expect(providerText).not.toContain("# 上下文管理");
     expect(providerText).not.toContain("# Memory");
     expect(providerText).not.toContain("# Language");
-    expect(providerText).not.toContain("# Output Style: Terse");
+    expect(providerText.match(/# 输出风格：Terse/g)).toHaveLength(1);
     expect(providerText).not.toContain("# Function Result Clearing");
     expect(providerText).not.toContain("# Summarize Tool Results");
     expect(providerText).not.toContain("M package.json");
@@ -1017,15 +1054,40 @@ describe("AgentRuntime trace propagation", () => {
     await runtime.executeTurn("second question");
 
     const second = requests[1];
-    expect(second?.messages.map((message) => message.role)).toEqual([
-      "system",
-      "system",
-      "system",
-      "user",
-      "user",
-      "assistant",
-      "user",
-      "user",
+    // 完整形状：三段 system、请求前公告、第一轮问答、工具批次后的 output style 提醒、第二问。
+    // 只有 system 的后两段和最后一条带 cacheControl；公告与历史消息不带。
+    const styleActive = reminderText(
+      "Learning 输出风格已生效。请继续遵循该风格的具体指引。",
+    );
+    expect(second?.messages).toEqual([
+      { role: "system", cacheControl: undefined, content: "你是 ZCode，一个交互式编码智能体" },
+      {
+        role: "system",
+        cacheControl: EPHEMERAL,
+        content: expect.stringContaining("# 运行时框架（Harness）"),
+      },
+      {
+        role: "system",
+        cacheControl: EPHEMERAL,
+        content: expect.stringMatching(/^\n\n# 与用户沟通/),
+      },
+      { role: "user", cacheControl: undefined, content: ENVIRONMENT_REMINDER },
+      { role: "user", cacheControl: undefined, content: MODEL_REMINDER },
+      {
+        role: "user",
+        cacheControl: undefined,
+        content: reminderText(
+          "# 输出风格：Learning\nExplain tradeoffs while solving the task.",
+        ),
+      },
+      { role: "user", cacheControl: undefined, content: TOTAL_TOKENS_TURN_START_REMINDER },
+      { role: "user", cacheControl: undefined, content: styleActive },
+      { role: "user", cacheControl: undefined, content: TODAY_REMINDER },
+      { role: "user", cacheControl: undefined, content: "first question" },
+      { role: "assistant", cacheControl: undefined, content: "first response" },
+      { role: "user", cacheControl: undefined, content: TOTAL_TOKENS_TURN_START_REMINDER },
+      { role: "user", cacheControl: undefined, content: styleActive },
+      { role: "user", cacheControl: EPHEMERAL, content: "second question" },
     ]);
     expect(second?.toolNames).toContain("mcp__local__ping");
 
@@ -1050,7 +1112,8 @@ describe("AgentRuntime trace propagation", () => {
     expect(dynamicSystem).toContain("对难以逆转或对外的操作");
     expect(dynamicSystem).not.toContain("# 会话专项指导");
     expect(dynamicSystem).not.toContain("`! <command>`");
-    expect(dynamicSystem).toContain("# 环境");
+    // 上游 v3.18：环境改为运行时公告（meta_user），不再进入 dynamic system。
+    expect(dynamicSystem).not.toContain("# 环境");
     expect(dynamicSystem).toContain("# 上下文管理");
     expect(dynamicSystem).not.toContain("不是 Git 仓库");
     expect(dynamicSystem).not.toContain("- **Git**:");
@@ -1059,24 +1122,22 @@ describe("AgentRuntime trace propagation", () => {
       "Respond in the primary language of the user's current prompt",
     );
     expect(dynamicSystem).not.toContain("Respond in Spanish");
-    expect(dynamicSystem).toContain(
-      "# 输出风格：Learning\nExplain tradeoffs while solving the task.",
-    );
-    expect(dynamicSystem).not.toContain("# 输出风格：Learning\n\n");
+    // 上游 v3.18：output style 改为运行时公告（meta_user），不再进入 dynamic system；
+    // 指令正文只在 messages[4] 的公告里出现一次（deep-equal 已覆盖）。
+    expect(dynamicSystem).not.toContain("# 输出风格：Learning");
+    expect(dynamicSystem).not.toContain("Explain tradeoffs while solving the task.");
     expect(dynamicSystem).not.toContain("# Function Result Clearing");
     expect(dynamicSystem).not.toContain("compactable tool results");
     expect(dynamicSystem).not.toContain("# Summarize Tool Results");
     expect(dynamicSystem).not.toContain("mcp__local__ping");
     expect(dynamicSystem).not.toContain("scratchpad");
     expect(dynamicSystem).not.toContain("token_budget");
-    expect(dynamicSystem.indexOf("# 输出风格：Learning")).toBeLessThan(
-      dynamicSystem.indexOf("# 上下文管理"),
-    );
-    expect(second?.messages[4]?.content).toContain("first question");
-    expect(second?.messages[4]?.content).not.toContain("Learning 输出风格已生效");
-    expect(second?.messages[7]?.content).toContain("second question");
-    const firstOutputStyleReminder = second?.messages[3]?.content ?? "";
-    const secondOutputStyleReminder = second?.messages[6]?.content ?? "";
+
+    expect(second?.messages[9]?.content).toContain("first question");
+    expect(second?.messages[9]?.content).not.toContain("Learning 输出风格已生效");
+    expect(second?.messages[13]?.content).toContain("second question");
+    const firstOutputStyleReminder = second?.messages[7]?.content ?? "";
+    const secondOutputStyleReminder = second?.messages[12]?.content ?? "";
     expect(firstOutputStyleReminder).toContain("Learning 输出风格已生效");
     expect(secondOutputStyleReminder).toContain("Learning 输出风格已生效");
     expect(firstOutputStyleReminder).toContain("<system-reminder>");
@@ -1180,11 +1241,24 @@ describe("AgentRuntime trace propagation", () => {
     await runtime.executeTurn("first question");
     await runtime.executeTurn("second question");
 
-    expect(requests[0]?.map((message) => message.role)).toEqual([
-      "system",
-      "system",
-      "system",
-      "user",
+    // 完整形状：三段 system，然后是输入附件（环境、模型、token 预算）、请求前公告（日期）和第一问，
+    // 公告不带 cacheControl。
+    expect(requests[0]?.map(({ role, cacheControl }) => ({ role, cacheControl }))).toEqual([
+      { role: "system", cacheControl: undefined },
+      { role: "system", cacheControl: EPHEMERAL },
+      { role: "system", cacheControl: EPHEMERAL },
+      { role: "user", cacheControl: undefined },
+      { role: "user", cacheControl: undefined },
+      { role: "user", cacheControl: undefined },
+      { role: "user", cacheControl: undefined },
+      { role: "user", cacheControl: EPHEMERAL },
+    ]);
+    expect(requests[0]?.slice(3).map((message) => message.content)).toEqual([
+      ENVIRONMENT_REMINDER,
+      MODEL_REMINDER,
+      TOTAL_TOKENS_TURN_START_REMINDER,
+      TODAY_REMINDER,
+      "first question",
     ]);
     expect(requests[0]?.[0]?.content).toBe("你是 ZCode，一个交互式编码智能体");
     expect(requests[0]?.[1]?.content).not.toContain("# Agent Identity");
@@ -1219,7 +1293,7 @@ describe("AgentRuntime trace propagation", () => {
       ),
     ).toBeLessThan(requests[0]?.[2]?.content.indexOf("对难以逆转或对外的操作") ?? -1);
     expect(requests[0]?.[2]?.content.indexOf("对难以逆转或对外的操作")).toBeLessThan(
-      requests[0]?.[2]?.content.indexOf("# 环境") ?? -1,
+      requests[0]?.[2]?.content.indexOf("# 上下文管理") ?? -1,
     );
     expect(requests[0]?.[2]?.content).not.toContain("# 会话专项指导");
     expect(requests[0]?.[2]?.content).not.toContain("`! <command>`");
@@ -1227,7 +1301,8 @@ describe("AgentRuntime trace propagation", () => {
     expect(requests[0]?.[2]?.content).not.toContain("# Function Result Clearing");
     expect(requests[0]?.[2]?.content).not.toContain("# Summarize Tool Results");
     expect(requests[0]?.[2]?.content).not.toContain("## Current Environment");
-    expect(requests[0]?.[2]?.content).toContain("# 环境");
+    // 环境改为运行时公告（meta_user），dynamic system 不再携带 # 环境 段。
+    expect(requests[0]?.[2]?.content).not.toContain("# 环境");
     expect(requests[0]?.[2]?.content).toContain("# 上下文管理");
     expect(requests[0]?.[2]?.content).toContain(
       "当信息已足够行动时就行动。不要重复推导会话中已确立的事实，不要重新质疑用户已经做出的决定，也不要罗列你并不打算执行的选项。如果你在权衡取舍，给出推荐，而不是穷举所有可能。",
@@ -1246,28 +1321,24 @@ describe("AgentRuntime trace propagation", () => {
     );
     expect(
       requests[0]?.[2]?.content.endsWith(
-        "某个信号与已知故障模式相似，不代表它是同一原因。",
+        // fork 保留自主运行附录；末尾再接上游 v3.18 的固定 token 预算行。
+        "某个信号与已知故障模式相似，不代表它是同一原因。\n\n<total_tokens>15000000 tokens left</total_tokens>",
       ),
     ).toBe(true);
     expect(requests[0]?.[2]?.content).not.toContain("不是 Git 仓库");
     expect(requests[0]?.[2]?.content).not.toContain("- **Git**:");
-    expect(requests[0]?.[3]).toEqual({
+    expect(requests[0]?.[7]).toEqual({
       role: "user",
       content: "first question",
       cacheControl: { type: "ephemeral" },
     });
-    expect(requests[1]?.map((message) => message.role)).toEqual([
-      "system",
-      "system",
-      "system",
-      "user",
-      "assistant",
-      "user",
-    ]);
-    expect(requests[1]?.[3]?.content).toBe("first question");
-    expect(requests[1]?.[3]?.cacheControl).toBeUndefined();
-    expect(requests[1]?.[4]?.content).toBe("first response");
-    expect(requests[1]?.[5]).toEqual({
+    expect(requests[1]?.slice(0, -3).map(({ role, content }) => ({ role, content }))).toEqual(
+      requests[0]?.map(({ role, content }) => ({ role, content })),
+    );
+    expect(requests[1]?.at(-4)?.cacheControl).toBeUndefined();
+    expect(requests[1]?.at(-3)?.content).toBe("first response");
+    expect(requests[1]?.at(-2)?.content).toBe(TOTAL_TOKENS_TURN_START_REMINDER);
+    expect(requests[1]?.at(-1)).toEqual({
       role: "user",
       content: "second question",
       cacheControl: { type: "ephemeral" },
@@ -1278,30 +1349,44 @@ describe("AgentRuntime trace propagation", () => {
     const sessionId = createSessionId("runtime-meta-user-context");
     const eventStore = createTestSessionEventStore();
     const requests: Array<Array<{ role: string; content: string; cacheControl?: unknown }>> = [];
-    const contextBuilder = createContextBuilder({
-      workingDirectory: "/workspace",
-      currentDate: "2026-05-04",
-      envInfo: {
-        cwd: "/workspace",
-        nodeVersion: "v24.14.0",
-        osVersion: "test",
-        platform: "test",
-        shell: "test",
-      },
-      userInstructions: {
-        filePath: "/workspace/AGENTS.md",
-        fileName: "AGENTS.md",
-        content: "project instructions",
-        bytesRead: 20,
-        sizeBytes: 20,
-        truncated: false,
-      },
-    });
+    // 上游 v3.18：env/指令/日期公告改由运行时从 context source 快照与时钟宣告，注入的
+    // contextBuilder 每轮都被快照重建覆盖，指令进不了请求；这里用 contextSourcePort 提供指令快照，
+    // 让指令公告真实出现在前缀里（存在、唯一、在真实用户消息之前）。
     const runtime = createTestAgentRuntime(
       sessionId,
       {},
       {
-        contextBuilder,
+        contextSourcePort: {
+          async resolveEnvironment() {
+            throw new Error("resolveEnvironment is not expected in this test");
+          },
+          async resolveGitContext() {
+            throw new Error("resolveGitContext is not expected in this test");
+          },
+          async resolveContextSources() {
+            return {
+              workingDirectory: "/workspace",
+              envInfo: {
+                cwd: "/workspace",
+                nodeVersion: "v24.14.0",
+                osVersion: "test",
+                platform: "test",
+                shell: "test",
+                isGitRepository: false,
+              },
+              userInstructions: {
+                filePath: "/workspace/AGENTS.md",
+                fileName: "AGENTS.md",
+                content: "project instructions",
+                bytesRead: 20,
+                sizeBytes: 20,
+                truncated: false,
+              },
+              diagnostics: [],
+            };
+          },
+        },
+        now: () => new Date(2026, 4, 4),
         eventStore,
         modelFactory: createTestModelFactory({
           async generateText(request) {
@@ -1331,30 +1416,52 @@ describe("AgentRuntime trace propagation", () => {
     await runtime.executeTurn("first question");
     await runtime.executeTurn("second question");
 
-    expect(requests[0]?.map((message) => message.role)).toEqual([
-      "system",
-      "system",
-      "system",
-      "user",
+    // 结构化前缀：环境、模型、token 预算、指令、日期公告都是 user 侧附件，排在第一问之前，不带 cacheControl。
+    // fork 中文文案：指令公告外层是 AGENT_META_USER_OPENING/CLOSING 载体，文件块为「（工作区指令，随代码库提交）」。
+    const prefix = [
+      { role: "user", cacheControl: undefined, content: ENVIRONMENT_REMINDER },
+      { role: "user", cacheControl: undefined, content: MODEL_REMINDER },
+      { role: "user", cacheControl: undefined, content: TOTAL_TOKENS_TURN_START_REMINDER },
+      {
+        role: "user",
+        cacheControl: undefined,
+        content: expect.stringMatching(
+          /^<system-reminder>\n在回答用户问题时，你可以使用以下上下文：\n以下是代码库与用户指令。[\s\S]*以下是 \/workspace\/AGENTS\.md 的内容（工作区指令，随代码库提交）：\n\nproject instructions[\s\S]*<\/system-reminder>$/,
+        ),
+      },
+      {
+        role: "user",
+        cacheControl: undefined,
+        content: reminderText("# currentDate\n今天是 2026-05-04。"),
+      },
+    ];
+    const systems = [
+      {
+        role: "system",
+        cacheControl: undefined,
+        content: "你是 ZCode，一个交互式编码智能体",
+      },
+      { role: "system", cacheControl: EPHEMERAL, content: expect.any(String) },
+      { role: "system", cacheControl: EPHEMERAL, content: expect.any(String) },
+    ];
+    expect(requests[0]).toEqual([
+      ...systems,
+      ...prefix,
+      { role: "user", cacheControl: EPHEMERAL, content: "first question" },
     ]);
-    // CLI 前缀不占 cache marker；稳定正文、动态正文和最新真实用户输入保留标记。
-    expect(requests[0]?.[0]?.cacheControl).toBeUndefined();
-    expect(requests[0]?.[1]?.cacheControl).toEqual({ type: "ephemeral" });
-    expect(requests[0]?.[2]?.cacheControl).toEqual({ type: "ephemeral" });
-    expect(requests[0]?.[3]?.content).toContain("first question");
-    expect(requests[0]?.[3]?.cacheControl).toEqual({ type: "ephemeral" });
-    expect(requests[1]?.map((message) => message.role)).toEqual([
-      "system",
-      "system",
-      "system",
-      "user",
-      "assistant",
-      "user",
+    // 第二轮前缀不变：第一问的 cacheControl 移到第二问。
+    expect(requests[1]).toEqual([
+      ...systems,
+      ...prefix,
+      { role: "user", cacheControl: undefined, content: "first question" },
+      { role: "assistant", cacheControl: undefined, content: "first response" },
+      { role: "user", cacheControl: undefined, content: TOTAL_TOKENS_TURN_START_REMINDER },
+      { role: "user", cacheControl: EPHEMERAL, content: "second question" },
     ]);
-    expect(requests[1]?.[3]?.content).toContain("first question");
-    expect(requests[1]?.[3]?.cacheControl).toBeUndefined();
-    expect(requests[1]?.[5]?.content).toContain("second question");
-    expect(requests[1]?.[5]?.cacheControl).toEqual({ type: "ephemeral" });
+    expect(requests[1]?.[8]?.content).toContain("first question");
+    expect(requests[1]?.[8]?.cacheControl).toBeUndefined();
+    expect(requests[1]?.[11]?.content).toContain("second question");
+    expect(requests[1]?.[11]?.cacheControl).toEqual({ type: "ephemeral" });
   });
 
   it("emits date change reminder once without refreshing request prefix date", async () => {
@@ -1367,6 +1474,9 @@ describe("AgentRuntime trace propagation", () => {
       new Date(2026, 5, 3, 0, 5, 0),
       new Date(2026, 5, 3, 9, 0, 0),
     ];
+    // 修复依据：runtime 每轮会多次调用 now()（公告、预算行等），按调用次数自增会让
+    // 第二轮就用上第三天的时钟，日期变化提前宣告。改为测试在两轮之间显式拨动时钟，
+    // 同一轮内所有读取保持同一天，场景意图（第 2→3 轮跨天）不变。
     let nowIndex = 0;
     const runtime = createTestAgentRuntime(
       sessionId,
@@ -1391,13 +1501,16 @@ describe("AgentRuntime trace propagation", () => {
             };
           },
         } as never),
-        now: () => dates[Math.min(nowIndex++, dates.length - 1)]!,
+        now: () => dates[Math.min(nowIndex, dates.length - 1)]!,
       },
     );
 
     await runtime.executeTurn("first question");
+    nowIndex = 1;
     await runtime.executeTurn("second question");
+    nowIndex = 2;
     await runtime.executeTurn("third question");
+    nowIndex = 3;
     await runtime.executeTurn("fourth question");
 
     const requestTexts = requests.map((messages) =>

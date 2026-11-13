@@ -30,6 +30,7 @@ Bootstrap 官方 definition 是内置目录与默认启用的权威来源；Sett
 用户另行安装的市场插件仍按既有安装与启用配置处理，不自动改写或卸载。
 
 每个插件提供 `agents/visual-judge.md`，使用 `<插件名>:visual-judge` 限定名。
+当前内置子代理按插件区分身份色：documents 使用 blue，pdf 使用 red，presentations 使用 purple，spreadsheets 使用 green；颜色只修改各自 agent frontmatter，不改变代理名称、模型或权限。对应版本为 documents/presentations/spreadsheets 0.2.2、pdf 0.2.3，以新的版本缓存发布；Bootstrap definition、package 与插件 manifest 同步升版。上述 0.1.8 是初次拆分的导入记录，后续版本以 definition 与各插件 manifest 为准。
 原 `judge` 名称不再由内置插件提供。每个插件只携带自己的格式 skill，不声明任何 MCP server。
 
 ## 打包与验收
