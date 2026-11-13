@@ -57,12 +57,16 @@ jobs:
           # VS2026，runtime host 的 CMake generator（VS 17 2022）找不到 VS 实例；
           # 钉 VS2022 镜像保持与历史发版一致的 MSVC 工具链，避免改变安装包的
           # VC runtime 版本要求。迁移 VS2026 前需先验证 redist 分发。
-          # macos-15：macos-latest（→macos-26）的 ARM64 hosted runner 自 2026-11 起
-          # 排队约 15 分钟被调度器取消且永不分配机器（actions/runner#4833，
-          # 平台侧事故），显式钉到供给正常的 macos-15 绕开受损机器池。
+          # macos-15-intel：macos hosted runner 的 ARM64 机器池（macos-latest→macos-26
+          # 与 macos-15 均命中）自 2026-11 起排队约 15-18 分钟被调度器取消且永不分配
+          # 机器（actions/runner#4833 / runner-images#15291，平台侧事故，三次重试复现）。
+          # 改用 x64 机器池交叉构建 arm64 包：CI 的 mac 包本就未签名
+          # （ZCODE_ENABLE_MAC_SIGN 未注入），bundle.mjs 会向子进程传递
+          # ZCODE_TARGET_ARCH，prepare 脚本与 electron-builder 均支持指定目标架构。
+          # 事故恢复后应切回 macos-15 原生构建。
           all='[
             {"name":"windows-x64","runs-on":"windows-2022","target":"win","arch":"x64"},
-            {"name":"macos-arm64","runs-on":"macos-15","target":"mac","arch":"arm64"},
+            {"name":"macos-arm64","runs-on":"macos-15-intel","target":"mac","arch":"arm64"},
             {"name":"linux-x64","runs-on":"ubuntu-latest","target":"linux","arch":"x64","targets":"deb"}
           ]'
           case "$platforms" in
