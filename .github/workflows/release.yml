@@ -119,8 +119,20 @@ jobs:
             ~\AppData\Local\electron-builder\Cache
           key: electron-${{ runner.os }}-${{ hashFiles('**/pnpm-lock.yaml') }}
           restore-keys: electron-${{ runner.os }}-
+      # pnpm#12880：nodeLinker=hoisted 在 Windows runner 上链接收尾时 rename _tmp_ 目录
+      # 间歇性 ENOENT（v3.25.0 两次发版分别挂在 @arms/rum-electron 下 vite/tsup 的
+      # esbuild 链接，错误路径随机；hoisted 布局与通过的 v3.24.0 完全一致，排除 lockfile）。
+      # 上游 pnpm 11.24 仍未修复，CI 侧重试是当前唯一缓解手段。
       - name: Install dependencies
-        run: pnpm install --frozen-lockfile
+        run: |
+          for attempt in 1 2 3 4 5; do
+            if pnpm install --frozen-lockfile; then
+              exit 0
+            fi
+            echo "::warning::install attempt ${attempt}/5 failed (known pnpm#12880 Windows flake), retrying in 20s"
+            sleep 20
+          done
+          exit 1
         env:
           HUSKY: 0
       # bundle.mjs 的 CLI 契约是位置参数或 --os/--arch（win/mac/linux + x64/arm64）；
