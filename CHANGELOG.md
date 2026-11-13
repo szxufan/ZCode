@@ -1,5 +1,30 @@
 # Changelog
 
+## [3.25.0](https://github.com/szxufan/ZCode/compare/v3.24.0...v3.25.0) (2026-11-13)
+
+### Features
+
+* 新增问题导航目录轻量分页接口实现 ([224cc38](https://github.com/szxufan/ZCode/commit/224cc387baeed08e7834ebd90372c0749bc6766a))
+
+
+### Bug Fixes
+
+* **desktop:** powershell 工程测试强制 UTF-8 输出，修复 GBK 代码页机器上中文断言乱码 ([2c6ea19](https://github.com/szxufan/ZCode/commit/2c6ea19eeae5669466214c8aeed76c5e376718f4))
+
+
+### Chores
+
+* sync ZCode source v3.18.0 ([b95ebaf](https://github.com/szxufan/ZCode/commit/b95ebaffeab641907b38652f45c1502bd762972d))
+
+* sync ZCode source v3.18.1 ([c590468](https://github.com/szxufan/ZCode/commit/c5904686ea8341826b3affe5d993d06a134fa779))
+
+* sync ZCode source v3.18.2 ([fec9759](https://github.com/szxufan/ZCode/commit/fec975905a2abd4c07e35c40d51fa097a2258ec9))
+
+
+### Documentation
+
+* AGENTS.md 新增上游合并经验（门禁+定向验证收敛、环境噪音分类、双父提交保护） ([a1e1527](https://github.com/szxufan/ZCode/commit/a1e1527e78fdda58bbf830b630306974e0a06419))
+
 ## [3.24.0](https://github.com/szxufan/ZCode/compare/v3.23.0...v3.24.0) (2026-11-10)
 
 ### Features
