@@ -53,9 +53,20 @@ jobs:
           # rpm/pacman 目标阶段无报错静默退出（fpm 工具链问题待查，见
           # docs/desktop-github-release.md 已知边界），--targets 用 bundle.mjs 的
           # linux target 覆盖能力把目标限制在可稳定产出的子集。
+          # windows-2022：windows-latest 于 2026-11 前后随 runner-images#14017 迁移到
+          # VS2026，runtime host 的 CMake generator（VS 17 2022）找不到 VS 实例；
+          # 钉 VS2022 镜像保持与历史发版一致的 MSVC 工具链，避免改变安装包的
+          # VC runtime 版本要求。迁移 VS2026 前需先验证 redist 分发。
+          # macos-15-intel：macos hosted runner 的 ARM64 机器池（macos-latest→macos-26
+          # 与 macos-15 均命中）自 2026-11 起排队约 15-18 分钟被调度器取消且永不分配
+          # 机器（actions/runner#4833 / runner-images#15291，平台侧事故，三次重试复现）。
+          # 改用 x64 机器池交叉构建 arm64 包：CI 的 mac 包本就未签名
+          # （ZCODE_ENABLE_MAC_SIGN 未注入），bundle.mjs 会向子进程传递
+          # ZCODE_TARGET_ARCH，prepare 脚本与 electron-builder 均支持指定目标架构。
+          # 事故恢复后应切回 macos-15 原生构建。
           all='[
-            {"name":"windows-x64","runs-on":"windows-latest","target":"win","arch":"x64"},
-            {"name":"macos-arm64","runs-on":"macos-latest","target":"mac","arch":"arm64"},
+            {"name":"windows-x64","runs-on":"windows-2022","target":"win","arch":"x64"},
+            {"name":"macos-arm64","runs-on":"macos-15-intel","target":"mac","arch":"arm64"},
             {"name":"linux-x64","runs-on":"ubuntu-latest","target":"linux","arch":"x64","targets":"deb"}
           ]'
           case "$platforms" in
@@ -119,8 +130,20 @@ jobs:
             ~\AppData\Local\electron-builder\Cache
           key: electron-${{ runner.os }}-${{ hashFiles('**/pnpm-lock.yaml') }}
           restore-keys: electron-${{ runner.os }}-
+      # pnpm#12880：nodeLinker=hoisted 在 Windows runner 上链接收尾时 rename _tmp_ 目录
+      # 间歇性 ENOENT（v3.25.0 两次发版分别挂在 @arms/rum-electron 下 vite/tsup 的
+      # esbuild 链接，错误路径随机；hoisted 布局与通过的 v3.24.0 完全一致，排除 lockfile）。
+      # 上游 pnpm 11.24 仍未修复，CI 侧重试是当前唯一缓解手段。
       - name: Install dependencies
-        run: pnpm install --frozen-lockfile
+        run: |
+          for attempt in 1 2 3 4 5; do
+            if pnpm install --frozen-lockfile; then
+              exit 0
+            fi
+            echo "::warning::install attempt ${attempt}/5 failed (known pnpm#12880 Windows flake), retrying in 20s"
+            sleep 20
+          done
+          exit 1
         env:
           HUSKY: 0
       # bundle.mjs 的 CLI 契约是位置参数或 --os/--arch（win/mac/linux + x64/arm64）；
