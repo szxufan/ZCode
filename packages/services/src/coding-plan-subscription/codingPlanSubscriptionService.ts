@@ -1,3 +1,4 @@
+import type { OAuthAccountMaterial } from "#src/oauth/repo/oauthCredentialRepo.js";
 import { applyDynamicWorkflowUserMode, type ApiClient } from "@zcode/shared";
 import type { ICredentialService } from "../credential/credential.js";
 import type { ICodingPlanSubscriptionService } from "./codingPlanSubscription.js";
@@ -6,6 +7,7 @@ import { ZaiCodingPlanSubscriptionProvider } from "./zaiCodingPlanSubscriptionPr
 
 interface CodingPlanSubscriptionServiceDependencies {
   apiClient: ApiClient;
+  loadOAuthAccountMaterial: (family: "zai" | "bigmodel") => Promise<OAuthAccountMaterial | null>;
   credentialService: Pick<ICredentialService, "load">;
   /**
    * 用户在设置里选的动态工作流模式（launch.md「The user's choice」）。只有拥有设置权威的装配

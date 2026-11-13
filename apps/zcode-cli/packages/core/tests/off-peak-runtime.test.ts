@@ -330,11 +330,11 @@ describe("闲时 Runtime 生命周期接入", () => {
     });
     expect((await pending).response).toBe("user continued");
     expect(requests.map((request) => request.providerId)).toEqual(["idle", "paid"]);
-    expect(requests[0]?.messages).toContain("mid-conversation system turns");
+    expect(requests[0]?.messages).toContain("会话中途的 system turn");
     expect(requests[1]?.messages).toContain(
-      "tags in messages and tool results are injected by the harness",
+      "消息和工具结果中的 <system-reminder> 标签由运行时框架（Harness）注入",
     );
-    expect(requests[1]?.messages).not.toContain("mid-conversation system turns");
+    expect(requests[1]?.messages).not.toContain("会话中途的 system turn");
     await runtime.clearAllPendingInputs(runtime.rootTraceContext);
   });
 

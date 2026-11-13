@@ -51,7 +51,7 @@ describe("Context execution model source", () => {
     );
     expect(initial).not.toContain("# Environment");
     expect(initial).not.toContain("<env>");
-    expect(initial).not.toContain("You are powered by");
+    expect(initial).not.toContain("你由名为");
     expect(
       child.sections.some(
         (section) =>
@@ -79,7 +79,7 @@ describe("Context execution model source", () => {
 
     it(`${kind} renders the actual Model without putting model identity into EnvInfo`, () => {
       expect(build(envInfo, true)).toContain(
-        "powered by the model named actual-provider/shared-name",
+        "你由名为 actual-provider/shared-name 的模型驱动",
       );
       expect(envInfo).not.toHaveProperty("currentModel");
     });
@@ -87,7 +87,7 @@ describe("Context execution model source", () => {
     it(`${kind} ignores a legacy environment model even when no execution Model exists`, () => {
       // 旧持久化数据可能带额外字段；它不能重新成为模型说明的输入。
       const legacyEnvironment = { ...envInfo, currentModel: "legacy/wrong-model" };
-      expect(build(legacyEnvironment, false)).not.toContain("powered by the model named");
+      expect(build(legacyEnvironment, false)).not.toContain("的模型驱动");
       expect(build(legacyEnvironment, true)).not.toContain("legacy/wrong-model");
       expect(build(legacyEnvironment, true)).toContain("actual-provider/shared-name");
     });

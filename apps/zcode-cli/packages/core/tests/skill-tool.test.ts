@@ -53,7 +53,7 @@ describe("Skill integration", () => {
         ?.content ?? "";
 
     expect(system).not.toContain("demo-skill");
-    expect(skillReminder).toContain("The following skills are available");
+    expect(skillReminder).toContain("以下技能可通过 Skill 工具使用");
     expect(skillReminder).toContain("demo-skill");
   });
 

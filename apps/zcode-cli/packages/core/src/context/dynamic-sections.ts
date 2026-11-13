@@ -2,13 +2,16 @@ import {
   buildAgentContextManagementBody,
   buildAgentDynamicBehaviorBody,
   buildAgentSessionGuidanceBody,
-  agentOutputStyleHeading,
   defaultAgentSessionGuidanceLines,
 } from "@zcode/shared";
 import type { ContextBuilderConfig, ContextSection } from "./types.js";
+import { TOTAL_TOKENS_SYSTEM_LINE } from "./total-tokens.js";
 import { estimateTokens } from "./utils.js";
 
-export function buildSessionGuidanceSection(toolNames: readonly string[], hasSkills = false): ContextSection | null {
+export function buildSessionGuidanceSection(
+  toolNames: readonly string[],
+  hasSkills = false,
+): ContextSection | null {
   const tools = new Set(toolNames);
   const lines: string[] = [];
 
@@ -37,7 +40,11 @@ export function buildSessionGuidanceSection(toolNames: readonly string[], hasSki
   }
 
   // 只有存在实际 session guidance 时才输出本段，避免向 simple branch 注入空标题。
-  return createDynamicSection("Session-specific guidance", "session_guidance", buildAgentSessionGuidanceBody(lines));
+  return createDynamicSection(
+    "Session-specific guidance",
+    "session_guidance",
+    buildAgentSessionGuidanceBody(lines),
+  );
 }
 
 export function buildDynamicBehaviorSection(): ContextSection {
@@ -48,23 +55,17 @@ export function buildDynamicBehaviorSection(): ContextSection {
   );
 }
 
-export function buildOutputStyleSection(
-  style: ContextBuilderConfig["outputStyle"],
-): ContextSection | null {
-  if (!style || style.prompt.trim().length === 0) return null;
-  return createDynamicSection(
-    "Output Style",
-    "output_style",
-    [agentOutputStyleHeading(style.name), style.prompt.trim()].join("\n"),
-  );
-}
-
 export function buildContextManagementSection(): ContextSection {
   return createDynamicSection(
     "Context Management",
     "context_management",
     buildAgentContextManagementBody(),
   );
+}
+
+/** 固定的 token 预算行，是 system 的最后一段；倒数由每次请求的提醒附件表达。 */
+export function buildTotalTokensSection(): ContextSection {
+  return createDynamicSection("Total Tokens", "total_tokens", TOTAL_TOKENS_SYSTEM_LINE);
 }
 
 function createDynamicSection(

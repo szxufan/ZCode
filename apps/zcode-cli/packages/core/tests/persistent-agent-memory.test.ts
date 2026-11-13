@@ -1,5 +1,5 @@
 import { readFileSync } from "node:fs";
-import { join } from "node:path";
+import { join, resolve, sep } from "node:path";
 
 import { describe, expect, it } from "vitest";
 
@@ -16,7 +16,9 @@ import { MemoryFileSystem } from "./memory-test-utils.js";
 const fixture = readFileSync(
   new URL("./fixtures/memory/custom-agent-memory.md", import.meta.url),
   "utf8",
-).replace(/\n$/u, "");
+)
+  .replace(/\r\n/gu, "\n")
+  .replace(/\n$/u, "");
 
 const scopeGuidance = JSON.parse(
   readFileSync(
@@ -32,9 +34,13 @@ describe("persistent custom-agent memory", () => {
     expect(sanitizePersistentAgentMemoryKey("!!!")).toBe("---");
     expect(sanitizePersistentAgentMemoryKey("")).toBe("unknown");
 
-    expect(root("user")).toBe("/storage/agent-memory/reviewer-a-b");
-    expect(root("project")).toBe("/workspace/app/.zcode/agent-memory/reviewer-a-b");
-    expect(root("local")).toBe("/workspace/app/.zcode/agent-memory-local/reviewer-a-b");
+    expect(root("user")).toBe(join("/storage", "agent-memory", "reviewer-a-b"));
+    expect(root("project")).toBe(
+      join(resolve("/workspace/app"), ".zcode", "agent-memory", "reviewer-a-b"),
+    );
+    expect(root("local")).toBe(
+      join(resolve("/workspace/app"), ".zcode", "agent-memory-local", "reviewer-a-b"),
+    );
   });
 
   it.each(["user", "project", "local"] as const)(
@@ -42,7 +48,7 @@ describe("persistent custom-agent memory", () => {
     (scope) => {
       const memoryRoot = root(scope);
       const expected = fixture
-        .replace("<MEMORY_ROOT>", memoryRoot)
+        .replace("<MEMORY_ROOT>/", `${memoryRoot}${sep}`)
         .replace("<SCOPE_GUIDANCE>", scopeGuidance[scope]);
 
       expect(
@@ -169,7 +175,7 @@ describe("persistent custom-agent memory", () => {
       workspaceRoot: "/workspace/app",
     });
 
-    expect(loaded?.rootDir).toBe("/storage/agent-memory/reviewer-a-b");
+    expect(loaded?.rootDir).toBe(join("/storage", "agent-memory", "reviewer-a-b"));
     expect(loaded?.prompt).toContain("# Persistent Agent Memory");
   });
 });

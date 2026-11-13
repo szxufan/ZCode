@@ -307,7 +307,8 @@ const SILENT_TURN_REMINDER_CONFIG = Object.freeze({
   TURNS_BETWEEN_REMINDERS: 5,
   MAX_REMINDERS_PER_STRETCH: 3,
 });
-const SILENT_TURN_REMINDER_BODY = "用户已经有一段时间没有收到你的消息了。继续任务时，有值得告知的进展（发现、计划变更）请主动同步。";
+const SILENT_TURN_REMINDER_BODY =
+  "用户已经有一段时间没有收到你的消息了。继续任务时，有值得告知的进展（发现、计划变更）请主动同步。";
 // 只有空白或这些占位文字的 assistant 文本不算与用户沟通。
 const SILENT_TURN_PLACEHOLDER_TEXTS: ReadonlySet<string> = new Set([
   "(no content)",
@@ -362,8 +363,7 @@ export function buildSilentTurnReminderBody(
 
 // ---- 输出风格提醒（fork 保留 output_style section；提醒正文与上游一致） ----
 
-export const OUTPUT_STYLE_RESET_REMINDER =
-  "The output style was reset to the default. Respond in your usual style.";
+export const OUTPUT_STYLE_RESET_REMINDER = "输出风格已重置为默认。请以你通常的风格回复。";
 
 /** output style 指令正文；prompt 为空白时视为未设置。 */
 export function buildOutputStyleInstructionsBody(
@@ -371,7 +371,8 @@ export function buildOutputStyleInstructionsBody(
 ): string | null {
   const activePrompt = outputStyle?.prompt.trim();
   if (!outputStyle || !activePrompt) return null;
-  return `# Output Style: ${outputStyle.name}\n${activePrompt}`;
+  return `# 输出风格：${outputStyle.name}
+${activePrompt}`;
 }
 
 /** 当前计划段（最近一次退出之后）里是否已有完整的 plan 提醒。 */

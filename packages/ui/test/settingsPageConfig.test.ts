@@ -48,10 +48,11 @@ describe("settingsPageConfig", () => {
       },
       {
         id: "agentCapabilities",
-        // agentPrompt 由 v3.18.0 agent-prompt 特性加入，位于 memory 之后；
-        // personalization 为上游新增自定义指令分区，同样归入 agentCapabilities。
+        // agentPrompt 是 fork 系统提示词配置档分区，位于 memory 之后；
+        // personalization / agentBehavior 为上游 v3.18 新增分区，同样归入 agentCapabilities。
         sections: [
           "personalization",
+          "agentBehavior",
           "memory",
           "agentPrompt",
           "subagents",
@@ -70,6 +71,7 @@ describe("settingsPageConfig", () => {
       "appearance",
       "modelProvider",
       "personalization",
+      "agentBehavior",
       "memory",
       "agentPrompt",
       "subagents",

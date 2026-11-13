@@ -1,3 +1,4 @@
+import { resolve } from "node:path";
 import { withoutAgentListingMessages } from "./test-agent-listing.js";
 import { describe, expect, it, vi } from "vitest";
 import { createTestModelSelection } from "./test-model-selection.js";
@@ -54,6 +55,7 @@ import { createTestAgentRuntime } from "./test-agent-runtime.js";
 import { MessageHistoryImpl } from "../src/agent/message-history.js";
 import { hydrateMessageHistoryFromSession } from "../src/agent/session-history-hydrator.js";
 import { DEFAULT_MODEL_REQUEST_MEDIA_BUDGET_BYTES } from "../src/runtime/helpers/media-budget.js";
+import { buildProviderRequestMessages } from "../src/runtime/helpers/provider-request-messages.js";
 import { MAX_TURN_STEER_INPUT_BYTES } from "../src/runtime/helpers/steering.js";
 import { projectIdFromDirectory } from "../src/runtime/helpers/project.js";
 import { InMemoryRuntimeTaskRegistry } from "../src/runtime-task/registry.js";
@@ -2588,8 +2590,8 @@ describe("AgentRuntime tool loop", () => {
   it("persists successful foreground Bash cwd across tool calls", async () => {
     const sessionId = createSessionId("runtime-bash-cwd-persistence");
     const eventStore = createTestSessionEventStore();
-    const initialCwd = "/tmp/zcode-runtime-initial";
-    const nextCwd = "/tmp/zcode-runtime-initial/next";
+    const initialCwd = resolve("/tmp/zcode-runtime-initial");
+    const nextCwd = resolve("/tmp/zcode-runtime-initial/next");
     const requests: Parameters<ExecutionPort["run"]>[0][] = [];
     const rootObservations: string[] = [];
     const registry = createToolRegistry();
@@ -2716,8 +2718,8 @@ describe("AgentRuntime tool loop", () => {
   it("resets Bash cwd to workspace root after a successful command leaves the workspace", async () => {
     const sessionId = createSessionId("runtime-bash-cwd-reset-reminder");
     const eventStore = createTestSessionEventStore();
-    const workspaceRoot = "/tmp/zcode-bash-root";
-    const outsideCwd = "/tmp/zcode-bash-outside";
+    const workspaceRoot = resolve("/tmp/zcode-bash-root");
+    const outsideCwd = resolve("/tmp/zcode-bash-outside");
     const requests: Parameters<ExecutionPort["run"]>[0][] = [];
     let secondRequestMessages: Array<{ content?: unknown }> = [];
     const now = new Date();
@@ -2813,8 +2815,8 @@ describe("AgentRuntime tool loop", () => {
     const sessionId = createSessionId("runtime-bash-cwd-stable-message-root");
     const eventStore = createTestSessionEventStore();
     const sessionStore = new RecordingSessionStore();
-    const initialCwd = "/tmp/zcode-runtime-root";
-    const nextCwd = "/tmp/zcode-runtime-root/subdir";
+    const initialCwd = resolve("/tmp/zcode-runtime-root");
+    const nextCwd = resolve("/tmp/zcode-runtime-root/subdir");
     const now = new Date();
     const executionPort: ExecutionPort = {
       async run() {
@@ -5724,7 +5726,7 @@ describe("AgentRuntime tool loop", () => {
     expect(persistedTodoReminders).toHaveLength(0);
   });
 
-  it("keeps output style reminders in runtime history without persisting them", async () => {
+  it("persists output style reminders so later turns retain them", async () => {
     const sessionId = createSessionId("runtime-output-style-in-memory-history");
     const eventStore = createTestSessionEventStore();
     const sessionStore = new RecordingSessionStore();
@@ -5770,10 +5772,10 @@ describe("AgentRuntime tool loop", () => {
 
     expect(firstRequestText.match(/Learning 输出风格已生效/g)).toHaveLength(1);
     expect(secondRequestText.match(/Learning 输出风格已生效/g)).toHaveLength(2);
-    expect(persistedTexts).not.toContain("Learning 输出风格已生效");
+    expect(persistedTexts.match(/Learning 输出风格已生效/g)).toHaveLength(2);
   });
 
-  it("does not duplicate output style reminders across model requests in the same turn", async () => {
+  it("repeats output style reminders after a tool batch in the same turn", async () => {
     const sessionId = createSessionId("runtime-output-style-single-per-turn");
     const eventStore = createTestSessionEventStore();
     const registry = createToolRegistry();
@@ -5832,7 +5834,7 @@ describe("AgentRuntime tool loop", () => {
     await runtime.executeTurn("read marker with style");
 
     const secondRequestText = providerMessagesToText(requests[1]!);
-    expect(secondRequestText.match(/Learning 输出风格已生效/g)).toHaveLength(1);
+    expect(secondRequestText.match(/Learning 输出风格已生效/g)).toHaveLength(2);
   });
 
   it("uses hydrated todo reminder metadata to avoid duplicate cadence reminders after resume", async () => {
@@ -5989,7 +5991,9 @@ describe("AgentRuntime tool loop", () => {
     });
     expect(requests[1]?.tools).toEqual([]);
     const verifierUserMessages = withoutAgentListingMessages(requests[1]?.messages ?? []).filter(
-      (message: any) => message.role === "user",
+      (message: any) =>
+        message.role === "user" &&
+        !providerContentToText(message.content).startsWith("<system-reminder>"),
     );
     const verifierLastMessage = requests[1]?.messages.at(-1);
     expect(verifierUserMessages).toHaveLength(2);
@@ -6981,7 +6985,7 @@ describe("AgentRuntime tool loop", () => {
                 request.tools
                   .map((tool: { name: string }) => tool.name)
                   .filter((name: string) => name.startsWith("Cron")),
-              ).toEqual(["CronList"]);
+              ).toEqual(["CronList", "CronPauseSelf"]);
               // 模拟 provider 无视声明工具面，直接返回三种 mutation tool call。
               return {
                 finishReason: "tool-calls",
@@ -8169,12 +8173,17 @@ describe("AgentRuntime tool loop", () => {
 
     expect(result.response).toBe("done after queued input");
     expect(modelCallCount).toBe(2);
-    expect(secondRequestMessages.slice(-4).map((message) => message.role)).toEqual([
+    // 工具批次之后的 token 预算提醒冒泡到保留 user 形态的输入之前，停在 tool result 后。
+    expect(secondRequestMessages.slice(-5).map((message) => message.role)).toEqual([
       "assistant",
       "tool",
       "tool",
       "user",
+      "user",
     ]);
+    expect(providerContentToText(secondRequestMessages.at(-2)?.content)).toContain(
+      "<total_tokens>",
+    );
     expect(providerContentToText(secondRequestMessages.at(-1)?.content)).toContain("note body");
     const drainIndex = eventTypes.indexOf(SessionEventType.TurnSteerDrained);
     const toolResultIndexes = eventTypes.flatMap((type, index) =>
@@ -8279,10 +8288,16 @@ describe("AgentRuntime tool loop", () => {
 
     const events = await eventStore.getEvents(sessionId);
     expect(modelCallCount).toBe(2);
-    expect(secondRequestMessages.slice(-2).map((message) => message.role)).toEqual([
+    // 纯文本回复后取出 guide 时收集预算提醒，排在这条 user 输入之前。这条 guide 直接调 steerTurn、
+    // 不带 user_steer，不重新起算：已用 = 上一次响应的 1 + 1。
+    expect(secondRequestMessages.slice(-3).map((message) => message.role)).toEqual([
       "assistant",
       "user",
+      "user",
     ]);
+    expect(providerContentToText(secondRequestMessages.at(-2)?.content)).toContain(
+      "<total_tokens>14999998 tokens left</total_tokens>",
+    );
     expect(providerContentToText(secondRequestMessages.at(-1)?.content)).toContain(
       "guide without a tool boundary",
     );
@@ -8583,14 +8598,14 @@ describe("AgentRuntime tool loop", () => {
     ]);
   });
 
-  it("drains multiple guides one per completed tool batch with distinct query ids", async () => {
+  it("drains all waiting guides together after the next completed tool batch", async () => {
     const sessionId = createSessionId("runtime-turn-steer-query-queue");
     const eventStore = createTestSessionEventStore();
     const registry = createToolRegistry();
     let runtime: AgentRuntime;
     let modelCallCount = 0;
     const requestQueryIds: Array<string | undefined> = [];
-    const lastUserContents: string[] = [];
+    const trailingUserTexts: string[][] = [];
 
     registry.register({
       inputSchema: {},
@@ -8616,10 +8631,14 @@ describe("AgentRuntime tool loop", () => {
           async generateText(request: any, observation) {
             modelCallCount++;
             requestQueryIds.push(observation.invocationContext?.traceContext?.queryId);
-            const lastUserMessage = [...withoutAgentListingMessages(request.messages)]
-              .reverse()
-              .find((message) => message.role === "user");
-            lastUserContents.push(String(lastUserMessage?.content ?? ""));
+            const messages = withoutAgentListingMessages(request.messages);
+            const lastResult = messages.findLastIndex((message: any) => message.role === "tool");
+            trailingUserTexts.push(
+              messages
+                .slice(lastResult + 1)
+                .filter((message: any) => message.role === "user")
+                .map((message: any) => String(message.content)),
+            );
             if (modelCallCount === 1) {
               const activeTurn = runtime.getActiveTurnInfo();
               expect(activeTurn?.steerable).toBe(true);
@@ -8650,24 +8669,16 @@ describe("AgentRuntime tool loop", () => {
               };
             }
 
-            return modelCallCount === 2
-              ? {
-                  finishReason: "tool-calls",
-                  providerMetadata: undefined,
-                  text: "",
-                  toolCalls: [{ id: "guide-boundary-2", name: "GuideBoundary", input: {} }],
-                  usage: { inputTokens: 1, outputTokens: 1, totalTokens: 2 },
-                }
-              : {
-                  finishReason: "stop",
-                  providerMetadata: undefined,
-                  text: "answer after second queued follow-up",
-                  usage: {
-                    inputTokens: 1,
-                    outputTokens: 1,
-                    totalTokens: 2,
-                  },
-                };
+            return {
+              finishReason: "stop",
+              providerMetadata: undefined,
+              text: "answer after both queued follow-ups",
+              usage: {
+                inputTokens: 1,
+                outputTokens: 1,
+                totalTokens: 2,
+              },
+            };
           },
         } as never),
       },
@@ -8682,24 +8693,433 @@ describe("AgentRuntime tool loop", () => {
       (event) => event.type === SessionEventType.TurnSteerDrained,
     );
 
-    expect(result.response).toBe("answer after second queued follow-up");
-    expect(requestQueryIds).toEqual([
-      "query_original_request",
-      "query_first_steer",
-      "query_second_steer",
-    ]);
-    expect(lastUserContents).toEqual([
-      "original request",
+    expect(result.response).toBe("answer after both queued follow-ups");
+    // 同一边界一次取出全部已等待的 guide；下一次请求归因到最后一条的 query。
+    expect(requestQueryIds).toEqual(["query_original_request", "query_second_steer"]);
+    // 默认测试模型不合并相邻 user 内容，不补换行。这批工具的 token 预算提醒按冒泡规则
+    // 越过保留 user 形态的 guide，停在 tool result 之后。
+    expect(trailingUserTexts[1]).toEqual([
+      "<system-reminder>\n<total_tokens>14999998 tokens left</total_tokens>\n</system-reminder>",
       "first queued follow-up",
       "second queued follow-up",
     ]);
-    expect(drainedEvents.map((event) => (event.payload as any).queryIds)).toEqual([
+    // 一起取出，但每条各自落库并各发一个 drained 事件。
+    const drainedPayloads = drainedEvents.map((event) => event.payload as any);
+    expect(drainedPayloads.map((payload) => payload.queryIds)).toEqual([
       ["query_first_steer"],
       ["query_second_steer"],
+    ]);
+    expect(drainedPayloads.map((payload) => payload.injectedMessageIds)).toEqual([
+      [expect.any(String)],
+      [expect.any(String)],
     ]);
     // 普通 active-turn steer 不需要显式 source；缺省即表示普通 guided steer。
     expect(queuedEvents.every((event) => !("source" in event.payload))).toBe(true);
     expect(drainedEvents.every((event) => !("sources" in event.payload))).toBe(true);
+  });
+
+  it.each([true, false])(
+    "keeps each guide's page state next to it when guides drain together, live and cold (MCS=%s)",
+    async (mcs) => {
+      const sessionId = createSessionId(`runtime-guide-gen-ui-pairing-${mcs}`);
+      const sessionStore = new RecordingSessionStore();
+      const registry = createToolRegistry();
+      let runtime: AgentRuntime;
+      let modelCallCount = 0;
+      let continuationMessages: any[] = [];
+      // guide 和页面状态带 mk: 标记，按出现顺序比较位置。
+      const guideMarkers = (messages: readonly unknown[]) =>
+        [...JSON.stringify(messages).matchAll(/mk:(st[a-z]+-\d)/g)].map((match) => match[1]);
+      const steerWithPageState = (input: string, state: string) =>
+        runtime.steerTurn({
+          delivery: "guide",
+          expectedTurnId: runtime.getActiveTurnInfo()?.turnId,
+          input,
+          // 与 App 发送 guide 的路径相同（input-facade 标为 user_steer）。
+          inputPresentation: "user_steer",
+          intent: { genUiContext: [{ path: "/workspace/gen-ui/widget.html", state }] },
+        });
+
+      registry.register({
+        inputSchema: {},
+        metadata: {
+          concurrentSafe: true,
+          destructive: false,
+          name: "GuideBoundary",
+          needsApproval: false,
+          readOnly: true,
+          riskLevel: "low",
+          sideEffectScope: "none",
+        },
+        handler: async () => "tool boundary complete",
+      });
+
+      runtime = createTestAgentRuntime(
+        sessionId,
+        { mode: "yolo" },
+        {
+          eventStore: createTestSessionEventStore(),
+          sessionStore,
+          toolRegistry: registry,
+          modelFactory: createTestModelFactory({
+            properties: { supportsMidConversationSystem: mcs },
+            async generateText(request: any) {
+              modelCallCount++;
+              if (modelCallCount === 1) {
+                // 工具运行期间，用户在两个不同的页面状态下各发一条消息；同一边界一起取出。
+                await steerWithPageState("mk:steer-1", "mk:state-1");
+                await steerWithPageState("mk:steer-2", "mk:state-2");
+                return {
+                  finishReason: "tool-calls",
+                  providerMetadata: undefined,
+                  text: "",
+                  toolCalls: [{ id: "guide-boundary-1", name: "GuideBoundary", input: {} }],
+                  usage: { inputTokens: 1, outputTokens: 1, totalTokens: 2 },
+                };
+              }
+              continuationMessages = withoutAgentListingMessages(request.messages);
+              return {
+                finishReason: "stop",
+                providerMetadata: undefined,
+                text: "answered both",
+                usage: { inputTokens: 1, outputTokens: 1, totalTokens: 2 },
+              };
+            },
+          } as never),
+        },
+      );
+
+      await runtime.executeTurn("original request");
+      // MCS 下两条 guide 合成一条 system，状态都在它之前的 user 侧；MCS 关时每个状态紧跟它的 guide。
+      const expected = mcs
+        ? ["state-1", "state-2", "steer-1", "steer-2"]
+        : ["steer-1", "state-1", "steer-2", "state-2"];
+      expect(modelCallCount).toBe(2);
+      expect(guideMarkers(continuationMessages)).toEqual(expected);
+
+      // 冷恢复从同一份输入快照派生状态，请求里的顺序与 live 相同。
+      const restored = new MessageHistoryImpl();
+      await hydrateMessageHistoryFromSession({
+        history: restored,
+        messages: await sessionStore.messages({ sessionID: sessionId }),
+      });
+      const coldMessages = buildProviderRequestMessages({
+        entries: restored.borrowReadOnlyRuntimeEntries(),
+        useMidConversationSystem: mcs,
+      }).messages;
+      expect(guideMarkers(coldMessages)).toEqual(expected);
+    },
+  );
+
+  it.each([true, false])(
+    "keeps the page state of a user_steer input that opens a new turn, live and cold (MCS=%s)",
+    async (mcs) => {
+      const sessionId = createSessionId(`runtime-send-now-gen-ui-${mcs}`);
+      const sessionStore = new RecordingSessionStore();
+      let lastMessages: any[] = [];
+      const runtime = createTestAgentRuntime(
+        sessionId,
+        { mode: "yolo" },
+        {
+          eventStore: createTestSessionEventStore(),
+          sessionStore,
+          modelFactory: createTestModelFactory({
+            properties: { supportsMidConversationSystem: mcs },
+            async generateText(request: any) {
+              lastMessages = withoutAgentListingMessages(request.messages);
+              return {
+                finishReason: "stop",
+                providerMetadata: undefined,
+                text: "done",
+                usage: { inputTokens: 1, outputTokens: 1, totalTokens: 2 },
+              };
+            },
+          } as never),
+        },
+      );
+      const markers = (messages: readonly unknown[]) =>
+        [...JSON.stringify(messages).matchAll(/mk:([a-z-]+)/g)].map((match) => match[1]);
+
+      await runtime.executeTurn("mk:original");
+      // 旧版本的立即发送以 user_steer 开新一轮，已存会话仍是这种形式；页面状态要留在输入旁边。
+      await runtime.executeTurn("mk:send-now", undefined, {
+        inputPresentation: "user_steer",
+        intent: {
+          genUiContext: [{ path: "/workspace/gen-ui/widget.html", state: "mk:send-now-state" }],
+        },
+      } as never);
+      // 接在 text-only 回复之后，MCS 下也没有 system 锚点，降级为 user reminder，状态跟在它之后。
+      const expected = ["original", "send-now", "send-now-state"];
+      expect(markers(lastMessages)).toEqual(expected);
+
+      const restored = new MessageHistoryImpl();
+      await hydrateMessageHistoryFromSession({
+        history: restored,
+        messages: await sessionStore.messages({ sessionID: sessionId }),
+      });
+      const coldMessages = buildProviderRequestMessages({
+        entries: restored.borrowReadOnlyRuntimeEntries(),
+        useMidConversationSystem: mcs,
+      }).messages;
+      expect(markers(coldMessages)).toEqual(expected);
+    },
+  );
+
+  it("stops the guide drain at a guide reserved by send-now", async () => {
+    const sessionId = createSessionId("runtime-turn-steer-reserved-guide");
+    const eventStore = createTestSessionEventStore();
+    let runtime: AgentRuntime;
+    const trailingUserTexts: string[][] = [];
+
+    runtime = createTestAgentRuntime(
+      sessionId,
+      { mode: "yolo" },
+      {
+        eventStore,
+        modelFactory: createTestModelFactory({
+          async generateText(request: any) {
+            const messages = withoutAgentListingMessages(request.messages);
+            const lastAssistant = messages.findLastIndex(
+              (message: any) => message.role === "assistant",
+            );
+            trailingUserTexts.push(
+              messages
+                .slice(lastAssistant + 1)
+                .filter((message: any) => message.role === "user")
+                .map((message: any) => String(message.content)),
+            );
+            if (trailingUserTexts.length === 1) {
+              const turnId = runtime.getActiveTurnInfo()?.turnId;
+              await runtime.steerTurn({
+                delivery: "guide",
+                expectedTurnId: turnId,
+                input: "guide a",
+              });
+              const reserved = await runtime.steerTurn({
+                delivery: "guide",
+                expectedTurnId: turnId,
+                input: "guide b reserved",
+              });
+              await runtime.steerTurn({
+                delivery: "guide",
+                expectedTurnId: turnId,
+                input: "guide c",
+              });
+              if (reserved.kind !== "queued") throw new Error("expected queued input");
+              await expect(
+                runtime.reservePendingInputById({
+                  pendingInputId: reserved.pendingInputId,
+                  reservationId: "send-now-command",
+                  traceContext: { sessionId, traceId: createTraceId("trace-reserved-guide") },
+                }),
+              ).resolves.toBe(true);
+            }
+            return {
+              finishReason: "stop",
+              providerMetadata: undefined,
+              text: `step ${trailingUserTexts.length}`,
+              usage: { inputTokens: 1, outputTokens: 1, totalTokens: 2 },
+            };
+          },
+        } as never),
+      },
+    );
+
+    await runtime.executeTurn("original request");
+    const drainedEvents = (await eventStore.getEvents(sessionId)).filter(
+      (event) => event.type === SessionEventType.TurnSteerDrained,
+    );
+
+    // 已被 send-now 预留的 guide 归预留方提升；按 FIFO 取到它为止，后面的 guide 也不越过它。
+    // 这些 guide 直接调 steerTurn、不带 user_steer，纯文本回复后的预算提醒不重新起算：
+    // 已用 = 上一次响应的 1 + 1。
+    expect(trailingUserTexts[1]).toEqual([
+      "<system-reminder>\n<total_tokens>14999998 tokens left</total_tokens>\n</system-reminder>",
+      "guide a",
+    ]);
+    expect(drainedEvents).toHaveLength(1);
+    expect(
+      (drainedEvents[0]!.payload as any).drainedInputs.map((input: any) => input.text),
+    ).toEqual(["guide a"]);
+  });
+
+  it("settles each drained guide before the next, so a later persistence failure keeps the earlier one and leaves the rest queued", async () => {
+    const sessionId = createSessionId("runtime-turn-steer-partial-drain");
+    const eventStore = createTestSessionEventStore();
+    // 第二条 guide 的 user message + session input promote 提交失败。
+    class FailingGuideBStore extends RecordingSessionStore {
+      override async promoteSessionInput(
+        input: Parameters<RecordingSessionStore["promoteSessionInput"]>[0],
+      ): Promise<void> {
+        if (input.parts.some((part) => part.type === "text" && part.text === "guide b")) {
+          throw new Error("injected guide b promote failure");
+        }
+        await super.promoteSessionInput(input);
+      }
+    }
+    const sessionStore = new FailingGuideBStore();
+    let runtime: AgentRuntime;
+    let modelCallCount = 0;
+    const requestTexts: string[] = [];
+
+    runtime = createTestAgentRuntime(
+      sessionId,
+      { mode: "yolo" },
+      {
+        eventStore,
+        sessionStore,
+        modelFactory: createTestModelFactory({
+          async generateText(request: any) {
+            modelCallCount++;
+            requestTexts.push(JSON.stringify(request.messages));
+            if (modelCallCount === 1) {
+              const turnId = runtime.getActiveTurnInfo()?.turnId;
+              for (const input of ["guide a", "guide b", "guide c"]) {
+                await runtime.steerTurn({ delivery: "guide", expectedTurnId: turnId, input });
+              }
+            }
+            return {
+              finishReason: "stop",
+              providerMetadata: undefined,
+              text: `step ${modelCallCount}`,
+              usage: { inputTokens: 1, outputTokens: 1, totalTokens: 2 },
+            };
+          },
+        } as never),
+      },
+    );
+
+    await runtime.executeTurn("original request").catch(() => undefined);
+    const events = await eventStore.getEvents(sessionId);
+    const drainedTexts = events
+      .filter((event) => event.type === SessionEventType.TurnSteerDrained)
+      .map((event) => (event.payload as any).drainedInputs.map((input: any) => input.text));
+    const queuedIds = events
+      .filter((event) => event.type === SessionEventType.TurnSteerQueued)
+      .map((event) => (event.payload as any).pendingInputId);
+
+    // A 的记录、移出队列与 drained 事实已按条完成；B 没有提交，不进入 drained，也不再请求模型。
+    expect(drainedTexts).toEqual([["guide a"]]);
+    expect(sessionStore.promotedSessionInputIds).toEqual([queuedIds[0]]);
+    expect(modelCallCount).toBe(1);
+    // B 与之后的 C 仍在队列里（error-paused），等待用户继续。
+    expect((await runtime.getProjection()).pendingSteerInputs.map((item) => item.input)).toEqual([
+      "guide b",
+      "guide c",
+    ]);
+
+    // B 仍在队列里，下一轮请求不能已经带着它；否则继续队列时模型会看到两次。
+    await runtime.executeTurn("next request");
+    expect(requestTexts.at(-1)).toContain("guide a");
+    expect(requestTexts.at(-1)).not.toContain("guide b");
+  });
+
+  it("finishes a started guide drain when the turn is stopped mid-way, and the next turn sends a valid request", async () => {
+    const sessionId = createSessionId("runtime-turn-steer-stop-during-drain");
+    const eventStore = createTestSessionEventStore();
+    const registry = createToolRegistry();
+    let runtime: AgentRuntime;
+    // 第一条 guide 提交期间用户按停止。
+    class StopDuringGuideAStore extends RecordingSessionStore {
+      override async promoteSessionInput(
+        input: Parameters<RecordingSessionStore["promoteSessionInput"]>[0],
+      ): Promise<void> {
+        if (input.parts.some((part) => part.type === "text" && part.text === "guide a")) {
+          runtime.stopActiveForegroundExecution({ reason: "user stop" });
+        }
+        await super.promoteSessionInput(input);
+      }
+    }
+    const sessionStore = new StopDuringGuideAStore();
+    const requests: any[][] = [];
+
+    registry.register({
+      inputSchema: {},
+      metadata: {
+        concurrentSafe: true,
+        destructive: false,
+        name: "GuideBoundary",
+        needsApproval: false,
+        readOnly: true,
+        riskLevel: "low",
+        sideEffectScope: "none",
+      },
+      handler: async () => "tool boundary complete",
+    });
+
+    runtime = createTestAgentRuntime(
+      sessionId,
+      { mode: "yolo" },
+      {
+        eventStore,
+        sessionStore,
+        toolRegistry: registry,
+        modelFactory: createTestModelFactory({
+          async generateText(request: any) {
+            requests.push(withoutAgentListingMessages(request.messages));
+            if (requests.length === 1) {
+              const turnId = runtime.getActiveTurnInfo()?.turnId;
+              for (const input of ["guide a", "guide b", "guide c"]) {
+                await runtime.steerTurn({ delivery: "guide", expectedTurnId: turnId, input });
+              }
+              return {
+                finishReason: "tool-calls",
+                providerMetadata: undefined,
+                text: "",
+                toolCalls: [{ id: "guide-boundary-1", name: "GuideBoundary", input: {} }],
+                usage: { inputTokens: 1, outputTokens: 1, totalTokens: 2 },
+              };
+            }
+            return {
+              finishReason: "stop",
+              providerMetadata: undefined,
+              text: "next answer",
+              usage: { inputTokens: 1, outputTokens: 1, totalTokens: 2 },
+            };
+          },
+        } as never),
+      },
+    );
+
+    await expect(runtime.executeTurn("original request")).rejects.toMatchObject({
+      type: CoreErrorType.TurnCancelled,
+    });
+    const drainedTexts = (await eventStore.getEvents(sessionId))
+      .filter((event) => event.type === SessionEventType.TurnSteerDrained)
+      .map((event) => (event.payload as any).drainedInputs.map((input: any) => input.text));
+
+    // 已开始的取出做完整批：停止在 a 提交期间到达，b、c 仍按条提交并各有自己的 drained 事件。
+    expect(drainedTexts).toEqual([["guide a"], ["guide b"], ["guide c"]]);
+    // 停止在本批提交后生效：本轮不再请求模型，也没有 guide 退回队列。
+    expect(requests).toHaveLength(1);
+    expect((await runtime.getProjection()).pendingSteerInputs).toEqual([]);
+
+    // 下一轮照常：tool call 后紧跟它的结果，之后依次是三条 guide、中断标记与新输入。
+    // 新输入轮首的 token 预算提醒按冒泡规则越过这些 user 输入，停在 tool result 之后。
+    await expect(runtime.executeTurn("next request")).resolves.toMatchObject({
+      response: "next answer",
+    });
+    const next = requests.at(-1)!;
+    const toolCallIndex = next.findIndex(
+      (message: any) =>
+        message.role === "assistant" &&
+        message.toolCalls?.some((call: any) => call.id === "guide-boundary-1"),
+    );
+    expect(toolCallIndex).toBeGreaterThan(-1);
+    expect(next[toolCallIndex + 1]?.role).toBe("tool");
+    expect(
+      next
+        .slice(toolCallIndex + 2)
+        .filter((message: any) => message.role === "user")
+        .map((message: any) => providerContentToText(message.content)),
+    ).toEqual([
+      "<system-reminder>\n<total_tokens>15000000 tokens left</total_tokens>\n</system-reminder>",
+      "guide a",
+      "guide b",
+      "guide c",
+      "[Request interrupted by user]",
+      "next request",
+    ]);
   });
 
   it("rejects steering when the expected turn id is stale", async () => {
@@ -8983,7 +9403,7 @@ describe("AgentRuntime tool loop", () => {
         newText: "first edited",
         traceContext,
       }),
-    ).resolves.toBe(true);
+    ).resolves.toBe("edited");
     await expect(
       runtime.reorderPendingInput({
         pendingInputId: second.pendingInputId,
@@ -9143,6 +9563,468 @@ describe("AgentRuntime tool loop", () => {
     // send-now 从 queue 摘除后仍保持 admitted；真正的 user message 会在另一条
     // startPromptTurn 写路径中原子 promotion，崩溃则由恢复清扫置 discarded。
     expect(sessionStore.settledSessionInputIds).not.toContain(queued.pendingInputId);
+  });
+
+  it("freezes a queued input for composer edit until the owning editor submits or releases it", async () => {
+    // docs/ui/composer-edit-mode.md：编辑锁与 reservation 互斥；冻结期间不能被删除、重排、
+    // 提升，只有持锁编辑器的 editPendingInputById 能写回并同时释放锁。
+    const sessionId = createSessionId("runtime-turn-steer-edit-lock");
+    const eventStore = createTestSessionEventStore();
+    const sessionStore = new RecordingSessionStore();
+    const modelStarted = deferred();
+    const finishModel = deferred();
+    const runtime = createTestAgentRuntime(
+      sessionId,
+      { mode: "build" },
+      {
+        eventStore,
+        sessionStore,
+        modelFactory: createTestModelFactory({
+          async generateText() {
+            modelStarted.resolve();
+            await finishModel.promise;
+            return {
+              finishReason: "stop",
+              providerMetadata: undefined,
+              text: "first answer",
+              usage: { inputTokens: 1, outputTokens: 1, totalTokens: 2 },
+            };
+          },
+        } as never),
+      },
+    );
+    const traceContext = { sessionId, traceId: createTraceId("trace-edit-lock") };
+    const pendingTurn = runtime.executeTurn("run while editing");
+    await modelStarted.promise;
+    const queued = await runtime.steerTurn({
+      input: "edit me",
+      delivery: "queue",
+      intent: {
+        sourceCommandId: "command-edit",
+        queueItemId: "queue-edit",
+        clientId: "desktop",
+        kind: "sendText",
+        admissionSeq: 1,
+        admittedAt: 1,
+        requestedDelivery: "queue",
+        admittedDelivery: "queue",
+        mode: "build",
+      },
+    });
+    const other = await runtime.steerTurn({ input: "other", delivery: "queue" });
+    if (queued.kind !== "queued" || other.kind !== "queued") {
+      throw new Error("expected queued inputs");
+    }
+    const lock = { editorId: "editor-a", clientId: "desktop", inputOrigin: "desktop" as const };
+
+    await expect(
+      runtime.lockPendingInputEdit({
+        pendingInputId: queued.pendingInputId,
+        editLock: lock,
+        traceContext,
+      }),
+    ).resolves.toBe("locked");
+    await expect(
+      runtime.lockPendingInputEdit({
+        pendingInputId: queued.pendingInputId,
+        editLock: { ...lock, editorId: "editor-b" },
+        traceContext,
+      }),
+    ).resolves.toBe("lockedByOther");
+    await expect(
+      runtime.lockPendingInputEdit({
+        pendingInputId: "missing-input",
+        editLock: lock,
+        traceContext,
+      }),
+    ).resolves.toBe("missing");
+    expect(runtime.getPendingInputEditLock(queued.pendingInputId)).toEqual(lock);
+
+    // 冻结项：reserve / 删除 / 重排都被拒绝；其他项不受影响。
+    await expect(
+      runtime.reservePendingInputById({
+        pendingInputId: queued.pendingInputId,
+        reservationId: "send-now",
+        traceContext,
+      }),
+    ).resolves.toBe(false);
+    await expect(
+      runtime.removePendingInputById({
+        pendingInputId: queued.pendingInputId,
+        reason: "user_removed",
+        traceContext,
+      }),
+    ).resolves.toBe(false);
+    await expect(
+      runtime.reorderPendingInput({
+        pendingInputId: queued.pendingInputId,
+        beforePendingInputId: null,
+        traceContext,
+      }),
+    ).resolves.toBe(false);
+    await expect(
+      runtime.reorderPendingInput({
+        pendingInputId: other.pendingInputId,
+        beforePendingInputId: queued.pendingInputId,
+        traceContext,
+      }),
+    ).resolves.toBe(true);
+
+    // 未持锁的写回不能覆盖冻结项；声明错误编辑器视为锁已丢失。
+    await expect(
+      runtime.editPendingInputById({
+        pendingInputId: queued.pendingInputId,
+        newText: "overwrite",
+        traceContext,
+      }),
+    ).resolves.toBe("editLocked");
+    await expect(
+      runtime.editPendingInputById({
+        pendingInputId: queued.pendingInputId,
+        newText: "overwrite",
+        editorId: "editor-b",
+        traceContext,
+      }),
+    ).resolves.toBe("lockLost");
+
+    const attachmentRefs = [
+      { ref: "artifact:new", fileName: "new.txt", mime: "text/plain", bytes: 3 },
+    ];
+    const modelSelection = { providerId: "provider-edit", modelId: "model-edit" };
+    await expect(
+      runtime.editPendingInputById({
+        pendingInputId: queued.pendingInputId,
+        newText: "edited text",
+        editorId: "editor-a",
+        attachmentRefs,
+        modelSelection,
+        mode: "yolo",
+        planEnabled: true,
+        traceContext,
+      }),
+    ).resolves.toBe("edited");
+    expect(runtime.getPendingInputEditLock(queued.pendingInputId)).toBeUndefined();
+
+    const events = await eventStore.getEvents(sessionId);
+    const lockEvents = events
+      .filter((event) => event.type === SessionEventType.TurnSteerEditLockChanged)
+      .map((event) => (event.payload as { editLock?: unknown }).editLock ?? null);
+    expect(lockEvents).toEqual([lock, null]);
+    const editedEvent = events
+      .filter((event) => event.type === SessionEventType.TurnSteerQueued)
+      .at(-1);
+    expect(editedEvent?.payload).toMatchObject({
+      pendingInputId: queued.pendingInputId,
+      input: "edited text",
+      intent: {
+        text: "edited text",
+        attachmentRefs,
+        modelSelection,
+        mode: "yolo",
+        planEnabled: true,
+      },
+    });
+
+    // 只改配置（applyQueueItemsConfig）：缺省 newText 保留原输入，不写正文更新。
+    const inputUpdatesBefore = sessionStore.sessionInputUpdates.length;
+    await expect(
+      runtime.editPendingInputById({
+        pendingInputId: queued.pendingInputId,
+        mode: "guarded",
+        traceContext,
+      }),
+    ).resolves.toBe("edited");
+    expect(sessionStore.sessionInputUpdates).toHaveLength(inputUpdatesBefore);
+    const configEdited = (await eventStore.getEvents(sessionId))
+      .filter((event) => event.type === SessionEventType.TurnSteerQueued)
+      .at(-1);
+    expect(configEdited?.payload).toMatchObject({
+      pendingInputId: queued.pendingInputId,
+      input: "edited text",
+      intent: { text: "edited text", attachmentRefs, modelSelection, mode: "guarded" },
+    });
+
+    // 解锁后恢复正常：可再次加锁并由任意端解除。
+    await expect(
+      runtime.lockPendingInputEdit({
+        pendingInputId: queued.pendingInputId,
+        editLock: lock,
+        traceContext,
+      }),
+    ).resolves.toBe("locked");
+    await expect(
+      runtime.releasePendingInputEdit({ pendingInputId: queued.pendingInputId, traceContext }),
+    ).resolves.toBe(true);
+    await expect(
+      runtime.releasePendingInputEdit({ pendingInputId: queued.pendingInputId, traceContext }),
+    ).resolves.toBe(false);
+    await expect(
+      runtime.reservePendingInputById({
+        pendingInputId: queued.pendingInputId,
+        reservationId: "send-now",
+        traceContext,
+      }),
+    ).resolves.toBe(true);
+    // reserve 后不能再被冻结，与 sendQueuedNow 互斥。
+    await expect(
+      runtime.lockPendingInputEdit({
+        pendingInputId: queued.pendingInputId,
+        editLock: lock,
+        traceContext,
+      }),
+    ).resolves.toBe("reserved");
+
+    finishModel.resolve();
+    await pendingTurn;
+  });
+
+  it("drops a queued input together with its composer edit lock when a rebuilt runtime resumes", async () => {
+    // 编辑锁只属于当前 runtime 实例（docs/ui/composer-edit-mode.md「锁的释放」）。新 runtime
+    // 必须经 resumeFromStore 丢弃残留队列项（session_resumed），投影与空锁表才保持一致；
+    // 否则会出现「投影显示已锁、runtime 查不到锁」而无法解除、阻塞续跑。
+    const sessionId = createSessionId("runtime-edit-lock-resume");
+    const eventStore = createTestSessionEventStore();
+    const sessionStore = new RecordingSessionStore();
+    const modelStarted = deferred();
+    const finishModel = deferred();
+    const createRuntime = () =>
+      createTestAgentRuntime(
+        sessionId,
+        { mode: "build", workingDirectory: "/tmp/zcode-edit-lock-resume" },
+        {
+          eventStore,
+          sessionStore,
+          modelFactory: createTestModelFactory({
+            async generateText() {
+              modelStarted.resolve();
+              await finishModel.promise;
+              return {
+                finishReason: "stop",
+                providerMetadata: undefined,
+                text: "answer",
+                usage: { inputTokens: 1, outputTokens: 1, totalTokens: 2 },
+              };
+            },
+          } as never),
+        },
+      );
+    const traceContext = { sessionId, traceId: createTraceId("trace-edit-lock-resume") };
+    const firstRuntime = createRuntime();
+    const pendingTurn = firstRuntime.executeTurn("run while editing");
+    await modelStarted.promise;
+    const queued = await firstRuntime.steerTurn({ input: "edit me", delivery: "queue" });
+    if (queued.kind !== "queued") throw new Error("expected queued input");
+    await expect(
+      firstRuntime.lockPendingInputEdit({
+        pendingInputId: queued.pendingInputId,
+        editLock: { editorId: "editor-a", clientId: "desktop" },
+        traceContext,
+      }),
+    ).resolves.toBe("locked");
+
+    const resumedRuntime = createRuntime();
+    await resumedRuntime.resumeFromStore();
+
+    expect((await resumedRuntime.getProjection()).pendingSteerInputs).toHaveLength(0);
+    expect(resumedRuntime.getPendingInputEditLock(queued.pendingInputId)).toBeUndefined();
+    const discarded = (await eventStore.getEvents(sessionId)).find(
+      (event) => event.type === SessionEventType.TurnSteerDiscarded,
+    );
+    expect(discarded?.payload).toMatchObject({
+      pendingInputIds: [queued.pendingInputId],
+      reason: "session_resumed",
+    });
+
+    finishModel.resolve();
+    await pendingTurn;
+  });
+
+  it("keeps a frozen item's edit lock when clearing the queue fails to record the discard", async () => {
+    // docs/ui/composer-edit-mode.md：锁与队列项同生同灭。清空队列写丢弃事件失败时，
+    // 项仍在投影里，锁也必须仍在 runtime 里，才能被解除且继续拦住删除。
+    const sessionId = createSessionId("runtime-edit-lock-clear-failure");
+    const baseStore = createTestSessionEventStore();
+    let failNextDiscard = true;
+    const eventStore = new Proxy(baseStore, {
+      get(target, property, receiver) {
+        if (property === "append") {
+          return async (event: SessionEvent) => {
+            if (failNextDiscard && event.type === SessionEventType.TurnSteerDiscarded) {
+              failNextDiscard = false;
+              throw new Error("discard append failed");
+            }
+            return target.append(event);
+          };
+        }
+        const value = Reflect.get(target, property, receiver);
+        return typeof value === "function" ? value.bind(target) : value;
+      },
+    });
+    const sessionStore = new RecordingSessionStore();
+    const modelStarted = deferred();
+    const finishModel = deferred();
+    const runtime = createTestAgentRuntime(
+      sessionId,
+      { mode: "build" },
+      {
+        eventStore,
+        sessionStore,
+        modelFactory: createTestModelFactory({
+          async generateText() {
+            modelStarted.resolve();
+            await finishModel.promise;
+            return {
+              finishReason: "stop",
+              providerMetadata: undefined,
+              text: "answer",
+              usage: { inputTokens: 1, outputTokens: 1, totalTokens: 2 },
+            };
+          },
+        } as never),
+      },
+    );
+    const traceContext = { sessionId, traceId: createTraceId("trace-edit-lock-clear-failure") };
+    const pendingTurn = runtime.executeTurn("run while editing");
+    await modelStarted.promise;
+    const queued = await runtime.steerTurn({ input: "edit me", delivery: "queue" });
+    if (queued.kind !== "queued") throw new Error("expected queued input");
+    const lock = { editorId: "editor-a", clientId: "desktop" };
+    await runtime.lockPendingInputEdit({
+      pendingInputId: queued.pendingInputId,
+      editLock: lock,
+      traceContext,
+    });
+
+    await expect(runtime.clearAllPendingInputs(traceContext)).rejects.toThrow(
+      "discard append failed",
+    );
+    expect((await runtime.getProjection()).pendingSteerInputs).toMatchObject([
+      { pendingInputId: queued.pendingInputId },
+    ]);
+    expect(runtime.getPendingInputEditLock(queued.pendingInputId)).toEqual(lock);
+    await expect(
+      runtime.removePendingInputById({
+        pendingInputId: queued.pendingInputId,
+        reason: "user_removed",
+        traceContext,
+      }),
+    ).resolves.toBe(false);
+    await expect(
+      runtime.releasePendingInputEdit({ pendingInputId: queued.pendingInputId, traceContext }),
+    ).resolves.toBe(true);
+
+    // 重试清空成功后，项与锁一起消失。
+    await runtime.lockPendingInputEdit({
+      pendingInputId: queued.pendingInputId,
+      editLock: lock,
+      traceContext,
+    });
+    await expect(runtime.clearAllPendingInputs(traceContext)).resolves.toBe(1);
+    expect((await runtime.getProjection()).pendingSteerInputs).toHaveLength(0);
+    expect(runtime.getPendingInputEditLock(queued.pendingInputId)).toBeUndefined();
+
+    finishModel.resolve();
+    await pendingTurn;
+  });
+
+  it("keeps the edit lock when the unlock event after an edit or release fails to persist", async () => {
+    // docs/ui/composer-edit-mode.md：锁的内存状态与锁事件同生同灭。解锁事件写入失败时，
+    // 投影仍显示锁，runtime 也必须仍持锁：可重试解除，且删除继续被拒绝。
+    const sessionId = createSessionId("runtime-edit-lock-unlock-failure");
+    const baseStore = createTestSessionEventStore();
+    let failNextUnlock = false;
+    const eventStore = new Proxy(baseStore, {
+      get(target, property, receiver) {
+        if (property === "append") {
+          return async (event: SessionEvent) => {
+            const unlocking =
+              event.type === SessionEventType.TurnSteerEditLockChanged &&
+              !(event.payload as { editLock?: unknown }).editLock;
+            if (failNextUnlock && unlocking) {
+              failNextUnlock = false;
+              throw new Error("unlock append failed");
+            }
+            return target.append(event);
+          };
+        }
+        const value = Reflect.get(target, property, receiver);
+        return typeof value === "function" ? value.bind(target) : value;
+      },
+    });
+    const sessionStore = new RecordingSessionStore();
+    const modelStarted = deferred();
+    const finishModel = deferred();
+    const runtime = createTestAgentRuntime(
+      sessionId,
+      { mode: "build" },
+      {
+        eventStore,
+        sessionStore,
+        modelFactory: createTestModelFactory({
+          async generateText() {
+            modelStarted.resolve();
+            await finishModel.promise;
+            return {
+              finishReason: "stop",
+              providerMetadata: undefined,
+              text: "answer",
+              usage: { inputTokens: 1, outputTokens: 1, totalTokens: 2 },
+            };
+          },
+        } as never),
+      },
+    );
+    const traceContext = { sessionId, traceId: createTraceId("trace-edit-lock-unlock-failure") };
+    const pendingTurn = runtime.executeTurn("run while editing");
+    await modelStarted.promise;
+    const queued = await runtime.steerTurn({ input: "edit me", delivery: "queue" });
+    if (queued.kind !== "queued") throw new Error("expected queued input");
+    const lock = { editorId: "editor-a", clientId: "desktop" };
+    const expectStillLocked = async () => {
+      expect(runtime.getPendingInputEditLock(queued.pendingInputId)).toEqual(lock);
+      await expect(
+        runtime.removePendingInputById({
+          pendingInputId: queued.pendingInputId,
+          reason: "user_removed",
+          traceContext,
+        }),
+      ).resolves.toBe(false);
+    };
+    await runtime.lockPendingInputEdit({
+      pendingInputId: queued.pendingInputId,
+      editLock: lock,
+      traceContext,
+    });
+
+    // 编辑提交：内容已写入，解锁事件失败。
+    failNextUnlock = true;
+    await expect(
+      runtime.editPendingInputById({
+        pendingInputId: queued.pendingInputId,
+        newText: "edited",
+        editorId: "editor-a",
+        traceContext,
+      }),
+    ).rejects.toThrow("unlock append failed");
+    await expectStillLocked();
+
+    // 手动解除：解锁事件失败，锁保留；重试成功后才删除。
+    failNextUnlock = true;
+    await expect(
+      runtime.releasePendingInputEdit({ pendingInputId: queued.pendingInputId, traceContext }),
+    ).rejects.toThrow("unlock append failed");
+    await expectStillLocked();
+    await expect(
+      runtime.releasePendingInputEdit({ pendingInputId: queued.pendingInputId, traceContext }),
+    ).resolves.toBe(true);
+    expect(runtime.getPendingInputEditLock(queued.pendingInputId)).toBeUndefined();
+    const lockEvents = (await baseStore.getEvents(sessionId))
+      .filter((event) => event.type === SessionEventType.TurnSteerEditLockChanged)
+      .map((event) => Boolean((event.payload as { editLock?: unknown }).editLock));
+    expect(lockEvents).toEqual([true, false]);
+
+    finishModel.resolve();
+    await pendingTurn;
   });
 
   it("discards queued-but-not-drained steering input during resume", async () => {
@@ -9428,11 +10310,17 @@ describe("AgentRuntime tool loop", () => {
       content: [{ type: "reasoning", text: "thinking before tool" }],
       toolCalls: [{ id: "stream-read", name: "StreamRead", input: {} }],
     });
-    expect(secondRequest.messages.at(-1)).toMatchObject({
+    expect(secondRequest.messages.at(-2)).toMatchObject({
       content: "stream-read-ok",
       role: "tool",
       toolCallId: "stream-read",
       toolName: "StreamRead",
+    });
+    // 工具批次之后的 token 预算提醒：首轮从 0 计到上一次响应的 usage（1 + 1）。
+    expect(secondRequest.messages.at(-1)).toMatchObject({
+      content:
+        "<system-reminder>\n<total_tokens>14999998 tokens left</total_tokens>\n</system-reminder>",
+      role: "user",
     });
     expect(events.map((event) => event.type)).toContain(SessionEventType.ModelStreaming);
     expect(events.map((event) => event.type)).toContain(SessionEventType.ToolCallScheduled);
@@ -9716,21 +10604,25 @@ describe("AgentRuntime tool loop", () => {
     expect(result.response).toBe("recovered after malformed tool input");
     expect(assistantToolUse?.toolCalls).toEqual([
       {
+        blockIndex: 0,
         id: "malformed-ask-call",
         input: {},
         name: "AskUserQuestionFixture",
       },
       {
+        blockIndex: 1,
         id: "empty-input-call",
         input: {},
         name: "EmptyInputFixture",
       },
       {
+        blockIndex: 2,
         id: "unknown-tool-call",
         input: {},
         name: "UnknownFixture",
       },
       {
+        blockIndex: 3,
         id: "empty-name-call",
         input: {},
         name: "",
@@ -9762,7 +10654,7 @@ describe("AgentRuntime tool loop", () => {
       toolName: "UnknownFixture",
     });
     expect(providerContentToText(unknownToolResult?.content)).toContain(
-      "Tool not found: UnknownFixture",
+      "No such tool available: UnknownFixture",
     );
     expect(emptyNameToolResult).toMatchObject({
       isError: true,
@@ -9989,11 +10881,17 @@ describe("AgentRuntime tool loop", () => {
       modelId: requestModel.modelId,
       toolCalls: [{ id: "recover-read", name: "RecoverRead", input: {} }],
     });
-    expect(secondRequest.messages.at(-1)).toMatchObject({
+    expect(secondRequest.messages.at(-2)).toMatchObject({
       content: "recover-read-ok",
       role: "tool",
       toolCallId: "recover-read",
       toolName: "RecoverRead",
+    });
+    // 流恢复结算的工具结果也算完整工具批次；失败的流没有 usage，预算提醒保持满额。
+    expect(secondRequest.messages.at(-1)).toMatchObject({
+      content:
+        "<system-reminder>\n<total_tokens>15000000 tokens left</total_tokens>\n</system-reminder>",
+      role: "user",
     });
     expect(recoveryEventTypes).toEqual([
       SessionEventType.StreamRecoveryStarted,
@@ -10174,7 +11072,7 @@ describe("AgentRuntime tool loop", () => {
         expect.objectContaining({
           message: expect.objectContaining({
             role: "assistant",
-            toolCalls: [{ id: "fallback-read", name: "FallbackRead", input: {} }],
+            toolCalls: [{ id: "fallback-read", name: "FallbackRead", input: {}, blockIndex: 0 }],
           }),
         }),
       );
@@ -10993,7 +11891,11 @@ describe("AgentRuntime tool loop", () => {
 
     const result = await runtime.executeTurn("recover streamed write tool");
     const events = await eventStore.getEvents(sessionId);
-    const toolMessage = secondRequest.messages.at(-1);
+    // 最后一条是这批工具之后的 token 预算提醒，工具结果在它之前。
+    const toolMessage = secondRequest.messages.at(-2);
+    expect(providerContentToText(secondRequest.messages.at(-1)?.content)).toContain(
+      "<total_tokens>",
+    );
     const ledgerPayloads = events
       .filter((event) => event.type === SessionEventType.StreamingToolLedgerUpdated)
       .map((event) => event.payload as any);
@@ -11738,9 +12640,11 @@ describe("AgentRuntime tool loop", () => {
     const registry = createToolRegistry();
     const artifactStore = new RecordingArtifactStore();
     const sessionStore = new RecordingSessionStore();
+    const workA = resolve("/work/src/a.ts");
+    const workB = resolve("/work/src/b.ts");
     const fileSystemPort = new MemoryFileSystem({
-      "/work/src/a.ts": "a1\n",
-      "/work/src/b.ts": "b1\n",
+      [workA]: "a1\n",
+      [workB]: "b1\n",
     });
     let modelCallCount = 0;
 
@@ -11796,7 +12700,7 @@ describe("AgentRuntime tool loop", () => {
                   {
                     id: "write-a",
                     name: "WriteLike",
-                    input: { path: "/work/src/a.ts", before: "a1\n", after: "a2\n" },
+                    input: { path: workA, before: "a1\n", after: "a2\n" },
                   },
                 ],
                 usage: { inputTokens: 1, outputTokens: 1, totalTokens: 2 },
@@ -11811,7 +12715,7 @@ describe("AgentRuntime tool loop", () => {
                   {
                     id: "write-b",
                     name: "WriteLike",
-                    input: { path: "/work/src/b.ts", before: "b1\n", after: "b2\n" },
+                    input: { path: workB, before: "b1\n", after: "b2\n" },
                   },
                 ],
                 usage: { inputTokens: 1, outputTokens: 1, totalTokens: 2 },
@@ -11833,8 +12737,8 @@ describe("AgentRuntime tool loop", () => {
       .filter((message) => message.info.role === "assistant")
       .map((message) => message.info.id as MessageId);
     expect(assistants.length).toBeGreaterThanOrEqual(2);
-    expect(fileSystemPort.files.get("/work/src/a.ts")).toBe("a2\n");
-    expect(fileSystemPort.files.get("/work/src/b.ts")).toBe("b2\n");
+    expect(fileSystemPort.files.get(workA)).toBe("a2\n");
+    expect(fileSystemPort.files.get(workB)).toBe("b2\n");
 
     const preview = await runtime.previewWorkspaceFileRewind({
       targetMessageIds: assistants.slice(0, 2),
@@ -11843,16 +12747,13 @@ describe("AgentRuntime tool loop", () => {
       targetMessageIds: assistants.slice(0, 2),
     });
 
-    expect(preview.safeFiles.map((file) => file.path).sort()).toEqual([
-      "/work/src/a.ts",
-      "/work/src/b.ts",
-    ]);
+    expect(preview.safeFiles.map((file) => file.path).sort()).toEqual([workA, workB].sort());
     expect(applied.applied).toBe(true);
-    expect(fileSystemPort.files.get("/work/src/a.ts")).toBe("a1\n");
-    expect(fileSystemPort.files.get("/work/src/b.ts")).toBe("b1\n");
+    expect(fileSystemPort.files.get(workA)).toBe("a1\n");
+    expect(fileSystemPort.files.get(workB)).toBe("b1\n");
 
-    fileSystemPort.files.set("/work/src/a.ts", "a2\n");
-    fileSystemPort.files.set("/work/src/b.ts", "b2\n");
+    fileSystemPort.files.set(workA, "a2\n");
+    fileSystemPort.files.set(workB, "b2\n");
     const rejected = await runtime.applyWorkspaceFileRewind({
       targetMessageIds: assistants.slice(0, 2),
       commitAfterApply: async () => {
@@ -11867,8 +12768,8 @@ describe("AgentRuntime tool loop", () => {
         expect.objectContaining({ message: "conversation admission rejected" }),
       ]),
     );
-    expect(fileSystemPort.files.get("/work/src/a.ts")).toBe("a2\n");
-    expect(fileSystemPort.files.get("/work/src/b.ts")).toBe("b2\n");
+    expect(fileSystemPort.files.get(workA)).toBe("a2\n");
+    expect(fileSystemPort.files.get(workB)).toBe("b2\n");
   });
 
   // Bugfix 回归：message 目标 fork 曾恢复目标回合自身 checkpoint 的 beforeContent，
@@ -13262,9 +14163,12 @@ describe("AgentRuntime tool loop", () => {
     const events = await eventStore.getEvents(sessionId);
     const forkEvent = events.find((event) => event.type === SessionEventType.SessionForked);
     const child = sessionStore.createdSessions.find((session) => session.parentID === sessionId);
+    // 模型专用公告不属于可见对话结构，与 agent listing 一样排除。
     const childMessages = child
       ? (await sessionStore.messages({ sessionID: child.id })).filter(
-          (message) => message.info.source !== "agent_listing_delta",
+          (message) =>
+            message.info.source !== "agent_listing_delta" &&
+            message.info.semantics?.kind !== "system_reminder",
         )
       : [];
     const visibleChildText = childMessages
@@ -13276,13 +14180,17 @@ describe("AgentRuntime tool loop", () => {
       .map(messageText)
       .join("\n");
 
-    expect(fork.response).toContain("copied 5 messages");
+    // 复制数包含首轮持久化的 environment、model、date 公告，fork 后无需重新宣告；
+    // 还包含轮首与每个工具批次后的 token 预算提醒。整个 assistant 回合都被复制，
+    // 回合内的隐藏提醒不会截断回合。
+    expect(fork.response).toContain("copied 11 messages");
     // Bugfix 回归：fork 历史包含目标回合，工作区必须保留该回合的产出，
     // 不能恢复目标回合自身 checkpoint 的 beforeContent。
     expect(fileSystemPort.files.get("/work/src/demo.ts")).toBe("export const value = 2;\n");
     expect(fork.targetMessageId).toBe(editedAssistants[0]!.info.id);
     expect(forkEvent?.payload).toMatchObject({
-      forkPoint: 5,
+      // 与复制数一致，含 environment、model、date 公告与 token 预算提醒。
+      forkPoint: 11,
       targetMessageId: editedAssistants[0]!.info.id,
       restoredFileCount: 0,
     });
@@ -13394,12 +14302,17 @@ describe("AgentRuntime tool loop", () => {
       source: "agent_listing_delta",
       agentListingDelta: { addedTypes: ["Explore", "general-purpose"] },
     });
+    // 模型专用公告不属于可见对话结构，与 agent listing 一样排除。
     const childMessages = allChildMessages.filter(
-      (message) => message.info.source !== "agent_listing_delta",
+      (message) =>
+        message.info.source !== "agent_listing_delta" &&
+        message.info.semantics?.kind !== "system_reminder",
     );
 
     expect(fork).toMatchObject({
-      copiedMessageCount: 4,
+      // 用户输入、environment、model、agent listing、轮首 token 预算提醒、date 公告、
+      // 两条 assistant 消息，以及它们之间工具批次后的 token 预算提醒。
+      copiedMessageCount: 9,
       parentSessionId: sessionId,
       targetMessageId: target!.info.id,
       restoredFiles: [],
@@ -14349,8 +15262,6 @@ class RecordingSessionStore implements SessionStorePort {
   async upsertTurnUsage(): Promise<void> {}
 
   async upsertToolUsage(): Promise<void> {}
-
-  async pruneUsage(): Promise<void> {}
 
   async getSession(sessionID: SessionId): Promise<SessionInfo | null> {
     return this.sessions.get(sessionID) ?? null;

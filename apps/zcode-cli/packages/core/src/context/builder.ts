@@ -16,7 +16,7 @@ import { estimateTokens } from "./utils.js";
 import { buildCliPrefixSection } from "./sections/cli-prefix.js";
 import { buildIdentitySection } from "./sections/identity.js";
 import { buildWorkflowActorIdentitySection } from "./sections/workflow-actor.js";
-import { buildEnvInfoSection, buildGitSystemContextSection } from "./sections/env-info.js";
+import { buildEnvironmentSections, buildGitSystemContextSection } from "./sections/env-info.js";
 import { buildSkillsSection } from "./sections/skills.js";
 import { buildRequestUserContextSection } from "./sections/request-user-context.js";
 import { buildCurrentDateSection } from "./sections/current-date.js";
@@ -26,8 +26,8 @@ import { buildDesktopContextSection } from "./sections/desktop.js";
 import {
   buildContextManagementSection,
   buildDynamicBehaviorSection,
-  buildOutputStyleSection,
   buildSessionGuidanceSection,
+  buildTotalTokensSection,
 } from "./dynamic-sections.js";
 
 // -----------------------------------------------
@@ -112,6 +112,13 @@ export class ContextBuilder {
     // 2. Stable agent behavior or custom prompt body
     // 优先级：customSystemPrompt（工作流子代理）> workflowActor > systemPromptOverride > 内置。
     // 工作流子代理不消费用户配置档，override 在场时也不改变其身份。
+    // 环境与模型是运行时公告（meta_user），不进 system；使用自定义 prompt 或配置档时也照常发送。
+    const environmentSections = buildEnvironmentSections(
+      this.config.envInfo,
+      this.config.model,
+      this.config.additionalDirectories,
+    );
+
     if (hasCustomSystemPrompt) {
       sections.push(
         createSection({
@@ -148,7 +155,7 @@ export class ContextBuilder {
     // Context Management），其余动态事实段照常输出（规格 §1.4）。
     if (!hasCustomSystemPrompt) {
       if (!isWorkflowActor && this.config.presentationSurface === "zcode_desktop") {
-        sections.push(buildDesktopContextSection(this.config.genUiOutputDirectory));
+        sections.push(buildDesktopContextSection(Boolean(this.config.genUiOutputDirectory)));
       }
 
       // behaviour part right after stable sp...
@@ -178,29 +185,22 @@ export class ContextBuilder {
           sections.push(memorySection);
         }
       }
-      sections.push(
-        buildEnvInfoSection(
-          this.config.envInfo,
-          this.config.model,
-          this.config.additionalDirectories,
-        ),
-      );
-
-      // Output Style
-      const outputStyleSection = buildOutputStyleSection(activeOutputStyle);
-      if (outputStyleSection) {
-        sections.push(outputStyleSection);
-      }
+      sections.push(...environmentSections);
 
       // Context Management
       if (!hasSystemPromptOverride) {
         sections.push(buildContextManagementSection());
       }
+      // total tokens 用量段是动态事实，不随系统提示词配置档覆盖而省略。
+      sections.push(buildTotalTokensSection());
 
       const gitSystemContextSection = buildGitSystemContextSection(this.config.envInfo);
       if (gitSystemContextSection) {
         sections.push(gitSystemContextSection);
       }
+    } else {
+      // 上游 v3.18：环境/模型是动态事实，使用自定义 prompt（工作流子代理）时也照常公告。
+      sections.push(...environmentSections);
     }
 
     // 4. Skills appear as a meta user system-reminder, matching provider block layout.
@@ -242,7 +242,7 @@ export class ContextBuilder {
     const totalTokens = orderedSections.reduce((sum, s) => sum + s.tokens, 0);
 
     const systemMessages = this.assembleSystemMessages(orderedSections);
-    const metaUserAttachments = this.assembleMetaUserAttachments(orderedSections);
+    const metaUserAttachments = buildMetaUserAttachments(orderedSections);
 
     return {
       sections: orderedSections,
@@ -305,36 +305,47 @@ export class ContextBuilder {
 
     return messages;
   }
+}
 
-  private assembleMetaUserAttachments(sections: ContextSection[]): ContextMetaUserAttachment[] {
-    const attachments: ContextMetaUserAttachment[] = [];
+// 环境（含 Desktop 段）、模型、日期由运行时按当前事实宣告；builder 只保留 section 作开关与用量统计。
+const RUNTIME_ANNOUNCED_SOURCES: ReadonlySet<ContextSection["source"]> = new Set([
+  "env_info",
+  "desktop_context",
+  "model",
+  "current_date",
+]);
 
-    const skillsContent = buildSkillsMetaUserBody(
-      sections.filter(
-        (section) => section.injectionTarget === "meta_user" && section.source === "skills",
-      ),
+export function buildMetaUserAttachments(sections: ContextSection[]): ContextMetaUserAttachment[] {
+  // 来源明确分流；不再把日期、环境和 Git 折进指令 carrier。
+  // 内容包装沿用 fork 的中文载体：skills 原样，context 前缀带 AGENT_META_USER_OPENING/CLOSING。
+  const sourceMap: Partial<Record<ContextSection["source"], ContextMetaUserAttachment["source"]>> =
+    {
+      skills: "skills_listing",
+      request_user_context: "context_prefix",
+      session_context: "session_context",
+    };
+  const attachments: ContextMetaUserAttachment[] = [];
+  for (const attachmentSource of Object.values(sourceMap)) {
+    const grouped = sections.filter(
+      (section) =>
+        section.injectionTarget === "meta_user" &&
+        !RUNTIME_ANNOUNCED_SOURCES.has(section.source) &&
+        (sourceMap[section.source] ?? "context_prefix") === attachmentSource,
     );
-    if (skillsContent) {
-      attachments.push({
-        source: "skills_listing",
-        content: skillsContent,
-      });
-    }
-
-    const contextContent = buildContextMetaUserBody(
-      sections.filter(
-        (section) => section.injectionTarget === "meta_user" && section.source !== "skills",
-      ),
-    );
-    if (contextContent) {
-      attachments.push({
-        source: "context_prefix",
-        content: contextContent,
-      });
-    }
-
-    return attachments;
+    // session_context 的 Git 段自带一层信封；与直接公告路径保持同一双层布局。
+    const content =
+      attachmentSource === "skills_listing"
+        ? buildSkillsMetaUserBody(grouped)
+        : buildContextMetaUserBody(grouped);
+    if (!content) continue;
+    const files = grouped.flatMap((section) => section.instructionFiles ?? []);
+    attachments.push({
+      source: attachmentSource,
+      content,
+      ...(files.length > 0 ? { files } : {}),
+    });
   }
+  return attachments;
 }
 
 function orderSectionsForInjection(sections: ContextSection[]): ContextSection[] {
@@ -354,33 +365,12 @@ function orderSectionsForInjection(sections: ContextSection[]): ContextSection[]
   ];
 }
 
-/** 上游 subagent context-builder 依赖的独立附件装配；复用 fork 的 skills/context 分流。 */
-export function buildMetaUserAttachments(sections: ContextSection[]): ContextMetaUserAttachment[] {
-  const attachments: ContextMetaUserAttachment[] = [];
-  const skillsContent = buildSkillsMetaUserBody(
-    sections.filter(
-      (section) => section.injectionTarget === "meta_user" && section.source === "skills",
-    ),
-  );
-  if (skillsContent) attachments.push({ source: "skills_listing", content: skillsContent });
-  const contextContent = buildContextMetaUserBody(
-    sections.filter(
-      (section) => section.injectionTarget === "meta_user" && section.source !== "skills",
-    ),
-  );
-  if (contextContent) attachments.push({ source: "context_prefix", content: contextContent });
-  return attachments;
-}
-
 export function buildContextMetaUserBody(sections: ContextSection[]): string | null {
   if (sections.length === 0) return null;
 
-  return [
-    AGENT_META_USER_OPENING,
-    buildSectionContent(sections),
-    "",
-    AGENT_META_USER_CLOSING,
-  ].join("\n");
+  return [AGENT_META_USER_OPENING, buildSectionContent(sections), "", AGENT_META_USER_CLOSING].join(
+    "\n",
+  );
 }
 
 export function buildSkillsMetaUserBody(sections: ContextSection[]): string | null {

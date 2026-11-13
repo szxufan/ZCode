@@ -207,6 +207,8 @@ function installMinimalDom() {
     }),
     nodeType: 9,
     removeEventListener: () => {},
+    // IntlProvider 会把 locale 写入 document.documentElement.lang；最小 mock 需要提供它。
+    documentElement: { lang: "en" },
   } as unknown as Document & { defaultView?: unknown };
   const windowMock = {
     addEventListener: target.addEventListener.bind(target),

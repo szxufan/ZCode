@@ -68,7 +68,7 @@ describe("runtime system prompt override", () => {
     // 行为规范段被替换，环境事实段保留。
     const secondDynamic = String(requests[1]?.[2]?.content ?? "");
     expect(secondDynamic).not.toContain("# 与用户沟通");
-    expect(secondDynamic).toContain("# 环境");
+    expect(requests[1]?.map((message) => message.content).join("\n")).toContain("# 环境");
   });
 
   it("clears the override back to the built-in identity when set to undefined", async () => {

@@ -27,7 +27,9 @@ describe("Memory Dream prompt", () => {
     const fixture = readFileSync(
       new URL("./fixtures/memory/dream-prompt.md", import.meta.url),
       "utf8",
-    ).trimEnd();
+    )
+      .replace(/\r\n/gu, "\n")
+      .trimEnd();
 
     expect(
       buildMemoryDreamPrompt({
@@ -138,7 +140,7 @@ describe("Dream touched paths", () => {
       workspaceRoot: "/workspace",
     });
 
-    expect([...paths]).toEqual([`${root}/fact.md`, `${root}/old.md`]);
+    expect([...paths]).toEqual([join(root, "fact.md"), join(root, "old.md")]);
   });
 });
 

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { createSessionId, type SessionTaskType } from "@zcode/contracts";
-import { join } from "node:path";
+import { join, sep } from "node:path";
 import { resolveProjectMemoryRoot } from "../src/memory/project-root.js";
 import { createTestAgentRuntime } from "./test-agent-runtime.js";
 import { createTestSessionEventStore } from "./test-event-store.js";
@@ -21,9 +21,9 @@ describe("AgentRuntime project Memory context", () => {
         workspacePath: WORKSPACE_PATH,
       });
 
-      expect(result.providerText).toContain("# Memory");
+      expect(result.providerText).toContain("# 记忆（Memory）");
       expect(result.providerText).toContain(
-        `You have a persistent file-based memory at \`${rootDir}/\`.`,
+        `你在 \`${rootDir}/\` 拥有持久化的文件记忆。`,
       );
       expect(result.fileSystemPort.readRequests).toEqual([
         { maxBytes: undefined, path: join(rootDir, "MEMORY.md") },
@@ -38,7 +38,7 @@ describe("AgentRuntime project Memory context", () => {
     async (taskType) => {
       const result = await executeMemoryTurn({ taskType });
 
-      expect(result.providerText).not.toContain("# Memory");
+      expect(result.providerText).not.toContain("# 记忆（Memory）");
       expect(result.fileSystemPort.readRequests).toEqual([]);
       expect(Object.keys(result.fileSystemPort.files)).toEqual([]);
       expect(result.fileSystemPort.createdDirectories.size).toBe(0);
@@ -51,7 +51,7 @@ describe("AgentRuntime project Memory context", () => {
       { enabled: true, use: false },
     ]) {
       const result = await executeMemoryTurn({ memory });
-      expect(result.providerText).not.toContain("# Memory");
+      expect(result.providerText).not.toContain("# 记忆（Memory）");
       expect(result.fileSystemPort.readRequests).toEqual([]);
       expect(Object.keys(result.fileSystemPort.files)).toEqual([]);
       expect(result.fileSystemPort.createdDirectories.size).toBe(0);
@@ -65,8 +65,8 @@ describe("AgentRuntime project Memory context", () => {
     };
     const result = await executeMemoryTurn({ fileSystemPort });
 
-    expect(result.providerText).toContain("# Memory");
-    expect(result.providerText).toContain("write to it directly with the Write tool");
+    expect(result.providerText).toContain("# 记忆（Memory）");
+    expect(result.providerText).toContain("直接用 Write 工具写入");
   });
 
   it("loads a non-empty MEMORY.md into the Main provider user context", async () => {
@@ -83,11 +83,11 @@ describe("AgentRuntime project Memory context", () => {
 
     expect(result.fileSystemPort.readRequests).toEqual([{ maxBytes: undefined, path: indexPath }]);
     expect(
-      result.providerText.match(/Codebase and user instructions are shown below/g),
+      result.providerText.match(/在回答用户问题时，你可以使用以下上下文：/g),
     ).toHaveLength(1);
     expect(result.providerText).not.toContain("# claudeMd");
     expect(result.providerText).toContain(
-      `Contents of ${indexPath} (user's auto-memory, persists across conversations):\n\n${indexContent}`,
+      `以下是 ${indexPath} 的内容（用户自动记忆，跨会话持久保存）：\n\n${indexContent}`,
     );
   });
 
@@ -187,15 +187,15 @@ describe("AgentRuntime project Memory context", () => {
     });
 
     expect(result.providerText).toContain(`\`${rootDir}/\``);
-    expect(rootDir).toContain("/project-");
-    expect(rootDir).not.toContain("/workspace-");
+    expect(rootDir).toContain(`${sep}project-`);
+    expect(rootDir).not.toContain(`${sep}workspace-`);
   });
 
   it("leaves legacy summary/topics and explicit remember producers outside the active path", async () => {
     const legacyParent = resolveProjectMemoryRoot({
       cliStorageRoot: CLI_STORAGE_ROOT,
       workspacePath: WORKSPACE_PATH,
-    }).replace(/\/memory$/u, "");
+    }).replace(/[\\/]memory$/u, "");
     const result = await executeMemoryTurn({
       files: {
         [`${legacyParent}/memory_summary.md`]: "legacy summary",

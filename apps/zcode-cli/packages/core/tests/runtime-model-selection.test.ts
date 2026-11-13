@@ -945,12 +945,12 @@ describe("AgentRuntime model selection event", () => {
       highspeedProviderId,
       "user-provider",
     ]);
-    expect(requests[0]?.messages).toContain("mid-conversation system turns");
+    expect(requests[0]?.messages).toContain("会话中途的 system turn");
     // 退回请求按退回模型投影：system 不能继续声称 reminder 走 mid-conversation system。
     expect(requests[1]?.messages).toContain(
-      "tags in messages and tool results are injected by the harness",
+      "消息和工具结果中的 <system-reminder> 标签由运行时框架（Harness）注入",
     );
-    expect(requests[1]?.messages).not.toContain("mid-conversation system turns");
+    expect(requests[1]?.messages).not.toContain("会话中途的 system turn");
   });
 
   it("falls back to the Session Selection on any execution provider failure with a single-attempt budget", async () => {

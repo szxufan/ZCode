@@ -1,3 +1,4 @@
+import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { createSessionId, SessionEventType } from "@zcode/contracts";
 import type { PermissionDecisionResult } from "../src/permission/service.js";
@@ -93,11 +94,14 @@ describe("project Memory foreground permission", () => {
     const fileSystemPort = new MemoryFileSystem({});
     const workspaceIdentity = "project-boundary";
     const sessionId = createSessionId("memory-permission-write-boundary");
-    const target = `${resolveProjectMemoryRoot({
-      cliStorageRoot: "/storage",
-      workspaceIdentity,
-      workspacePath: "/workspace",
-    })}/runtime-boundary.md`;
+    const target = join(
+      resolveProjectMemoryRoot({
+        cliStorageRoot: "/storage",
+        workspaceIdentity,
+        workspacePath: "/workspace",
+      }),
+      "runtime-boundary.md",
+    );
     const requestedContent = [
       "---",
       "name: runtime-boundary",
@@ -189,10 +193,13 @@ describe("project Memory foreground permission", () => {
       const sessionId = createSessionId(sessionName);
       const eventStore = createTestSessionEventStore();
       const fileSystemPort = new MemoryFileSystem({});
-      const target = `${resolveProjectMemoryRoot({
-        cliStorageRoot: "/storage",
-        workspacePath: "/workspace",
-      })}/${targetSuffix}`;
+      const target = join(
+        resolveProjectMemoryRoot({
+          cliStorageRoot: "/storage",
+          workspacePath: "/workspace",
+        }),
+        targetSuffix,
+      );
       let brokerCallCount = 0;
       let brokerAnswerCount = 0;
       let hookCallCount = 0;
