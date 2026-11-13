@@ -73,7 +73,10 @@ describe("powershell-command", () => {
       const output = execFileSync(
         "powershell.exe",
         createEncodedPowerShellArgs(
-          "[Console]::Out.Write($zcodeArg0 + [Environment]::NewLine + $zcodeArg1)",
+          // GBK 代码页机器上 [Console]::Out 默认按控制台编码写出，中文会变乱码；
+          // 本用例验证 base64 动态值还原，先强制 UTF-8 输出与读取编码一致。
+          "[Console]::OutputEncoding=[System.Text.Encoding]::UTF8; " +
+            "[Console]::Out.Write($zcodeArg0 + [Environment]::NewLine + $zcodeArg1)",
           values,
         ),
         { encoding: "utf8" },
