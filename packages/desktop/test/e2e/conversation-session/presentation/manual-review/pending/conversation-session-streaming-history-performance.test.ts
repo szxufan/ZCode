@@ -14,6 +14,7 @@ import {
 } from "#e2e/helpers/remote-project-handoff-probe";
 import {
   getV4TimelineScrollState,
+  getV4TurnNavigatorState,
   prepareV4ConversationE2E,
   selectV4TaskById,
   sendV4Prompt,
@@ -204,11 +205,13 @@ describe("PERF04 long history streaming", () => {
     await selectV4TaskById(result.session.sessionId);
     await selectUpstreamModel();
     await selectUpstreamThoughtLevel();
-    await browser.waitUntil(
-      async () => (await getV4TimelineScrollState()).renderUnitCount >= TURNS,
-      { timeout: 90000, timeoutMsg: "长历史未完整加载" },
-    );
+    await browser.waitUntil(async () => (await getV4TurnNavigatorState()).totalItemCount >= TURNS, {
+      timeout: 90000,
+      timeoutMsg: "长历史问题目录未完成轻量分页",
+    });
     const before = await getV4TimelineScrollState();
+    // 轻量目录不得把正文 rows 自动拉进 renderer；流式验收只要求当前尾窗稳定。
+    expect(before.windowRowCount).toBeLessThanOrEqual(60);
     await startProbe();
     const scanEnabled = process.env.ZCODE_E2E_STREAM_SCAN === "1";
     if (!scanEnabled) await profileCommand("start");
@@ -265,15 +268,15 @@ describe("PERF04 long history streaming", () => {
           "\n",
         );
         expect(data.changes.at(-1)?.text).toContain(expected);
-        expect((await getV4TimelineScrollState()).renderUnitCount).toBeGreaterThanOrEqual(
-          TURNS + 1,
-        );
+        expect((await getV4TurnNavigatorState()).totalItemCount).toBeGreaterThanOrEqual(TURNS + 1);
+        // 目录完整不代表正文全量前插；流式只扩当前尾窗。
+        expect((await getV4TimelineScrollState()).renderUnitCount).toBeLessThan(TURNS);
         // 本机对比预算单独配置；Scan 观察轮只验证行为，耗时证据不混入关闭 Scan 的验收。
         const budget = Number(process.env.ZCODE_E2E_STREAM_FRAME_BUDGET_MS ?? 80);
         if (!scanEnabled) expect(metrics.frameP95Ms).toBeLessThan(budget);
       }
     }
-    // 宽屏目录负责补齐千轮历史；补齐后再缩窄，验证宽度改变后的重新测高与搜索定位。
+    // 宽屏目录已是轻量元数据分页；搜索屏外命中时仍按需补拉正文并验证重新测高与定位。
     const searchWidth = Number(process.env.ZCODE_E2E_SEARCH_VIEWPORT_WIDTH ?? 1280);
     if (searchWidth !== 1280) await setCurrentElectronRendererContentSize(searchWidth, 900);
     // RRI08：跨虚拟窗口搜索仍须正确挂载并居中，减少屏外挂载不能只降低耗时而丢定位。

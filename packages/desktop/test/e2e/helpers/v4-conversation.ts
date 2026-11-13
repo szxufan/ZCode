@@ -1985,11 +1985,16 @@ export interface V4TurnNavigatorState {
   exists: boolean;
   firstItemLeftOffsetPx: number;
   visible: boolean;
+  /** 当前虚拟化挂载的 rail 项数量（DOM 口径），不是目录总项数。 */
   itemCount: number;
+  /** 目录总项数（data-item-count），目录完整性与断言必须用它。 */
+  totalItemCount: number;
   paneWidthPx: number;
   items: Array<{
     active: boolean;
     height: number;
+    /** rail 目录索引；虚拟化后 items[0] 不一定是目录第 0 项。 */
+    itemIndex: number;
     left: number;
     testId: string;
     top: number;
@@ -2021,6 +2026,7 @@ export function getV4TurnNavigatorState(): Promise<V4TurnNavigatorState> {
         return {
           active: el.getAttribute("data-active") === "true",
           height: itemRect.height,
+          itemIndex: Number(el.getAttribute("data-item-index") ?? -1),
           left: itemRect.left,
           testId: el.dataset.testid ?? "",
           top: itemRect.top,
@@ -2037,6 +2043,9 @@ export function getV4TurnNavigatorState(): Promise<V4TurnNavigatorState> {
           visualTone: el.getAttribute("data-visual-tone"),
         };
       });
+      const totalItemCount = navigator
+        ? Number(navigator.getAttribute("data-item-count") ?? items.length)
+        : 0;
       const firstItemLeftOffsetPx =
         items[0] && timelineRect ? items[0].left - timelineRect.left : Number.NaN;
       const firstItem = items[0];
@@ -2060,6 +2069,7 @@ export function getV4TurnNavigatorState(): Promise<V4TurnNavigatorState> {
           rect.height > 0,
         ),
         itemCount: items.length,
+        totalItemCount,
         items,
         paneWidthPx: paneRect?.width ?? Number.NaN,
       };
@@ -2069,6 +2079,24 @@ export function getV4TurnNavigatorState(): Promise<V4TurnNavigatorState> {
     TID_V4_TIMELINE,
     TID_V4_COMPOSER,
     testId(TID_V4_SESSION_PANE, V4_MAIN_PANE_ID),
+  );
+}
+
+/** 把 rail 滚到目录起点；虚拟化后只有已挂载项可点击，跳最旧 query 前必须先滚动。 */
+export async function scrollV4TurnNavigatorToTop() {
+  await browser.execute((navigatorTestId) => {
+    const navigator = document.querySelector<HTMLElement>(`[data-testid="${navigatorTestId}"]`);
+    const rail = navigator?.querySelector<HTMLElement>("div[class*='overflow-y-auto']") ?? null;
+    if (!rail) return;
+    rail.scrollTop = 0;
+    rail.dispatchEvent(new Event("scroll"));
+  }, TID_V4_TURN_NAVIGATOR);
+  await browser.waitUntil(
+    async () => {
+      const state = await getV4TurnNavigatorState();
+      return state.items[0]?.itemIndex === 0;
+    },
+    { timeout: 15000, timeoutMsg: "turn navigator rail 未滚动到目录起点" },
   );
 }
 

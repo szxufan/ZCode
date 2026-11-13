@@ -26,6 +26,7 @@ import type {
   SubscribeAck,
   TopicFrameDeliveryKind,
   V4ConversationPlansResult,
+  V4ConversationQueriesResult,
   V4ConversationRowsRangeResult,
 } from "@zcode/shared/zcode-protocol-v4";
 import {
@@ -53,6 +54,7 @@ import type { TopicFrameReservation } from "./topic-frame-reservation.js";
 import {
   applyConversationEvent,
   conversationPlans,
+  conversationQueryDirectory,
   conversationRowsRange,
   conversationWireSnapshot,
   hydrateConversationCandidate,
@@ -281,6 +283,11 @@ export class ConversationTopicPublisher {
     return this.measureWireSnapshotBytes(this.getWireSnapshot());
   }
 
+  /** wire tail window 行数；session-open 观测不得把内部完整 projection 行数当首帧行数。 */
+  getWireSnapshotRowCount(): number {
+    return this.getWireSnapshot().rows.window.length;
+  }
+
   resolveStableForkCandidate(rowId: number): StableForkCandidateResolution {
     return this.projection.resolveStableForkCandidate(rowId);
   }
@@ -389,11 +396,15 @@ export class ConversationTopicPublisher {
    * 与订阅流出自同一归约，天然满足「与全量重放前缀逐字节一致」。
    * 只读、无状态、超时重发安全；atLogEpoch 供客户端陈旧读整体丢弃。
    */
-  getRowsRange(
-    params: { beforeRowId?: number; limit: number },
-    deliveryProfile: DeliveryProfileName = "replayable",
-  ): V4ConversationRowsRangeResult {
-    return conversationRowsRange(this.getSnapshot(), params, deliveryProfile);
+  getRowsRange(params: { beforeRowId?: number; limit: number }): V4ConversationRowsRangeResult {
+    return conversationRowsRange(this.getSnapshot(), params);
+  }
+
+  getQueryDirectory(params: {
+    beforeRowId?: number;
+    limit?: number;
+  }): V4ConversationQueriesResult {
+    return conversationQueryDirectory(this.getSnapshot(), params);
   }
 
   getPlans(): V4ConversationPlansResult {

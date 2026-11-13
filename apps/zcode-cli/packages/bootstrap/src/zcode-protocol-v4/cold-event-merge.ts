@@ -664,13 +664,285 @@ function resequence(events: readonly SessionEvent[]): SessionEvent[] {
 }
 
 /**
+ * durable transcript 的可复用合成产物。
+ *
+ * historyFirst 的首帧 pass 没有 record，不能解析 contextWindow / usage / file changes；
+ * runtime-ready pass 会补齐这些 runtime 专有事实。两个 pass 的 message/part 输入在正常路径
+ * 是同一数组，重复执行完整 transcript synthesis 只是把相同 part 再遍历一次。artifact 只缓存
+ * “纯持久事实派生”，memory integration 与 publisher rehydrate 仍每次完整执行。
+ */
+export interface ColdDurableTranscriptArtifact {
+  readonly sessionId: string;
+  readonly messages: readonly MessageWithParts[];
+  readonly goalVerificationEntries: readonly HydratedGoalVerificationEntry[];
+  /** 是否成功读取过 session_target；显式 null 同样是持久 authority。 */
+  readonly hasTargetAuthority: boolean;
+  readonly target?: SessionGoal | null;
+  readonly transcriptEvents: readonly SessionEvent[];
+  readonly durableEvents: readonly SessionEvent[];
+  readonly durableTurnIds: ReadonlySet<string>;
+  readonly persistedTurnIds: ReadonlySet<string>;
+  readonly boundaryKeys: DurableBoundaryKeys;
+  readonly turnByMessageId: ReadonlyMap<string, string>;
+  readonly turnByRuntimeAnchor: ReadonlyMap<string, string>;
+  readonly messageIdsByTurnId: ReadonlyMap<string, readonly string[]>;
+  readonly contextWindow?: number;
+  readonly fileChangeSummariesByMessageId?: ReadonlyMap<string, TurnFileChangeSummary>;
+}
+
+export interface BuildColdDurableTranscriptArtifactInput {
+  contextWindow?: number;
+  fileChangeSummariesByMessageId?: ReadonlyMap<string, TurnFileChangeSummary>;
+  goalVerificationEntries?: readonly HydratedGoalVerificationEntry[];
+  messages: readonly MessageWithParts[];
+  sessionId: string;
+  target?: SessionGoal | null;
+}
+
+function targetEventForTranscript(
+  sessionId: string,
+  target: SessionGoal | null,
+): SessionEvent {
+  return {
+    id: "hydrate-goal-state" as SessionEvent["id"],
+    sessionId: sessionId as SessionEvent["sessionId"],
+    type: SessionEventType.TargetChanged,
+    timestamp: new Date(target?.time.updated ?? 0),
+    traceId: "trace-hydration" as SessionEvent["traceId"],
+    sequenceNumber: 0,
+    payload: { action: "set", source: "runtime", target },
+  };
+}
+
+function durableEventsForArtifact(
+  transcriptEvents: readonly SessionEvent[],
+  input: { hasTargetAuthority: boolean; sessionId: string; target?: SessionGoal | null },
+): SessionEvent[] {
+  // 显式 null 只表示“持久层确认没有 goal”，用于压掉内存 TargetChanged；它不产生
+  // 替换事件。保持旧 merge 的 truthy 语义，避免所有冷恢复路径凭空空出一条 goal 事件。
+  if (!input.hasTargetAuthority || !input.target) return [...transcriptEvents];
+  return [
+    ...transcriptEvents.slice(0, 1),
+    targetEventForTranscript(input.sessionId, input.target),
+    ...transcriptEvents.slice(1),
+  ];
+}
+
+export function buildColdDurableTranscriptArtifact(
+  input: BuildColdDurableTranscriptArtifactInput,
+): ColdDurableTranscriptArtifact {
+  const messages = input.messages;
+  const goalEntries = input.goalVerificationEntries ?? [];
+  const hasTargetAuthority = Object.prototype.hasOwnProperty.call(input, "target");
+  const transcriptEvents = synthesizeEventsFromMessages(messages, {
+    sessionId: input.sessionId,
+    contextWindow: input.contextWindow,
+    fileChangeSummariesByMessageId: input.fileChangeSummariesByMessageId,
+    goalVerificationEntries: goalEntries,
+  });
+  const durableEvents = durableEventsForArtifact(transcriptEvents, {
+    hasTargetAuthority,
+    sessionId: input.sessionId,
+    target: input.target,
+  });
+  const turnByMessageId = durableTurnByMessageId(messages, durableEvents);
+  const messageIdsByTurnId = new Map<string, string[]>();
+  for (const message of messages) {
+    const turnId = turnByMessageId.get(String(message.info.id));
+    if (!turnId) continue;
+    const ids = messageIdsByTurnId.get(turnId) ?? [];
+    ids.push(String(message.info.id));
+    messageIdsByTurnId.set(turnId, ids);
+  }
+  return {
+    sessionId: input.sessionId,
+    messages,
+    goalVerificationEntries: goalEntries,
+    hasTargetAuthority,
+    ...(hasTargetAuthority ? { target: input.target } : {}),
+    transcriptEvents,
+    durableEvents,
+    durableTurnIds: new Set(
+      durableEvents.flatMap((event) => (event.turnId ? [String(event.turnId)] : [])),
+    ),
+    persistedTurnIds: new Set(
+      messages.flatMap((message) =>
+        message.info.anchor?.turnId ? [String(message.info.anchor.turnId)] : [],
+      ),
+    ),
+    boundaryKeys: durableBoundaryKeys(messages, goalEntries),
+    turnByMessageId,
+    turnByRuntimeAnchor: durableTurnByRuntimeAnchor(messages, turnByMessageId),
+    messageIdsByTurnId,
+    ...(input.contextWindow !== undefined ? { contextWindow: input.contextWindow } : {}),
+    ...(input.fileChangeSummariesByMessageId
+      ? { fileChangeSummariesByMessageId: input.fileChangeSummariesByMessageId }
+      : {}),
+  };
+}
+
+function summariesByTurnId(
+  artifact: ColdDurableTranscriptArtifact,
+  summaries: ReadonlyMap<string, TurnFileChangeSummary>,
+): Map<string, TurnFileChangeSummary> {
+  const byTurn = new Map<string, TurnFileChangeSummary>();
+  for (const [messageId, summary] of summaries) {
+    const turnId = artifact.turnByMessageId.get(messageId);
+    if (turnId) byTurn.set(turnId, summary);
+  }
+  return byTurn;
+}
+
+/**
+ * runtime-ready pass 只需要更新 transcript synthesis 里依赖 runtime 的 payload 字段：
+ * contextWindow 与 file changes。事件身份、轮次分组与持久 anchor 不变，因此浅克隆受影响
+ * event 即可，不能重新遍历全部 message/part。
+ */
+export function patchColdDurableTranscriptArtifact(
+  artifact: ColdDurableTranscriptArtifact,
+  options: {
+    contextWindow?: number;
+    fileChangeSummariesByMessageId?: ReadonlyMap<string, TurnFileChangeSummary>;
+  },
+): ColdDurableTranscriptArtifact {
+  const nextSummaries =
+    options.fileChangeSummariesByMessageId ?? new Map<string, TurnFileChangeSummary>();
+  const previousSummaries = summariesByTurnId(
+    artifact,
+    artifact.fileChangeSummariesByMessageId ?? new Map<string, TurnFileChangeSummary>(),
+  );
+  const summaries = summariesByTurnId(artifact, nextSummaries);
+  let changed = options.contextWindow !== artifact.contextWindow;
+
+  const patchEvent = (event: SessionEvent): SessionEvent => {
+    if (event.type === SessionEventType.SessionCreated) {
+      const payload = event.payload as Record<string, unknown>;
+      if (payload.contextWindow === options.contextWindow) return event;
+      changed = true;
+      return { ...event, payload: { ...payload, contextWindow: options.contextWindow } };
+    }
+    if (event.type !== SessionEventType.ModelComplete || !event.turnId) return event;
+    const turnId = String(event.turnId);
+    const payload = event.payload as Record<string, unknown>;
+    const summary = summaries.get(turnId);
+    const hadSummary = Object.prototype.hasOwnProperty.call(payload, "fileChanges");
+    if (
+      payload.contextWindow === options.contextWindow &&
+      (summary ? payload.fileChanges === summary : !hadSummary || !previousSummaries.has(turnId))
+    ) {
+      return event;
+    }
+    changed = true;
+    const nextPayload: Record<string, unknown> = {
+      ...payload,
+      contextWindow: options.contextWindow,
+    };
+    if (summary) nextPayload.fileChanges = summary;
+    else if (hadSummary && previousSummaries.has(turnId)) delete nextPayload.fileChanges;
+    return { ...event, payload: nextPayload };
+  };
+
+  const transcriptEvents = artifact.transcriptEvents.map(patchEvent);
+  if (!changed) return artifact;
+  const durableEvents = durableEventsForArtifact(transcriptEvents, {
+    hasTargetAuthority: artifact.hasTargetAuthority,
+    sessionId: artifact.sessionId,
+    target: artifact.target ?? null,
+  });
+  return {
+    ...artifact,
+    transcriptEvents,
+    durableEvents,
+    durableTurnIds: new Set(
+      durableEvents.flatMap((event) => (event.turnId ? [String(event.turnId)] : [])),
+    ),
+    ...(options.contextWindow !== undefined ? { contextWindow: options.contextWindow } : {}),
+    ...(options.fileChangeSummariesByMessageId
+      ? { fileChangeSummariesByMessageId: options.fileChangeSummariesByMessageId }
+      : {}),
+  };
+}
+
+function stablePersistentGoalValue(target: SessionGoal | null | undefined): unknown {
+  return target === undefined ? undefined : JSON.stringify(target);
+}
+
+export interface MergeColdConversationEventsWithArtifactInput {
+  goalVerificationEntries?: readonly HydratedGoalVerificationEntry[];
+  memoryEvents: readonly SessionEvent[];
+  sessionId: string;
+  target?: SessionGoal | null;
+}
+
+/**
+ * 复用 artifact 执行三源合并。
+ *
+ * 返回 null 表示该 artifact 不能安全复用（session / messages / target / goal entries 变化，
+ * 或 memory authority turn 命中持久 anchor）；调用方必须回落到完整旧路径，不得猜测增量。
+ */
+export function mergeColdConversationEventsWithArtifact(
+  artifact: ColdDurableTranscriptArtifact,
+  input: MergeColdConversationEventsWithArtifactInput,
+): ColdEventMergeResult | null {
+  if (
+    artifact.sessionId !== input.sessionId ||
+    artifact.hasTargetAuthority !== Object.prototype.hasOwnProperty.call(input, "target") ||
+    stablePersistentGoalValue(artifact.target) !== stablePersistentGoalValue(input.target)
+  ) {
+    return null;
+  }
+  const goalEntries = input.goalVerificationEntries ?? [];
+  if (
+    goalEntries !== artifact.goalVerificationEntries &&
+    JSON.stringify(goalEntries) !== JSON.stringify(artifact.goalVerificationEntries)
+  ) {
+    return null;
+  }
+  const authorityTurns = memoryAuthorityTurnIds(input.memoryEvents, artifact.messages);
+  for (const turnId of authorityTurns.turnIds) {
+    if (artifact.persistedTurnIds.has(turnId)) return null;
+  }
+  return integrateMemoryEvents(artifact, input, authorityTurns);
+}
+
+/**
  * 冷恢复三源合并：message/part 是已完成正文权威；session_entry 只补 legacy goal；
  * 内存事件只补未完成 turn 与没有 transcript 形态的当前状态。
  */
 export function mergeColdConversationEvents(input: MergeInput): ColdEventMergeResult {
-  const diagnostics = new Map<ColdEventMergeDiagnostic["code"], ColdEventMergeDiagnostic>();
-  const hasPersistedTargetAuthority = Object.prototype.hasOwnProperty.call(input, "target");
   const authorityTurns = memoryAuthorityTurnIds(input.memoryEvents, input.messages);
+  const authorityTurnIds = authorityTurns.turnIds;
+  const durableMessages = input.messages.filter(
+    (message) =>
+      !message.info.anchor?.turnId || !authorityTurnIds.has(String(message.info.anchor.turnId)),
+  );
+  const durableGoalEntries = (input.goalVerificationEntries ?? []).filter(
+    (entry) =>
+      !entry.payload.anchorTurnId || !authorityTurnIds.has(String(entry.payload.anchorTurnId)),
+  );
+  const artifact = buildColdDurableTranscriptArtifact({
+    sessionId: input.sessionId,
+    messages: durableMessages,
+    goalVerificationEntries: durableGoalEntries,
+    ...(Object.prototype.hasOwnProperty.call(input, "target") ? { target: input.target } : {}),
+    ...(input.contextWindow !== undefined ? { contextWindow: input.contextWindow } : {}),
+    ...(input.fileChangeSummariesByMessageId
+      ? { fileChangeSummariesByMessageId: input.fileChangeSummariesByMessageId }
+      : {}),
+  });
+  return integrateMemoryEvents(artifact, input, authorityTurns);
+}
+
+function integrateMemoryEvents(
+  artifact: ColdDurableTranscriptArtifact,
+  input: {
+    memoryEvents: readonly SessionEvent[];
+    sessionId: string;
+    target?: SessionGoal | null;
+  },
+  authorityTurns: ReturnType<typeof memoryAuthorityTurnIds>,
+): ColdEventMergeResult {
+  const diagnostics = new Map<ColdEventMergeDiagnostic["code"], ColdEventMergeDiagnostic>();
   const authorityTurnIds = authorityTurns.turnIds;
   for (const event of authorityTurns.ambiguousLegacyStarts) {
     // 旧 TurnStarted 既没有 messageId，transcript 也没有同 turn anchor 时，
@@ -678,50 +950,21 @@ export function mergeColdConversationEvents(input: MergeInput): ColdEventMergeRe
     // 宁可保留该内存 turn 并显式诊断，也不能把未持久 in-flight 误当重复删掉。
     recordDiagnostic(diagnostics, "cold_merge.ambiguous_legacy_turn_preserved", event);
   }
-  const durableMessages = input.messages.filter(
-    (message) =>
-      !message.info.anchor?.turnId || !authorityTurnIds.has(String(message.info.anchor.turnId)),
-  );
-  const durableGoalEntries = (input.goalVerificationEntries ?? []).filter(
-    (entry) => !entry.payload.anchorTurnId || !authorityTurnIds.has(entry.payload.anchorTurnId),
-  );
-  const transcriptEvents = synthesizeEventsFromMessages(durableMessages, {
-    sessionId: input.sessionId,
-    contextWindow: input.contextWindow,
-    fileChangeSummariesByMessageId: input.fileChangeSummariesByMessageId,
-    goalVerificationEntries: durableGoalEntries,
-  });
-  const durableEvents = input.target
-    ? [
-        ...transcriptEvents.slice(0, 1),
-        {
-          id: "hydrate-goal-state" as SessionEvent["id"],
-          sessionId: input.sessionId as SessionEvent["sessionId"],
-          type: SessionEventType.TargetChanged,
-          timestamp: new Date(input.target.time.updated),
-          traceId: "trace-hydration" as SessionEvent["traceId"],
-          sequenceNumber: 0,
-          payload: { action: "set", source: "runtime", target: input.target },
-        },
-        ...transcriptEvents.slice(1),
-      ]
-    : transcriptEvents;
-  const durableTurnIds = new Set(
-    durableEvents.flatMap((event) => (event.turnId ? [String(event.turnId)] : [])),
-  );
+  const durableEvents = artifact.durableEvents;
+  const durableTurnIds = artifact.durableTurnIds;
   const queueIndexes = queueStateEventIndexes(input.memoryEvents);
   const resumedSubagentIndexes = resumedSubagentLifecycleEventIndexes(input.memoryEvents);
   const modelSetupIndexes = setupModelEventIndexes(
     input.memoryEvents,
     authorityTurnIds,
-    input.messages,
+    artifact.messages,
   );
   const supplements: SessionEvent[] = [];
   const prefixEventsByTurnId = new Map<string, SessionEvent[]>();
   const boundaryEventsByTurnId = new Map<string, SessionEvent[]>();
-  const boundaryKeys = durableBoundaryKeys(durableMessages, durableGoalEntries);
-  const turnByMessageId = durableTurnByMessageId(durableMessages, durableEvents);
-  const turnByRuntimeAnchor = durableTurnByRuntimeAnchor(durableMessages, turnByMessageId);
+  const boundaryKeys = artifact.boundaryKeys;
+  const turnByMessageId = artifact.turnByMessageId;
+  const turnByRuntimeAnchor = artifact.turnByRuntimeAnchor;
   const hookTurnIdByInvocationId = hookInvocationTurnIds(input.memoryEvents);
   const durableHookTurnByInvocation = durableHookTurnByInvocationId(
     input.memoryEvents,
@@ -814,7 +1057,10 @@ export function mergeColdConversationEvents(input: MergeInput): ColdEventMergeRe
       recordDiagnostic(diagnostics, "cold_merge.settled_queue_event_suppressed", event);
       return;
     }
-    if (event.type === SessionEventType.TargetChanged && hasPersistedTargetAuthority) {
+    if (
+      event.type === SessionEventType.TargetChanged &&
+      Object.prototype.hasOwnProperty.call(input, "target")
+    ) {
       // session_target 已是持久权威，旧 merge 却把内存 TargetChanged 当
       // ephemeral 尾事件追加，冷恢复终态会被旧 goal 覆盖；显式 null 也必须压掉旧事件。
       recordDiagnostic(diagnostics, "cold_merge.durable_event_suppressed", event);
@@ -856,6 +1102,9 @@ export function mergeColdConversationEvents(input: MergeInput): ColdEventMergeRe
       }),
     ),
     usedDurableTranscript:
-      durableMessages.length > 0 || durableGoalEntries.length > 0 || hasPersistedTargetAuthority,
+      artifact.messages.length > 0 ||
+      artifact.goalVerificationEntries.length > 0 ||
+      Object.prototype.hasOwnProperty.call(input, "target"),
   };
 }
+

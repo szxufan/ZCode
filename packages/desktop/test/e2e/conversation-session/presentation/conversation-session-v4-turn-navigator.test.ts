@@ -80,6 +80,11 @@ describe("v4 Conversation Turn Navigator", () => {
         "4 个可导航 turn 后 navigator item 数量不足",
       );
       expect(navigator.items).toHaveLength(4);
+      const directoryTimeline = await getV4TimelineScrollState();
+      expect(directoryTimeline.windowRowCount).toBeLessThanOrEqual(60);
+      if (directoryTimeline.totalRowCount > 60) {
+        expect(directoryTimeline.windowRowCount).toBe(60);
+      }
       expect(navigator.composerLeftGutterPx).toBeGreaterThanOrEqual(64);
       expect(navigator.firstItemLeftOffsetPx).toBeLessThanOrEqual(32);
       expect(navigator.firstItemLeftOffsetPx).toBeGreaterThanOrEqual(0);

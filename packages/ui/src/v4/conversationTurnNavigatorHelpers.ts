@@ -1,4 +1,8 @@
 import {
+  buildConversationQueryPreviewText,
+  type V4ConversationQueryDirectoryItem,
+} from "@zcode/shared/zcode-protocol-v4";
+import {
   sameItems,
   type ConversationTurnRenderUnit,
   type ConversationTurnRenderUnitsPartition,
@@ -9,7 +13,8 @@ export type ConversationTurnNavigatorAssistantPreviewKind = "empty" | "running" 
 export interface ConversationTurnNavigatorItem {
   key: string;
   turnId: string;
-  unitIndex: number;
+  /** 服务端目录项尚未把所属 turn 装进 renderer rows；跳转时按 rowId 按需补拉。 */
+  unitIndex?: number;
   rowId: number;
   userPreview: string;
   assistantPreview: string;
@@ -109,6 +114,8 @@ export function createConversationTurnNavigatorQueryRowIdsSelector() {
 export type ConversationTurnNavigatorHydrationResult =
   | { status: "hydrated"; logEpoch: string }
   | { status: "not-enough-queries"; logEpoch: string }
+  | { status: "unsupported"; logEpoch: string }
+  | { status: "retry-exhausted"; logEpoch: string }
   | { status: "retryable-failure"; logEpoch: string }
   | { status: "stale"; logEpoch: string };
 
@@ -137,14 +144,6 @@ export function resolveConversationTurnNavigatorHydrationRetryDelayMs(
 const DEFAULT_MAX_PREVIEW_CHARS = 220;
 const DEFAULT_MAX_PREVIEW_PARAGRAPHS = 2;
 
-function truncatePreview(text: string, maxChars: number): string {
-  const normalizedMaxChars = Math.max(8, maxChars);
-  if (text.length <= normalizedMaxChars) {
-    return text;
-  }
-  return `${text.slice(0, normalizedMaxChars - 3).trimEnd()}...`;
-}
-
 function buildPreviewText({
   texts,
   fallback,
@@ -156,42 +155,8 @@ function buildPreviewText({
   maxPreviewChars: number;
   maxPreviewParagraphs: number;
 }): string {
-  const maxChars = Math.max(8, maxPreviewChars);
-  const maxParagraphs = Math.trunc(Math.max(1, maxPreviewParagraphs));
-  let preview = "";
-  let paragraphs = 1;
-  let whitespace = false;
-  let newlines = 0;
-  // 旧实现先拼接并正则处理整份正文，最后才截断；每个流式 delta 都会重扫长历史。
-  // 多读一个有效字符即可判断是否省略，保留原来的空白、空行分段及 UTF-16 截断语义。
-  for (const text of texts) {
-    if (preview) {
-      whitespace = true;
-      newlines = 2;
-    }
-    for (let index = 0; index < text.length; index += 1) {
-      const character = text[index]!;
-      if (/\s/u.test(character)) {
-        whitespace = true;
-        if (character === "\n") newlines += 1;
-        continue;
-      }
-      if (whitespace && preview) {
-        if (newlines >= 2) {
-          if (paragraphs >= maxParagraphs) return truncatePreview(preview, maxChars);
-          paragraphs += 1;
-          preview += "\n";
-        } else {
-          preview += " ";
-        }
-      }
-      preview += character;
-      whitespace = false;
-      newlines = 0;
-      if (preview.length > maxChars) return truncatePreview(preview, maxChars);
-    }
-  }
-  return preview || fallback;
+  // 截断语义由 shared query-directory 提供：CLI 服务端目录与 renderer 本地 tail 必须一致。
+  return buildConversationQueryPreviewText(texts, fallback, maxPreviewChars, maxPreviewParagraphs);
 }
 
 function buildAssistantPreview(
@@ -268,6 +233,44 @@ export function buildConversationTurnNavigatorItems(
       isRunning: unit.isRunning && queryIndex === realUserInputs.length - 1,
     }));
   });
+}
+
+export interface MergeConversationTurnNavigatorDirectoryOptions {
+  assistantEmptyPreview: string;
+  assistantRunningPreview: string;
+  userFallbackPreview: string;
+}
+
+/**
+ * 合并“服务端完整目录页”与“renderer 已加载 tail 派生项”。
+ * 同 rowId 时本地优先：流式 running 状态与本地化预览比在途目录页更新；未加载区只显示
+ * 服务端元数据，点击时再按 rowId 按需补拉 rows。
+ */
+export function mergeConversationTurnNavigatorDirectory(
+  localItems: readonly ConversationTurnNavigatorItem[],
+  serverItems: readonly V4ConversationQueryDirectoryItem[],
+  options: MergeConversationTurnNavigatorDirectoryOptions,
+): ConversationTurnNavigatorItem[] {
+  const itemsByRowId = new Map(localItems.map((item) => [item.rowId, item]));
+  for (const serverItem of serverItems) {
+    if (itemsByRowId.has(serverItem.rowId)) continue;
+    const assistantPreview =
+      serverItem.assistantPreviewKind === "text"
+        ? serverItem.assistantPreview || options.assistantEmptyPreview
+        : serverItem.assistantPreviewKind === "running"
+          ? options.assistantRunningPreview
+          : options.assistantEmptyPreview;
+    itemsByRowId.set(serverItem.rowId, {
+      key: `${serverItem.turnId}:query:${serverItem.entityId ?? serverItem.rowId}`,
+      turnId: serverItem.turnId,
+      rowId: serverItem.rowId,
+      userPreview: serverItem.userPreview || options.userFallbackPreview,
+      assistantPreview,
+      assistantPreviewKind: serverItem.assistantPreviewKind,
+      isRunning: serverItem.isRunning,
+    });
+  }
+  return [...itemsByRowId.values()].sort((left, right) => left.rowId - right.rowId);
 }
 
 /**
@@ -390,12 +393,15 @@ export function resolveConversationTurnNavigatorActiveUnitIndex({
 
   // items 由 renderUnits 顺序生成（同轮可有多个 query）。滚动只查少量可见轮，
   // 二分已有顺序即可，不能每个像素滚动都为完整目录重新分配 Map。
+  // 服务端目录中尚未加载正文的项没有 unitIndex，且按 rowId 排在这些已加载项之前；
+  // undefined 必须视为“最小”，否则二分假设被破坏会定位到错误轮次。
   const lowerBound = (unitIndex: number) => {
     let low = 0;
     let high = items.length;
     while (low < high) {
       const middle = (low + high) >>> 1;
-      if (items[middle]!.unitIndex < unitIndex) low = middle + 1;
+      const candidateUnitIndex = items[middle]?.unitIndex;
+      if (candidateUnitIndex === undefined || candidateUnitIndex < unitIndex) low = middle + 1;
       else high = middle;
     }
     return low;

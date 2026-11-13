@@ -18,9 +18,7 @@ export type TimelineRowHeightCacheKey = string | number;
 export class TimelineRowHeightCache {
   private readonly sizes = new Map<TimelineRowHeightCacheKey, number>();
 
-  constructor(
-    private readonly maxEntries: number = MAX_ROW_HEIGHT_CACHE_ENTRIES,
-  ) {}
+  constructor(private readonly maxEntries: number = MAX_ROW_HEIGHT_CACHE_ENTRIES) {}
 
   get size(): number {
     return this.sizes.size;
@@ -59,3 +57,9 @@ export class TimelineRowHeightCache {
     this.sizes.clear();
   }
 }
+
+/**
+ * 跨会话共享的 renderer 本地测量缓存。key 已包含 session + layout scope，
+ * A→B→A 快速切换不必重测已见 turn；总条数仍受全局 LRU 上限约束。
+ */
+export const conversationTimelineHeightCache = new TimelineRowHeightCache();

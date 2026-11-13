@@ -43,8 +43,12 @@ import {
   readConversationFileChangesFromEvents,
 } from "../zcode-protocol-v4/cold-file-change-summaries.js";
 import {
+  buildColdDurableTranscriptArtifact,
   loadPersistedConversationMaterialization,
   mergeColdConversationEvents,
+  mergeColdConversationEventsWithArtifact,
+  patchColdDurableTranscriptArtifact,
+  type ColdDurableTranscriptArtifact,
 } from "../zcode-protocol-v4/cold-event-merge.js";
 import { lookupGlobalCreateSessionCommand } from "../zcode-protocol-v4/create-session-command-fact.js";
 import type {
@@ -126,6 +130,25 @@ import type {
   ZCodeProtocolSessionRecord,
 } from "./server-types.js";
 import { createProtocolLogger } from "./server-types.js";
+
+/**
+ * `selectActiveConversationBranch` 每次都会复制外层数组，但 historyFirst 两个 pass 的
+ * M0 message 对象本身不变。逐项比较对象引用（而不是 JSON 正文）足以判定 durable
+ * artifact 输入未变，成本远低于重新合成 transcript。
+ */
+function sameColdArtifactMessages(
+  left: readonly MessageWithParts[],
+  right: readonly MessageWithParts[],
+): boolean {
+  if (left === right) return true;
+  if (left.length !== right.length) return false;
+  return left.every((message, index) => message === right[index]);
+}
+
+/** 只有内存事件里存在 checkpoint 时，file-change artifact 扫描才可能有输出。 */
+function hasColdFileChangeCheckpointEvents(events: readonly SessionEvent[]): boolean {
+  return events.some((event) => event.type === SessionEventType.CheckpointCreated);
+}
 
 function normalizeStoredTitleSource(
   source: string | undefined,
@@ -704,6 +727,14 @@ export function createConversationV4Gateway(
   });
   let nativeExecutor: V4CommandExecutor;
   const autoDrainRetryTimers = new Map<string, ReturnType<typeof setTimeout>>();
+  // historyFirst 同一 opening 内复用 pass 1 的 durable transcript 合成产物。
+  // Bug 原因：runtime-ready pass 会为相同 M0 再执行一次全量 message/part synthesis 与
+  // checkpoint artifact 扫描；此处只按 M0 引用做 opening-local 缓存，compact reload/retry
+  // 会产生新 M0 引用而天然失效，不引入跨 opening TTL 或第二份持久事实。
+  const durableColdArtifacts = new WeakMap<
+    MessageWithParts[],
+    { sessionId: string; artifact: ColdDurableTranscriptArtifact }
+  >();
   // Highspeed 执行材料含临时凭据：只按 session/sourceCommandId 驻留内存，绝不进入
   // TurnSteerQueued、snapshot 或 transcript。CLI 重启后缺失时队列提升自动走原模型。
   const queuedTurnExecutions = new Map<string, Map<string, V4QueuedTurnExecution>>();
@@ -2124,7 +2155,30 @@ export function createConversationV4Gateway(
           memoryEvents: [],
           store,
         });
-        const merged = mergeColdConversationEvents({ ...source, sessionId });
+        const artifact = buildColdDurableTranscriptArtifact({
+          sessionId,
+          messages: source.messages,
+          goalVerificationEntries: source.goalVerificationEntries,
+          ...(Object.prototype.hasOwnProperty.call(source, "target")
+            ? { target: source.target }
+            : {}),
+        });
+        if (persistedMessages) {
+          durableColdArtifacts.set(persistedMessages, { sessionId, artifact });
+        }
+        const merged =
+          mergeColdConversationEventsWithArtifact(artifact, {
+            memoryEvents: source.memoryEvents,
+            sessionId,
+            goalVerificationEntries: source.goalVerificationEntries,
+            ...(Object.prototype.hasOwnProperty.call(source, "target")
+              ? { target: source.target }
+              : {}),
+          }) ??
+          mergeColdConversationEvents({
+            ...source,
+            sessionId,
+          });
         return {
           events: merged.events,
           synthesized: true,
@@ -2177,24 +2231,39 @@ export function createConversationV4Gateway(
             }
           : {}),
       });
+      const cachedDurableArtifact = persistedMessages
+        ? durableColdArtifacts.get(persistedMessages)
+        : undefined;
+      const reusableDurableArtifact =
+        cachedDurableArtifact &&
+        cachedDurableArtifact.sessionId === sessionId &&
+        sameColdArtifactMessages(cachedDurableArtifact.artifact.messages, source.messages)
+          ? cachedDurableArtifact.artifact
+          : undefined;
       // live ModelComplete.fileChanges 只存在于内存事件；cold merge 以持久
       // transcript 为正文权威时会压掉该事件，而 transcript 本身没有文件摘要字段。
       // workspace checkpoint + artifact 才是跨进程持久事实，这里按 user messageId
       // 重建摘要，再交给 transcript hydration 合成同构 ModelComplete。
-      const fileChangeSummariesByMessageId = await buildColdFileChangeSummaries({
-        events: source.memoryEvents,
-        messageIds: source.messages.map((message) => String(message.info.id)),
-        readArtifact: async (snapshotRef) =>
-          (await record.app.readToolResultArtifact(snapshotRef)).content,
-        onArtifactError: (messageId, error) =>
-          context.logger?.warn("v4 cold file change artifact read failed", {
-            error: error instanceof Error ? error.message : String(error),
-            event: "zcode_protocol.v4.hydrate_file_changes_failed",
-            messageId,
-            module: "bootstrap.zcode_protocol",
-            sessionId,
-          }),
-      });
+      // 冷重启的 runtime-ready pass 通常只有 resume 时代事件，没有 durable checkpoint；
+      // 没有来源时跳过逐 message artifact 探测，避免重复大扫描。
+      const fileChangeSummariesByMessageId = hasColdFileChangeCheckpointEvents(
+        source.memoryEvents,
+      )
+        ? await buildColdFileChangeSummaries({
+            events: source.memoryEvents,
+            messageIds: source.messages.map((message) => String(message.info.id)),
+            readArtifact: async (snapshotRef) =>
+              (await record.app.readToolResultArtifact(snapshotRef)).content,
+            onArtifactError: (messageId, error) =>
+              context.logger?.warn("v4 cold file change artifact read failed", {
+                error: error instanceof Error ? error.message : String(error),
+                event: "zcode_protocol.v4.hydrate_file_changes_failed",
+                messageId,
+                module: "bootstrap.zcode_protocol",
+                sessionId,
+              }),
+          })
+        : new Map<string, never>();
       // 冷恢复 transcript 不保存模型能力，旧 hydration 自行填 20 万；
       // provider registry 已在 resume 前同步完成，应按恢复/退避后的当前模型精确取值。
       const contextWindow = resolveSessionModelContextWindow(context, record);
@@ -2202,17 +2271,48 @@ export function createConversationV4Gateway(
         await readSessionContextUsage(context, sessionId, source.messages),
         contextWindow,
       );
-      const merged = mergeColdConversationEvents({
-        contextWindow,
-        fileChangeSummariesByMessageId,
-        memoryEvents: source.memoryEvents,
-        messages: source.messages,
-        sessionId,
-        goalVerificationEntries: source.goalVerificationEntries,
-        ...(Object.prototype.hasOwnProperty.call(source, "target")
-          ? { target: source.target }
-          : {}),
-      });
+      const patchedDurableArtifact = reusableDurableArtifact
+        ? patchColdDurableTranscriptArtifact(reusableDurableArtifact, {
+            contextWindow,
+            ...(fileChangeSummariesByMessageId.size > 0
+              ? { fileChangeSummariesByMessageId }
+              : {}),
+          })
+        : undefined;
+      const mergedFromArtifact = patchedDurableArtifact
+        ? mergeColdConversationEventsWithArtifact(patchedDurableArtifact, {
+            memoryEvents: source.memoryEvents,
+            sessionId,
+            goalVerificationEntries: source.goalVerificationEntries,
+            ...(Object.prototype.hasOwnProperty.call(source, "target")
+              ? { target: source.target }
+              : {}),
+          })
+        : null;
+      if (mergedFromArtifact) {
+        log?.debug("v4 history-first runtime pass reused durable transcript artifact", {
+          event: "zcode_protocol.v4.history_first_durable_artifact_reused",
+          memoryEventCount: source.memoryEvents.length,
+          messageCount: source.messages.length,
+          module: "bootstrap.zcode_protocol",
+          sessionId,
+        });
+      }
+      const merged =
+        mergedFromArtifact ??
+        mergeColdConversationEvents({
+          contextWindow,
+          ...(fileChangeSummariesByMessageId.size > 0
+            ? { fileChangeSummariesByMessageId }
+            : {}),
+          memoryEvents: source.memoryEvents,
+          messages: source.messages,
+          sessionId,
+          goalVerificationEntries: source.goalVerificationEntries,
+          ...(Object.prototype.hasOwnProperty.call(source, "target")
+            ? { target: source.target }
+            : {}),
+        });
       for (const diagnostic of merged.diagnostics) {
         const fields = {
           ...diagnostic,

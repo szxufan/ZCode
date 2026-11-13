@@ -180,6 +180,13 @@ export class ReplaceableConversationTransport implements ConversationTransport {
     return this.current.plans(params);
   }
 
+  // 问题目录轻量分页同样属于稳定传输身份；漏转发会让 service proxy 上该方法为 undefined。
+  queries(
+    params: Parameters<ConversationTransport["queries"]>[0],
+  ): ReturnType<ConversationTransport["queries"]> {
+    return this.current.queries(params);
+  }
+
   // workflowRunEvents 是后来（workflow run 事件日志的 RPC）加进 ConversationTransport
   // 的成员，加的时候只落到了具体传输实现上，这个稳定身份漏掉了转发。而 pane 持的正是本对象，
   // 于是走 service proxy 的 pane 上 `transport.workflowRunEvents` 是 undefined——run 详情页

@@ -709,6 +709,9 @@ export class ZCodeProtocolAgentServer {
       // ── 行分页 query（独立分支，便于与帧分派改动合并）──
       case V4_METHODS.conversationRowsRange:
         return await this.requireV4Gateway().rowsRange(request.params);
+      // 问题目录轻量分页：只读、无状态；旧 CLI method-not-found 由调用方降级。
+      case V4_METHODS.conversationQueries:
+        return await this.requireV4Gateway().queries(request.params);
       // 手机输入预测：只读、无状态；同会话新请求替代旧请求。
       case V4_METHODS.conversationInputPrediction:
         return await this.inputPrediction.handle(request.params);

@@ -69,6 +69,7 @@ import type {
   V4ConversationFileChangesResult,
   V4ConversationFileRewindPreviewResult,
   V4ConversationPlansResult,
+  V4ConversationQueriesResult,
   V4ConversationWorkflowRunArtifactDataResult,
   V4ConversationWorkflowRunArtifactReadResult,
   V4ConversationWorkflowRunArtifactsResult,
@@ -114,6 +115,7 @@ import {
   v4ConversationFileChangesParamsSchema,
   v4ConversationFileRewindPreviewParamsSchema,
   v4ConversationPlansParamsSchema,
+  v4ConversationQueriesParamsSchema,
   WORKFLOW_ARTIFACT_LIMITS,
   v4ConversationWorkflowRunArtifactDataParamsSchema,
   v4ConversationWorkflowRunArtifactDataResultSchema,
@@ -634,6 +636,8 @@ export class ConversationV4Gateway {
     {
       history: Promise<ConversationTopicPublisher>;
       messages: Promise<MessageWithParts[]>;
+      /** M0 计数；仅用于 session-open ACK 观测，不承载会话事实。 */
+      messageCount?: number;
       finished: Promise<void>;
       start: () => void;
       cancel: () => void;
@@ -1686,7 +1690,15 @@ export class ConversationV4Gateway {
             Math.round(performance.now() - initialFrameEncodeStartedAt),
           ),
           sessionRuntimeState: isLiveConversation ? "warm" : "cold",
-          snapshotRowCount: publisher.getSnapshot().rows.window.length,
+          // Bug 原因：旧值取 publisher 内部完整 window，把 30k 行投影误报成首帧行数；
+          // session-open 观测要的是实际 wire tail 口径。
+          snapshotRowCount: publisher.getWireSnapshotRowCount(),
+          ...(historyFirst
+            ? {
+                persistedMessageCount: this.historyOpenings.get(sessionId)?.messageCount,
+                snapshotBytes: publisher.getWireSnapshotLogicalBytes(),
+              }
+            : {}),
         },
       };
     } catch (error) {
@@ -1836,14 +1848,10 @@ export class ConversationV4Gateway {
           : !this.hasLiveConversation(params.sessionId)
             ? await this.ensureColdReadyPublisher(params.sessionId, undefined, params.workspace)
             : await this.hydratePublisher(params.sessionId);
-    return publisher.getRowsRange(
-      {
-        ...(params.beforeRowId !== undefined ? { beforeRowId: params.beforeRowId } : {}),
-        limit: params.limit,
-      },
-      // clientMode 决定行可见性过滤档位：桌面 continuous（默认）/ 断线恢复 replayable。
-      params.clientMode === "desktop-continuous" ? "continuous" : "replayable",
-    );
+    return publisher.getRowsRange({
+      ...(params.beforeRowId !== undefined ? { beforeRowId: params.beforeRowId } : {}),
+      limit: params.limit,
+    });
   }
 
   /** 完整有效 projection 的终态计划目录；冷会话复用订阅 hydration。 */
@@ -1856,6 +1864,25 @@ export class ConversationV4Gateway {
         ? await this.ensureColdReadyPublisher(params.sessionId, undefined, params.workspace)
         : await this.hydratePublisher(params.sessionId);
     return publisher.getPlans();
+  }
+
+  /**
+   * v4/conversation/queries：问题导航目录的轻量分页。
+   * 只读、无状态、超时重发安全；数据源与 plans 相同（完整有效 projection），
+   * 但 wire 只含 realUser query 元数据与截断预览，不搬运正文 rows。
+   */
+  async queries(rawParams: unknown): Promise<V4ConversationQueriesResult> {
+    const params = v4ConversationQueriesParamsSchema.parse(rawParams);
+    const existingReady = this.readyFlights.get(params.sessionId);
+    const publisher = existingReady
+      ? await existingReady
+      : !this.hasLiveConversation(params.sessionId)
+        ? await this.ensureColdReadyPublisher(params.sessionId, undefined, params.workspace)
+        : await this.hydratePublisher(params.sessionId);
+    return publisher.getQueryDirectory({
+      ...(params.beforeRowId !== undefined ? { beforeRowId: params.beforeRowId } : {}),
+      ...(params.limit !== undefined ? { limit: params.limit } : {}),
+    });
   }
 
   /**
@@ -3291,6 +3318,8 @@ export class ConversationV4Gateway {
     );
     const opening = {
       messages: persistedMessages,
+      // session-open 观测只发计数；ACK 生成时无需再 await 已完成的 M0 promise。
+      messageCount: undefined as number | undefined,
       finished: finished.promise,
       cancel: () => {
         if (!started) finished.resolve();
@@ -3300,6 +3329,7 @@ export class ConversationV4Gateway {
       history: persistedMessages
         .then(async (loadedMessages) => {
           messages = loadedMessages;
+          opening.messageCount = loadedMessages.length;
           if (this.disposed || this.historyOpenings.get(sessionId) !== opening)
             throw new Error("cold opening disposed");
           const result = await this.hydratePublisher(sessionId, messages, true);

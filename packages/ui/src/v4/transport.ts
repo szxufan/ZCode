@@ -19,6 +19,8 @@ import type {
   V4ConversationFileRewindPreviewResult,
   V4ConversationPlansParams,
   V4ConversationPlansResult,
+  V4ConversationQueriesParams,
+  V4ConversationQueriesResult,
   V4ConversationRowsRangeParams,
   V4ConversationRowsRangeResult,
   V4ConversationWorkflowRunArtifactDataParams,
@@ -68,6 +70,8 @@ export interface ConversationTransport {
   rowsRange(params: V4ConversationRowsRangeParams): Promise<V4ConversationRowsRangeResult>;
   /** v4/conversation/plans：当前有效分支里的全部终态计划。 */
   plans(params: V4ConversationPlansParams): Promise<V4ConversationPlansResult>;
+  /** v4/conversation/queries：问题导航目录轻量分页，不搬运正文 rows。 */
+  queries(params: V4ConversationQueriesParams): Promise<V4ConversationQueriesResult>;
   /** v4/conversation/workflowRunEvents：workflow run 的事件日志分页（cursor = journal sequence）。 */
   workflowRunEvents(
     params: V4ConversationWorkflowRunEventsParams,

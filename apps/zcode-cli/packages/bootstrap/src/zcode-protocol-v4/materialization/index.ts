@@ -4,19 +4,22 @@ import { SessionEventType, type SessionEvent } from "@zcode/contracts";
 import type {
   CommandEnvelope,
   ConversationDelta,
+  ConversationRow,
   ConversationSnapshot,
   ConversationTopicFrame,
   DeliveryProfile,
-  DeliveryProfileName,
   QueueItem,
   ToolCallRow,
   V4ConversationPlansResult,
+  V4ConversationQueriesResult,
   V4ConversationRowsRangeResult,
 } from "@zcode/shared/zcode-protocol-v4";
 import {
   DELIVERY_PROFILES,
   PROTOCOL_V4_LIMITS,
+  buildConversationQueryPreviewText,
   filterConversationRowsForProfile,
+  isNavigableConversationQueryRow,
   utf8JsonByteLength,
 } from "@zcode/shared/zcode-protocol-v4";
 import type { ProductProjection } from "../product-projection.js";
@@ -180,27 +183,168 @@ export function measureConversationSnapshotBytes(
   return utf8JsonByteLength(frame);
 }
 
+/**
+ * rowId 升序窗口中第一个 `rowId >= target` 的下标；target 不存在时落在插入点。
+ * `rows.window` 的全序是协议不变量（append 单调分配、removed 只尾截断），可安全二分。
+ */
+export function conversationRowIdUpperBound(
+  rows: readonly ConversationRow[],
+  target: number,
+): number {
+  let low = 0;
+  let high = rows.length;
+  while (low < high) {
+    const mid = (low + high) >>> 1;
+    if (rows[mid]!.rowId < target) low = mid + 1;
+    else high = mid;
+  }
+  return low;
+}
+
 export function conversationRowsRange(
   snapshot: ConversationSnapshot,
   params: { beforeRowId?: number; limit: number },
-  deliveryProfile: DeliveryProfileName = "replayable",
 ): V4ConversationRowsRangeResult {
   const limit = Math.max(1, Math.min(params.limit, PROTOCOL_V4_LIMITS.rowsRangeMaxLimit));
-  const visibleRows = filterConversationRowsForProfile(
-    snapshot.rows.window,
-    DELIVERY_PROFILES[deliveryProfile],
-  );
-  const eligible =
+  const rows = snapshot.rows.window;
+  // 历史补拉的游标严格小于 beforeRowId；二分上界后只切片本页，避免每页复制/扫描全窗。
+  const end =
     params.beforeRowId === undefined
-      ? visibleRows
-      : visibleRows.filter((row) => row.rowId < (params.beforeRowId as number));
-  const rows = eligible.slice(-limit);
+      ? rows.length
+      : conversationRowIdUpperBound(rows, params.beforeRowId);
+  const start = Math.max(0, end - limit);
   return {
-    rows,
+    rows: rows.slice(start, end),
     atSeq: snapshot.seq,
     atRevision: snapshot.revision,
     atLogEpoch: snapshot.logEpoch,
-    hasMore: eligible.length > rows.length,
+    hasMore: start > 0,
+  };
+}
+
+export const CONVERSATION_QUERY_DIRECTORY_DEFAULT_LIMIT = 100;
+
+/**
+ * 问题导航目录页：只从完整有效 projection 派生 realUser query 元数据与截断预览。
+ *
+ * 目录不再通过 rows/range 把全正文搬进 renderer。反向按 product turn 扫描可以在
+ * “每页最多 limit 个 query”处停止；跨全部分页的总行访问量是 O(N)，不是每页再复制全窗。
+ */
+export function conversationQueryDirectory(
+  snapshot: ConversationSnapshot,
+  params: { beforeRowId?: number; limit?: number },
+): V4ConversationQueriesResult {
+  const limit = Math.max(
+    1,
+    Math.min(
+      params.limit ?? CONVERSATION_QUERY_DIRECTORY_DEFAULT_LIMIT,
+      PROTOCOL_V4_LIMITS.rowsRangeMaxLimit,
+    ),
+  );
+  const rows = snapshot.rows.window;
+  const end =
+    params.beforeRowId === undefined
+      ? rows.length
+      : conversationRowIdUpperBound(rows, params.beforeRowId);
+  const items: V4ConversationQueriesResult["queries"] = [];
+  let chunk: ConversationRow[] = [];
+  let chunkTurnId: string | null = null;
+  let hasMore = false;
+  // beforeRowId 可能落在某个 turn 中间：本页只扫描 rowId < end，assistantText 行却在
+  // 该 turn 更靠后的位置。跨页时较早 query 的预览不能因此退化成 empty，先从 end 之后
+  // 补齐同一 turn 的 assistant 正文（只扫该 turn 的尾部，不做全窗复制）。
+  const truncatedTurnId =
+    end > 0 && end < rows.length && rows[end]!.turnId === rows[end - 1]!.turnId
+      ? rows[end - 1]!.turnId
+      : null;
+  const truncatedTurnAssistantTexts: string[] = [];
+  if (truncatedTurnId !== null) {
+    for (
+      let index = end;
+      index < rows.length && rows[index]!.turnId === truncatedTurnId;
+      index += 1
+    ) {
+      const row = rows[index]!;
+      if (row.kind === "assistantText") truncatedTurnAssistantTexts.push(row.text);
+    }
+  }
+
+  const commitChunk = (allowPartial: boolean, remainingScanEnd: number | null): boolean => {
+    if (chunk.length === 0) return true;
+    // chunk 目前是最新 → 最旧；query 与 assistant 正文都要恢复时间线升序。
+    const turnRows = [...chunk].reverse();
+    const queries = turnRows.filter(isNavigableConversationQueryRow);
+    if (queries.length === 0) return true;
+    const remaining = limit - items.length;
+    // 本页从新到旧装满；同一 turn 内超出剩余额度的较早 query 留给下一页。
+    // 最后一页同样受 limit 约束，剩余部分由 hasMore + beforeRowId 继续分页。
+    const selected =
+      allowPartial && queries.length > remaining
+        ? queries.slice(queries.length - remaining)
+        : queries;
+    if (selected.length < queries.length) hasMore = true;
+    const assistantTexts = turnRows
+      .filter((row): row is Extract<ConversationRow, { kind: "assistantText" }> => {
+        return row.kind === "assistantText";
+      })
+      .map((row) => row.text);
+    if (chunkTurnId === truncatedTurnId) {
+      assistantTexts.push(...truncatedTurnAssistantTexts);
+    }
+    const turnHeader = turnRows.find(
+      (row): row is Extract<ConversationRow, { kind: "turnHeader" }> => row.kind === "turnHeader",
+    );
+    const isRunning = turnHeader?.state === "running";
+    const assistantPreview =
+      assistantTexts.length > 0 ? buildConversationQueryPreviewText(assistantTexts, "") : "";
+    const assistantPreviewKind = assistantTexts.length > 0 ? "text" : isRunning ? "running" : "empty";
+    for (let index = selected.length - 1; index >= 0; index -= 1) {
+      const query = selected[index]!;
+      // running 强调只属于同一 product turn 的最后一条 query，与 renderer 旧目录语义一致。
+      const queryIsRunning = isRunning && index === selected.length - 1;
+      items.push({
+        rowId: query.rowId,
+        turnId: query.turnId,
+        ...(query.entityId ? { entityId: query.entityId } : {}),
+        userPreview: buildConversationQueryPreviewText([query.text], ""),
+        assistantPreview,
+        assistantPreviewKind,
+        isRunning: queryIsRunning,
+      });
+    }
+    if (items.length < limit || remainingScanEnd === null) return items.length < limit;
+    // 页内恰好装满时只在剩余窗口里找是否还有更早 query；这是每轮目录 hydration 的
+    // 最后一次线性检查，不复制行、不做预览，避免为 totalQueries 重新引入整窗计数。
+    for (let index = remainingScanEnd; index >= 0; index -= 1) {
+      if (isNavigableConversationQueryRow(rows[index]!)) {
+        hasMore = true;
+        break;
+      }
+    }
+    return false;
+  };
+
+  for (let index = end - 1; index >= 0; index -= 1) {
+    const row = rows[index]!;
+    if (chunkTurnId !== null && row.turnId !== chunkTurnId) {
+      if (!commitChunk(true, index)) {
+        chunk = [];
+        chunkTurnId = null;
+        break;
+      }
+      chunk = [];
+    }
+    chunkTurnId = row.turnId;
+    chunk.push(row);
+  }
+  if (chunk.length > 0) commitChunk(true, null);
+
+  return {
+    queries: items.sort((left, right) => left.rowId - right.rowId),
+    atSeq: snapshot.seq,
+    atRevision: snapshot.revision,
+    atLogEpoch: snapshot.logEpoch,
+    hasMore,
   };
 }
 

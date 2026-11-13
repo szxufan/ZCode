@@ -29,6 +29,8 @@ import {
   type V4ConversationFileRewindPreviewResult,
   type V4ConversationPlansParams,
   type V4ConversationPlansResult,
+  type V4ConversationQueriesParams,
+  type V4ConversationQueriesResult,
   type V4ConversationRowsRangeParams,
   type V4ConversationRowsRangeResult,
   type V4ConversationSubscribeResult,
@@ -63,6 +65,7 @@ type ConversationV4AgentService = Pick<
   | "queryConversationCommandsV4"
   | "conversationRowsRangeV4"
   | "conversationPlansV4"
+  | "conversationQueriesV4"
   | "conversationWorkflowRunEventsV4"
   | "conversationWorkflowRunsV4"
   | "conversationWorkflowRunArtifactsV4"
@@ -497,6 +500,15 @@ export function createAgentConversationTransport(
       return agentService.conversationPlansV4({
         ...workspace,
         sessionId: params.sessionId,
+      });
+    },
+    async queries(params: V4ConversationQueriesParams): Promise<V4ConversationQueriesResult> {
+      await ensureHandshake();
+      return agentService.conversationQueriesV4({
+        ...workspace,
+        sessionId: params.sessionId,
+        ...(params.beforeRowId !== undefined ? { beforeRowId: params.beforeRowId } : {}),
+        ...(params.limit !== undefined ? { limit: params.limit } : {}),
       });
     },
     // dwf journal 的两个只读查询拆在 agentConversationTransportWorkflowRuns.ts（max-lines 边界）。

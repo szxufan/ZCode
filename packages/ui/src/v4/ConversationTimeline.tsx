@@ -63,7 +63,9 @@ import {
 } from "@/v4/conversationTurnRenderUnits.js";
 import {
   CONVERSATION_TURN_NAVIGATOR_MIN_WIDTH_PX,
+  createConversationTurnNavigatorItemsSelector,
   createConversationTurnNavigatorQueryRowIdsSelector,
+  mergeConversationTurnNavigatorDirectory,
   resolveConversationTurnNavigatorActiveQueryRowId,
   resolveConversationTurnNavigatorHydrationRetryDelayMs,
   shouldHydrateConversationTurnNavigatorDirectory,
@@ -71,9 +73,11 @@ import {
   type ConversationTurnNavigatorQueryPosition,
   type ConversationTurnNavigatorVirtualItem,
 } from "@/v4/conversationTurnNavigatorHelpers.js";
+import type { ConversationTurnNavigatorDirectoryState } from "@/v4/conversationProjectionStore.js";
 import {
+  conversationTimelineHeightCache,
   DEFAULT_ROW_HEIGHT_ESTIMATE_PX,
-  TimelineRowHeightCache,
+  type TimelineRowHeightCache,
 } from "@/v4/timelineRowHeightCache.js";
 import {
   readChatSessionScrollMemoryState,
@@ -261,8 +265,12 @@ function measureRowHeight(element: Element, entry: ResizeObserverEntry | undefin
   return Math.round(element.getBoundingClientRect().height);
 }
 
-function getUnitHeightCacheKey(unit: ConversationTurnRenderUnit | undefined): string | undefined {
-  return unit?.key;
+function getUnitHeightCacheKey(
+  unit: ConversationTurnRenderUnit | undefined,
+  scopeKey: string,
+): string | undefined {
+  // turnId 跨会话不能假设全局唯一；同一 turn 在不同内容宽度/summary 布局下高度也不同。
+  return unit ? `${scopeKey}\u0000${unit.key}` : undefined;
 }
 
 export interface ConversationTimelineProps {
@@ -276,8 +284,8 @@ export interface ConversationTimelineProps {
   /** 投影全序行数（rows.totalCount；窗口截断后大于 rows.length，仅用于滚动条估计/诊断）。 */
   totalCount: number;
   /**
-   * 会话身份键（sessionId ?? "draft"）。切换时重置滚动锚定与测高缓存——
-   * rowId 在不同 session 间会重复，测高缓存禁止跨会话串号。
+   * 会话身份键（sessionId ?? "draft"）。切换时重置滚动锚定；共享行高缓存以
+   * sessionKey + 布局 scope 作键，既避免跨会话串号，也允许 A→B→A 复用真实测量。
    */
   sessionKey: string;
   /** renderer-local 滚动记忆 key；draft 为 null，不参与保存或恢复。 */
@@ -294,8 +302,14 @@ export interface ConversationTimelineProps {
   loadingOlder?: boolean;
   /** 拉取更早一窗历史（接近顶部时自动预取）。 */
   onLoadOlder?: () => Promise<void> | void;
-  /** 宽屏问题目录挂载后一次补齐当前有效分支的全部历史。 */
-  onLoadAllOlder?: () => Promise<ConversationTurnNavigatorHydrationResult>;
+  /** 宽屏问题目录挂载后拉取服务端轻量目录（不合并正文 rows）。 */
+  onHydrateTurnNavigatorDirectory?: () => Promise<ConversationTurnNavigatorHydrationResult>;
+  /** 目录退避耗尽后登记终态，供展示与 settled 观测共读。 */
+  onMarkTurnNavigatorDirectoryExhausted?: () => void;
+  /** 点击未加载目录项时，把 rows 窗口连续补到目标 rowId。 */
+  onLoadOlderUntil?: (rowId: number) => Promise<boolean>;
+  /** 服务端轻量问题目录展示态。 */
+  turnNavigatorDirectory?: ConversationTurnNavigatorDirectoryState | null;
   /**
    * 问题导航目录失效代际（store turnNavigatorDirectoryRevision）。
    * real-user query 增删后终态必须失效重探测；组件 hydration key
@@ -391,7 +405,10 @@ function ConversationTimelineImpl({
   canLoadOlder = false,
   loadingOlder = false,
   onLoadOlder,
-  onLoadAllOlder,
+  onHydrateTurnNavigatorDirectory,
+  onMarkTurnNavigatorDirectoryExhausted,
+  onLoadOlderUntil,
+  turnNavigatorDirectory = null,
   turnNavigatorDirectoryRevision = 0,
   bottomDock,
   emptyState,
@@ -539,6 +556,45 @@ function ConversationTimelineImpl({
   );
   const turnNavigatorQueryRowIdsRef = useRef(turnNavigatorQueryRowIds);
   turnNavigatorQueryRowIdsRef.current = turnNavigatorQueryRowIds;
+  const selectTurnNavigatorItems = useMemo(
+    () => createConversationTurnNavigatorItemsSelector(),
+    [],
+  );
+  const localTurnNavigatorItems = useMemo(
+    () =>
+      selectTurnNavigatorItems(renderUnits, {
+        assistantEmptyPreview: intl.formatMessage({
+          id: "chat.turnNavigator.emptyAssistant",
+        }),
+        assistantRunningPreview: intl.formatMessage({
+          id: "chat.turnNavigator.runningAssistant",
+        }),
+        userFallbackPreview: intl.formatMessage({
+          id: "chat.turnNavigator.userFallback",
+        }),
+      }),
+    [intl, renderUnits, selectTurnNavigatorItems],
+  );
+  // 服务端目录覆盖完整有效分支；已加载 tail 的本地派生更新（流式 running/预览）优先。
+  const turnNavigatorItems = useMemo(
+    () =>
+      mergeConversationTurnNavigatorDirectory(
+        localTurnNavigatorItems,
+        turnNavigatorDirectory?.items ?? [],
+        {
+          assistantEmptyPreview: intl.formatMessage({
+            id: "chat.turnNavigator.emptyAssistant",
+          }),
+          assistantRunningPreview: intl.formatMessage({
+            id: "chat.turnNavigator.runningAssistant",
+          }),
+          userFallbackPreview: intl.formatMessage({
+            id: "chat.turnNavigator.userFallback",
+          }),
+        },
+      ),
+    [intl, localTurnNavigatorItems, turnNavigatorDirectory?.items],
+  );
   // 会话首轮在窗口里、上方也没有分享导入块时，它就是对话最顶部的内容，由它的虚拟项承接
   // 状态胶囊 inset。inset 挂在虚拟项上而不是列表上：测高、跳到首轮、前插历史的锚点都把它算进去。
   // 只认「会话首轮」而不是「窗口首项」：前插更早历史时旧首项若丢掉 inset，阅读位置会跳 56px。
@@ -599,15 +655,13 @@ function ConversationTimelineImpl({
     totalSize: number;
   }>({ firstRowId: null, totalSize: 0 });
   const pendingPrependVirtualAnchorRef = useRef<PrependVirtualAnchor | null>(null);
-  const heightCacheRef = useRef<TimelineRowHeightCache | null>(null);
-  if (heightCacheRef.current === null) {
-    heightCacheRef.current = new TimelineRowHeightCache();
-  }
+  const heightCacheRef = useRef<TimelineRowHeightCache>(conversationTimelineHeightCache);
+  const heightCacheScopeRef = useRef("");
   const [backToBottomVisible, setBackToBottomVisible] = useState(false);
   const [turnNavigatorActiveQueryRowId, setTurnNavigatorActiveQueryRowId] = useState<number>();
   const [turnNavigatorContainerWide, setTurnNavigatorContainerWide] = useState(false);
   const turnNavigatorEnabled =
-    !hideTurnNavigator && turnNavigatorContainerWide && turnNavigatorQueryRowIds.size >= 2;
+    !hideTurnNavigator && turnNavigatorContainerWide && turnNavigatorItems.length >= 2;
   const turnNavigatorEnabledRef = useRef(turnNavigatorEnabled);
   turnNavigatorEnabledRef.current = turnNavigatorEnabled;
   const turnNavigatorAnchorsRef = useRef<{
@@ -636,6 +690,12 @@ function ConversationTimelineImpl({
     centeredEmptyLayout,
     statusPanelLayout: summaryPanelLayout,
   });
+  heightCacheScopeRef.current = [
+    sessionKey,
+    compactForRemoteControl ? "compact" : "default",
+    contentWidthClassName,
+    summaryPanelInlineOffsetClassName,
+  ].join("\u0000");
 
   const hasBottomDock = Boolean(bottomDock);
   useLayoutEffect(() => {
@@ -695,13 +755,14 @@ function ConversationTimelineImpl({
   }, []);
 
   useEffect(() => {
+    const directoryHydrating = turnNavigatorDirectory?.status === "hydrating";
     if (
       hideTurnNavigator ||
       !shouldHydrateConversationTurnNavigatorDirectory({
         canLoadOlder,
         containerWidthPx: turnNavigatorContainerWide ? CONVERSATION_TURN_NAVIGATOR_MIN_WIDTH_PX : 0,
-        hasLoadHandler: Boolean(onLoadAllOlder),
-        loadingOlder,
+        hasLoadHandler: Boolean(onHydrateTurnNavigatorDirectory),
+        loadingOlder: directoryHydrating,
       })
     ) {
       return;
@@ -720,17 +781,22 @@ function ConversationTimelineImpl({
         status: "idle" as const,
       });
     }
-    if (attempt.status !== "idle" || !onLoadAllOlder) return;
+    if (attempt.status !== "idle" || !onHydrateTurnNavigatorDirectory) return;
     attempt.status = "in-flight";
-    logger.debug("[v4-turn-navigator] 目录请求补齐完整历史", {
+    logger.debug("[v4-turn-navigator] 目录请求轻量分页", {
       attempt: attempt.attemptCount + 1,
       loadedRows: rows.length,
       sessionKey,
       totalRows: totalCount,
     });
-    void onLoadAllOlder().then((result) => {
+    void onHydrateTurnNavigatorDirectory().then((result) => {
       if (attempt.key !== hydrationKey) return;
-      if (result.status === "hydrated" || result.status === "not-enough-queries") {
+      if (
+        result.status === "hydrated" ||
+        result.status === "not-enough-queries" ||
+        result.status === "unsupported" ||
+        result.status === "retry-exhausted"
+      ) {
         attempt.status = "terminal";
         return;
       }
@@ -744,6 +810,7 @@ function ConversationTimelineImpl({
       );
       if (retryDelayMs === null) {
         attempt.status = "terminal";
+        onMarkTurnNavigatorDirectoryExhausted?.();
         return;
       }
       attempt.status = "waiting";
@@ -756,14 +823,15 @@ function ConversationTimelineImpl({
     });
   }, [
     canLoadOlder,
-    loadingOlder,
-    onLoadAllOlder,
+    hideTurnNavigator,
+    onHydrateTurnNavigatorDirectory,
+    onMarkTurnNavigatorDirectoryExhausted,
     rowContext.logEpoch,
     rows,
     sessionKey,
     totalCount,
     turnNavigatorContainerWide,
-    hideTurnNavigator,
+    turnNavigatorDirectory?.status,
     turnNavigatorDirectoryRevision,
     turnNavigatorHydrationRetryRevision,
   ]);
@@ -785,7 +853,7 @@ function ConversationTimelineImpl({
   const estimateSize = useCallback(
     (index: number) =>
       heightCacheRef.current?.estimate(
-        getUnitHeightCacheKey(virtualizedUnitsRef.current[index]),
+        getUnitHeightCacheKey(virtualizedUnitsRef.current[index], heightCacheScopeRef.current),
         // 一个虚拟单元是一整轮；未知长轮按小行的 72px 会首屏挂载十几轮正文。
         // 以一屏作保守预算，实际尺寸仍由缓存与 ResizeObserver 决定。
         scrollRef.current?.clientHeight || DEFAULT_ROW_HEIGHT_ESTIMATE_PX,
@@ -798,7 +866,7 @@ function ConversationTimelineImpl({
     const height = measureRowHeight(element, entry);
     const indexAttr = element.getAttribute("data-index");
     const unit = indexAttr === null ? undefined : virtualizedUnitsRef.current[Number(indexAttr)];
-    const cacheKey = getUnitHeightCacheKey(unit);
+    const cacheKey = getUnitHeightCacheKey(unit, heightCacheScopeRef.current);
     if (cacheKey !== undefined) {
       heightCacheRef.current?.set(cacheKey, height);
     }
@@ -1260,7 +1328,7 @@ function ConversationTimelineImpl({
 
   useLayoutEffect(() => {
     const element = liveTailRef.current;
-    const cacheKey = getUnitHeightCacheKey(liveUnit ?? undefined);
+    const cacheKey = getUnitHeightCacheKey(liveUnit ?? undefined, heightCacheScopeRef.current);
     if (!element || cacheKey === undefined) return;
 
     const cacheHeight = (entry?: ResizeObserverEntry) => {
@@ -1448,7 +1516,10 @@ function ConversationTimelineImpl({
   }, [handleBackToBottom, scrollToBottomActionRef]);
 
   const scrollToQuery = useCallback(
-    (target: { unitIndex: number; rowId: number }, behavior: ScrollBehavior = "auto") => {
+    async (
+      target: { unitIndex?: number; rowId: number },
+      behavior: ScrollBehavior = "auto",
+    ): Promise<void> => {
       clearUserScrollIntent();
       commitFollowing(false);
       if (turnNavigatorJumpFrameRef.current !== null) {
@@ -1456,8 +1527,34 @@ function ConversationTimelineImpl({
         turnNavigatorJumpFrameRef.current = null;
       }
 
+      let resolvedTarget = { ...target };
+      const targetLoaded = rowsRef.current.some((row) => row.rowId === target.rowId);
+      if (!targetLoaded && target.unitIndex === undefined && onLoadOlderUntil) {
+        // 服务端目录项可能早于正文 rows 加载；跳转是用户显式动作，只按需补到目标。
+        const loaded = await onLoadOlderUntil(target.rowId);
+        if (!loaded) {
+          logger.warn("[v4-turn-navigator] 目标 query 历史补拉未完成", {
+            rowId: target.rowId,
+          });
+          return;
+        }
+        const row = rowsRef.current.find((item) => item.rowId === target.rowId);
+        const unitIndex = row
+          ? virtualizedUnitsRef.current.findIndex((unit) => unit.turnId === row.turnId)
+          : -1;
+        if (!row || unitIndex < 0) {
+          logger.warn("[v4-turn-navigator] 补拉后仍无法定位目标 turn", {
+            rowId: target.rowId,
+          });
+          return;
+        }
+        resolvedTarget = { unitIndex, rowId: target.rowId };
+      }
+
       const scrollMountedQuery = (element: HTMLDivElement): boolean => {
-        const rowElement = element.querySelector<HTMLElement>(`[data-row-id="${target.rowId}"]`);
+        const rowElement = element.querySelector<HTMLElement>(
+          `[data-row-id="${resolvedTarget.rowId}"]`,
+        );
         if (!rowElement) return false;
         const targetTop =
           element.scrollTop +
@@ -1472,8 +1569,8 @@ function ConversationTimelineImpl({
         syncTurnNavigatorViewport(element);
         logger.debug("[v4-turn-navigator] 定位用户 query", {
           behavior,
-          rowId: target.rowId,
-          unitIndex: target.unitIndex,
+          rowId: resolvedTarget.rowId,
+          unitIndex: resolvedTarget.unitIndex,
         });
         return true;
       };
@@ -1481,9 +1578,16 @@ function ConversationTimelineImpl({
       const element = scrollRef.current;
       if (!element || scrollMountedQuery(element)) return;
 
+      if (resolvedTarget.unitIndex === undefined) {
+        logger.warn("[v4-turn-navigator] 目标 query 缺少虚拟单元索引", {
+          rowId: resolvedTarget.rowId,
+        });
+        return;
+      }
+
       // product turn 是虚拟列表的最小挂载单元，steer query 是单元内锚点。目标未挂载时
       // 先无动画挂载所属 turn，再按用户 motion 偏好精确滚到 row，不能退回 turn 开头。
-      if (target.unitIndex === liveUnitIndex) {
+      if (resolvedTarget.unitIndex === liveUnitIndex) {
         const liveTail = liveTailRef.current;
         if (liveTail) {
           element.scrollTop =
@@ -1492,7 +1596,7 @@ function ConversationTimelineImpl({
             element.getBoundingClientRect().top;
         }
       } else {
-        virtualizer.scrollToIndex(target.unitIndex, {
+        virtualizer.scrollToIndex(resolvedTarget.unitIndex, {
           align: "start",
           behavior: "auto",
         });
@@ -1506,8 +1610,8 @@ function ConversationTimelineImpl({
         remainingAttempts -= 1;
         if (remainingAttempts <= 0) {
           logger.warn("[v4-turn-navigator] query 锚点挂载超时", {
-            rowId: target.rowId,
-            unitIndex: target.unitIndex,
+            rowId: resolvedTarget.rowId,
+            unitIndex: resolvedTarget.unitIndex,
           });
           return;
         }
@@ -1515,7 +1619,14 @@ function ConversationTimelineImpl({
       };
       turnNavigatorJumpFrameRef.current = window.requestAnimationFrame(alignMountedQuery);
     },
-    [clearUserScrollIntent, commitFollowing, liveUnitIndex, syncTurnNavigatorViewport, virtualizer],
+    [
+      clearUserScrollIntent,
+      commitFollowing,
+      liveUnitIndex,
+      onLoadOlderUntil,
+      syncTurnNavigatorViewport,
+      virtualizer,
+    ],
   );
 
   useLayoutEffect(() => {
@@ -1619,7 +1730,8 @@ function ConversationTimelineImpl({
   // 恢复；首个 layout 立即写入防闪动，下一帧再校正异步测高，但必须把滚动权让给用户。
   useLayoutEffect(() => {
     clearUserScrollIntent();
-    heightCacheRef.current?.clear();
+    // 行高缓存不再按会话清空：共享 LRU 的 key 已含 sessionKey + 布局 scope，
+    // A→B→A 快速切换可复用真实测量；宽度变化由 scope 隔离并仍由 ResizeObserver 收敛。
     // prepend 锚定基线一并重置：rowId 跨会话可重复，禁止拿旧会话首行比较。
     prependAnchorRef.current = { firstRowId: null, totalSize: 0 };
     pendingPrependVirtualAnchorRef.current = null;
@@ -1933,8 +2045,8 @@ function ConversationTimelineImpl({
       {hideTurnNavigator ? null : (
         <ConversationTurnNavigator
           enabled={turnNavigatorEnabled}
-          renderUnits={renderUnits}
-          isHydratingDirectory={loadingOlder}
+          items={turnNavigatorItems}
+          isHydratingDirectory={turnNavigatorDirectory?.status === "hydrating"}
           scrollOffsetPx={virtualizer.scrollOffset ?? 0}
           viewportHeightPx={virtualizer.scrollRect?.height ?? 0}
           virtualItems={turnNavigatorVirtualItems}
@@ -1976,7 +2088,7 @@ function ConversationTimelineImpl({
             "mb-[calc(var(--v4-floating-composer-dock-height,0px)+12px)] pb-4",
           // 修复原因：Conversation turn map 覆盖 timeline 左侧 48px；表格增强滚动如果仍按
           // 普通 16px 边距借位，会有 32px 落到 turn map 下方，必须把完整占用计入左边界。
-          turnNavigatorQueryRowIds.size >= 2 &&
+          turnNavigatorItems.length >= 2 &&
             "@min-[864px]/conversation:[--markdown-table-layout-left-inset:48px]",
         )}
       >

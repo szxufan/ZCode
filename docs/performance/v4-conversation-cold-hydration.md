@@ -523,6 +523,24 @@ turn/event 翻倍时耗时约翻倍，未再呈现原先的平方增长趋势。
 rehydration 与 wire 编码，不应归因成单一阶段。具体职责边界与功能不变量见
 [`17-cold-resume-runtime-activation.md`](../v4-refactor/17-cold-resume-runtime-activation.md)。
 
+### 2026-11-13 historyFirst durable artifact 复用
+
+Windows 本机、Node 24.18.0 / Vitest 4.1.7，运行扩展后的 PERF03-E focused spec（同一进程内
+10,623 messages / 35,811 parts / 82,683 merged events / 30,500 rows）。首段基线为
+merge 640.1ms + publisher rehydrate 1417.0ms，initial frame 仍为 27,749 bytes / hash
+`2afb48d41f482d2f66b60fc76d16a6f0d8fdfc9521ada3a1ea4870905997e9f4`。新增的 runtime-ready
+artifact 用例同一进程结果：
+
+| Runtime-ready pass merge | 耗时 | 说明 |
+| --- | ---: | --- |
+| 重新 build artifact + merge | 334.1ms + artifact 计入 306.1ms | 旧路径重复 message/part synthesis |
+| 复用 pass 1 artifact + patch payload + merge | **38.2ms** | 测试逐字段断言 events/diagnostics 与重建等价 |
+
+focused 差值约 295.9ms（-88.5%），只证明 second-pass durable synthesis 的重复成本被消除；
+不把它外推成 production 首帧总耗时收益，也不改变 SQLite 单次物化、runtime resume、publisher
+rehydrate 或 wire 编码边界。生产路径命中条件与失效条件见
+[`17-cold-resume-runtime-activation.md`](../v4-refactor/17-cold-resume-runtime-activation.md)。
+
 ## 本地性能 fixture 的工作区身份
 
 `zcode-large-task-fixture` 生成的本地会话必须与真实本地会话使用相同的身份约定：

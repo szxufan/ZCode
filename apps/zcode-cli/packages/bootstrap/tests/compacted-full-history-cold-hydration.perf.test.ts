@@ -15,7 +15,12 @@ import {
 } from "@zcode/contracts";
 import { activeSessionMessages } from "@zcode/core";
 import { conversationTopicFrameSchema } from "@zcode/shared/zcode-protocol-v4";
-import { mergeColdConversationEvents } from "../src/zcode-protocol-v4/cold-event-merge.js";
+import {
+  buildColdDurableTranscriptArtifact,
+  mergeColdConversationEvents,
+  mergeColdConversationEventsWithArtifact,
+  patchColdDurableTranscriptArtifact,
+} from "../src/zcode-protocol-v4/cold-event-merge.js";
 import { ConversationTopicPublisher } from "../src/zcode-protocol-v4/conversation-topic-publisher.js";
 
 const SESSION_ID = "perf03-compacted-full-history-cold-hydration";
@@ -121,6 +126,49 @@ describe.skipIf(process.env.ZCODE_PERF_REPRO !== "1")(
           rowCount: snapshot?.rows.totalCount ?? 0,
           subscribeMs: roundMs(subscribeMs),
           totalMs: roundMs(totalMs),
+        })}\n`,
+      );
+    }, 120_000);
+
+    it("runtime-ready pass reuses the durable transcript artifact without resynthesizing messages", () => {
+      const messages = ticketMessages();
+      const artifactStartedAt = performance.now();
+      const artifact = buildColdDurableTranscriptArtifact({
+        messages,
+        sessionId: SESSION_ID,
+      });
+      const pass1 = mergeColdConversationEventsWithArtifact(artifact, {
+        memoryEvents: [],
+        sessionId: SESSION_ID,
+      });
+      expect(pass1).not.toBeNull();
+      const artifactMs = performance.now() - artifactStartedAt;
+
+      const reusedStartedAt = performance.now();
+      const patched = patchColdDurableTranscriptArtifact(artifact, { contextWindow: 200_000 });
+      const pass2 = mergeColdConversationEventsWithArtifact(patched, {
+        memoryEvents: [],
+        sessionId: SESSION_ID,
+      });
+      const reusedMs = performance.now() - reusedStartedAt;
+
+      const rebuiltStartedAt = performance.now();
+      const rebuilt = mergeColdConversationEvents({
+        contextWindow: 200_000,
+        memoryEvents: [],
+        messages,
+        sessionId: SESSION_ID,
+      });
+      const rebuiltMs = performance.now() - rebuiltStartedAt;
+
+      expect(pass2?.events).toEqual(rebuilt.events);
+      expect(pass2?.diagnostics).toEqual(rebuilt.diagnostics);
+      process.stdout.write(
+        `${JSON.stringify({
+          caseId: "PERF03-E-ARTIFACT",
+          artifactMs: roundMs(artifactMs),
+          rebuiltPass2MergeMs: roundMs(rebuiltMs),
+          reusedPass2MergeMs: roundMs(reusedMs),
         })}\n`,
       );
     }, 120_000);
