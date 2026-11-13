@@ -22,6 +22,8 @@ import {
   type SessionModelTransition,
   type ToolCallRow,
   type TopicFrameDeliveryKind,
+  type V4ConversationQueriesResult,
+  type V4ConversationQueryDirectoryItem,
 } from "@zcode/shared/zcode-protocol-v4";
 import { logger } from "@/logger.js";
 import type { ConversationTurnNavigatorHydrationResult } from "@/v4/conversationTurnNavigatorHelpers.js";
@@ -93,6 +95,20 @@ function isRuntimeRecycleError(error: unknown): boolean {
   );
 }
 
+/** JSON-RPC method-not-found：旧 CLI 不认识轻量问题目录 query，可诚实降级、不回退全量补拉。 */
+function isConversationQueriesUnsupported(error: unknown): boolean {
+  if (
+    typeof error === "object" &&
+    error !== null &&
+    "code" in error &&
+    (error as { code?: unknown }).code === -32601
+  ) {
+    return true;
+  }
+  const message = error instanceof Error ? error.message : String(error);
+  return message.includes("Method not found") || message.includes("method not found");
+}
+
 function hasAcceptedInputProjection(
   snapshot: ConversationSnapshot | null,
   commandId: string,
@@ -156,6 +172,24 @@ export interface ConversationStoreState {
    * 或 row.removed 截断分支）与 snapshot 整体替换时递增此 revision，使终态缓存失效。
    */
   turnNavigatorDirectoryRevision: number;
+  /**
+   * 服务端轻量问题目录的展示态。items 是 CLI 完整有效 projection 的只读派生，
+   * 不是第二份 conversation 事实；snapshot 替换或 query 增删后按 revision 重取。
+   */
+  turnNavigatorDirectory: ConversationTurnNavigatorDirectoryState | null;
+}
+
+export interface ConversationTurnNavigatorDirectoryState {
+  items: readonly V4ConversationQueryDirectoryItem[];
+  status:
+    | "idle"
+    | "hydrating"
+    | "hydrated"
+    | "not-enough-queries"
+    | "unsupported"
+    | "retry-exhausted";
+  logEpoch: string;
+  directoryRevision: number;
 }
 
 export interface SessionOpenRendererTiming {
@@ -178,6 +212,7 @@ const INITIAL_STATE: ConversationStoreState = {
   planDirectoryRevision: 0,
   plansLoading: false,
   turnNavigatorDirectoryRevision: 0,
+  turnNavigatorDirectory: null,
 };
 
 const TERMINAL_PLAN_STATUSES: ReadonlySet<ToolCallRow["status"]> = new Set([
@@ -461,15 +496,14 @@ export class ConversationProjectionStore {
   private planQueryPending = false;
   /** accepted input 的 projection confirmation watchdog；不承载命令，也不生成本地事实。 */
   private readonly acceptedInputProjectionTimers = new Map<string, ReturnType<typeof setTimeout>>();
-  // hydrated/not-enough-queries 终态缓存。过去仅以
+  // hydrated/not-enough-queries/unsupported/retry-exhausted 终态缓存。过去仅以
   // logEpoch 判定有效，同一 epoch 内追加 real-user query 后仍永久命中。现追加
   // directoryRevision——real-user query 增删会递增该 revision，使终态失效重探测。
-  private turnNavigatorHydrationTerminal:
-    | (Extract<
-        ConversationTurnNavigatorHydrationResult,
-        { status: "hydrated" | "not-enough-queries" }
-      > & { directoryRevision: number })
-    | null = null;
+  private turnNavigatorHydrationTerminal: {
+    status: "hydrated" | "not-enough-queries" | "unsupported" | "retry-exhausted";
+    logEpoch: string;
+    directoryRevision: number;
+  } | null = null;
   private closed = false;
 
   constructor(
@@ -906,8 +940,10 @@ export class ConversationProjectionStore {
         snapshot,
         projectionReady: true,
         planDirectoryRevision: this.state.planDirectoryRevision + 1,
-        // snapshot 整体替换后 real-user query 集合可能已变，终态缓存必须失效。
+        // snapshot 整体替换后 real-user query 集合可能已变，终态缓存必须失效；
+        // 服务端目录项属于旧权威，整体丢弃后由宽屏 hydration 重新分页。
         turnNavigatorDirectoryRevision: this.state.turnNavigatorDirectoryRevision + 1,
+        turnNavigatorDirectory: null,
       });
       this.subscriptionHasAppliedBase = true;
       this.reconcileOptimistic(snapshot);
@@ -972,6 +1008,25 @@ export class ConversationProjectionStore {
           : earliest,
       null,
     );
+    const invalidatesTurnNavigatorDirectory = shouldInvalidateTurnNavigatorDirectory(frame);
+    const nextTurnNavigatorDirectoryRevision = invalidatesTurnNavigatorDirectory
+      ? this.state.turnNavigatorDirectoryRevision + 1
+      : this.state.turnNavigatorDirectoryRevision;
+    const currentTurnNavigatorDirectory = this.state.turnNavigatorDirectory;
+    const nextTurnNavigatorDirectory = invalidatesTurnNavigatorDirectory
+      ? {
+          status: "idle" as const,
+          logEpoch: next.logEpoch,
+          directoryRevision: nextTurnNavigatorDirectoryRevision,
+          // row.removed 的权威裁剪边界同样适用于目录项；追加/更新则保留旧页等重取覆盖。
+          items:
+            removedFromRowId === null
+              ? (currentTurnNavigatorDirectory?.items ?? [])
+              : (currentTurnNavigatorDirectory?.items ?? []).filter(
+                  (item) => item.rowId < removedFromRowId,
+                ),
+        }
+      : currentTurnNavigatorDirectory;
     this.setState({
       snapshot: next,
       // row.removed 已给出权威裁剪边界，可以同步删掉缓存目录中的旧分支计划；
@@ -986,11 +1041,8 @@ export class ConversationProjectionStore {
         : {}),
       // real-user query 增删（row.appended/row.upserted 命中 realUser userInput，
       // 或 row.removed 截断分支）递增导航目录 revision，使终态缓存失效允许重新探测。
-      ...(shouldInvalidateTurnNavigatorDirectory(frame)
-        ? {
-            turnNavigatorDirectoryRevision: this.state.turnNavigatorDirectoryRevision + 1,
-          }
-        : {}),
+      turnNavigatorDirectoryRevision: nextTurnNavigatorDirectoryRevision,
+      turnNavigatorDirectory: nextTurnNavigatorDirectory,
     });
     this.subscriptionHasAppliedBase = true;
     this.reconcileOptimistic(next);
@@ -1358,18 +1410,20 @@ export class ConversationProjectionStore {
   }
 
   /**
-   * 完整问题目录：沿既有 rows/range 游标把当前有效分支一次补齐。
+   * 完整问题目录：改为服务端轻量 query 分页，只拉 realUser query 元数据与截断预览。
    *
-   * 问题导航过去直接扫描 renderer 的 tail window，因此 1000 轮会话只显示
-   * 已加载的几十轮。这里按协议上限分页读取，但等全部页成功后只换一次 snapshot，
-   * 避免每 200 行重建一次 timeline render units 与两个 virtualizer。
+   * Bug 原因：旧实现沿 rows/range 把完整正文 rows 拉进 renderer，再全量派生 turn units；
+   * 宽屏打开长会话会形成上百页串行请求和 O(N²/200) 的 CLI 扫描。目录事实永远来自
+   * CLI 完整有效 projection；这里只保存展示态，不修改 snapshot.rows.window。
    */
-  async loadAllOlder(): Promise<ConversationTurnNavigatorHydrationResult> {
+  async hydrateTurnNavigatorDirectory(): Promise<ConversationTurnNavigatorHydrationResult> {
     const stale = (logEpoch = this.state.snapshot?.logEpoch ?? "unknown") => ({
       status: "stale" as const,
       logEpoch,
     });
-    if (this.closed || this.state.loadingOlder) return stale();
+    if (this.closed || this.state.turnNavigatorDirectory?.status === "hydrating") {
+      return stale();
+    }
     const snapshot = this.state.snapshot;
     if (!snapshot) return stale();
     // 终态必须同时匹配 logEpoch 与 directoryRevision。logEpoch 表示日志代际，
@@ -1383,27 +1437,50 @@ export class ConversationProjectionStore {
     }
     if (!hasOlderRows(snapshot)) return stale(snapshot.logEpoch);
     const sessionId = parseConversationTopic(this.topic);
-    const initialBeforeRowId = snapshot.rows.window[0]?.rowId;
-    if (!sessionId || initialBeforeRowId === undefined) return stale(snapshot.logEpoch);
+    if (!sessionId) return stale(snapshot.logEpoch);
 
     const initialLogEpoch = snapshot.logEpoch;
-    const preserveIncompleteLeadingTurn = shouldAutoLoadIncompleteLeadingTurn(snapshot, false);
-    const pages: ConversationRow[][] = [];
-    let beforeRowId = initialBeforeRowId;
+    const pages: V4ConversationQueryDirectoryItem[][] = [];
+    let beforeRowId: number | undefined;
     let committed = false;
-    this.setState({ loadingOlder: true });
-    logger.debug("[v4-store] 完整问题目录开始补拉历史 rows", {
-      beforeRowId,
+    this.setState({
+      turnNavigatorDirectory: {
+        items: [],
+        status: "hydrating",
+        logEpoch: initialLogEpoch,
+        directoryRevision,
+      },
+    });
+    logger.debug("[v4-store] 完整问题目录开始轻量分页", {
+      directoryRevision,
       loadedRows: snapshot.rows.window.length,
       sessionId,
       totalRows: snapshot.rows.totalCount,
     });
 
+    const commitTerminal = (
+      status: "hydrated" | "not-enough-queries" | "unsupported",
+      items: readonly V4ConversationQueryDirectoryItem[],
+    ): ConversationTurnNavigatorHydrationResult => {
+      const result = { status, logEpoch: initialLogEpoch, directoryRevision };
+      this.turnNavigatorHydrationTerminal = result;
+      committed = true;
+      this.setState({
+        turnNavigatorDirectory: {
+          items,
+          status,
+          logEpoch: initialLogEpoch,
+          directoryRevision,
+        },
+      });
+      return result;
+    };
+
     try {
       while (true) {
-        const result = await this.transport.rowsRange({
+        const result: V4ConversationQueriesResult = await this.transport.queries({
           sessionId,
-          beforeRowId,
+          ...(beforeRowId !== undefined ? { beforeRowId } : {}),
           limit: PROTOCOL_V4_LIMITS.rowsRangeMaxLimit,
         });
         if (this.closed) return stale(initialLogEpoch);
@@ -1412,105 +1489,113 @@ export class ConversationProjectionStore {
           !current ||
           result.atLogEpoch !== initialLogEpoch ||
           current.logEpoch !== initialLogEpoch ||
-          current.rows.window[0]?.rowId !== initialBeforeRowId
+          this.state.turnNavigatorDirectoryRevision !== directoryRevision
         ) {
-          logger.warn("[v4-store] 完整问题目录补拉期间投影游标失效，整批丢弃", {
-            currentBeforeRowId: current?.rows.window[0]?.rowId,
-            expectedBeforeRowId: initialBeforeRowId,
+          logger.warn("[v4-store] 完整问题目录分页期间投影失效，整批丢弃", {
+            directoryRevision,
             resultLogEpoch: result.atLogEpoch,
             sessionId,
           });
           return stale(initialLogEpoch);
         }
 
-        const older = result.rows.filter((row) => row.rowId < beforeRowId);
-        const nextBeforeRowId = older[0]?.rowId;
-        if (nextBeforeRowId === undefined || nextBeforeRowId >= beforeRowId) {
-          logger.warn("[v4-store] 完整问题目录 rows/range 未推进游标，停止补拉", {
+        const page = result.queries;
+        const nextBeforeRowId = page[0]?.rowId;
+        if (
+          beforeRowId !== undefined &&
+          (nextBeforeRowId === undefined || nextBeforeRowId >= beforeRowId)
+        ) {
+          logger.warn("[v4-store] 完整问题目录 query 页未推进游标，停止分页", {
             beforeRowId,
             hasMore: result.hasMore,
             sessionId,
           });
           return { status: "retryable-failure", logEpoch: initialLogEpoch };
         }
-        pages.push(older);
+        pages.push(page);
         beforeRowId = nextBeforeRowId;
         if (!result.hasMore) break;
       }
 
-      const current = this.state.snapshot;
-      if (
-        !current ||
-        current.logEpoch !== initialLogEpoch ||
-        current.rows.window[0]?.rowId !== initialBeforeRowId
-      ) {
-        return stale(initialLogEpoch);
-      }
-      const olderRows = [...pages].reverse().flat();
-      const realUserQueryCount = [...olderRows, ...current.rows.window].reduce(
-        (count, row) => (row.kind === "userInput" && row.origin === "realUser" ? count + 1 : count),
-        0,
-      );
-      if (realUserQueryCount < 2) {
-        if (preserveIncompleteLeadingTurn) {
-          const window = mergeOlderRows(current.rows.window, this.shareRows(olderRows));
-          if (window === null) return stale(initialLogEpoch);
-          committed = true;
-          this.setState({
-            loadingOlder: false,
-            snapshot: { ...current, rows: { ...current.rows, window } },
-          });
-          // navigator 已经拿到补齐首轮所需的权威 rows，必须在隐藏 rail 前先提交它们。
-          logger.debug("[v4-store] 完整问题目录不足两条 query，保留首轮补齐 rows", {
-            loadedRows: window.length,
-            pages: pages.length,
-            sessionId,
-          });
-        }
-        // wire snapshot 只保留最后 60 rows，tail 中的 0/1 条 query 不能证明
-        // 完整分支也是单 query。宽屏必须探测到分支起点；确认不足两条后不合并探测页，
-        // 避免为一个不会显示的 rail 把完整历史常驻 renderer projection。
-        logger.debug("[v4-store] 完整问题目录探测后不足两条 query", {
-          pages: pages.length,
-          preservedIncompleteLeadingTurn: preserveIncompleteLeadingTurn,
-          realUserQueryCount,
-          sessionId,
-        });
-        const result = {
-          status: "not-enough-queries" as const,
-          logEpoch: initialLogEpoch,
-          directoryRevision,
-        };
-        this.turnNavigatorHydrationTerminal = result;
-        return result;
-      }
-      const window = mergeOlderRows(current.rows.window, this.shareRows(olderRows));
-      if (window === null) return stale(initialLogEpoch);
-      committed = true;
-      this.setState({
-        loadingOlder: false,
-        snapshot: { ...current, rows: { ...current.rows, window } },
-      });
-      logger.debug("[v4-store] 完整问题目录历史 rows 补拉完成", {
-        loadedRows: window.length,
-        pages: pages.length,
+      const items = pages.flat().sort((left, right) => left.rowId - right.rowId);
+      logger.debug("[v4-store] 完整问题目录轻量分页完成", {
+        queryCount: items.length,
         sessionId,
       });
-      const result = {
-        status: "hydrated" as const,
-        logEpoch: initialLogEpoch,
-        directoryRevision,
-      };
-      this.turnNavigatorHydrationTerminal = result;
-      return result;
+      return commitTerminal(items.length < 2 ? "not-enough-queries" : "hydrated", items);
     } catch (error) {
+      if (isConversationQueriesUnsupported(error)) {
+        // 旧 CLI 偏斜：目录只覆盖已加载窗口，禁止回退 rows/range 全量补拉。
+        logger.debug("[v4-store] CLI 不支持轻量问题目录，目录保持已加载窗口", {
+          sessionId,
+        });
+        return commitTerminal("unsupported", []);
+      }
       logger.warn(
-        `[v4-store] 完整问题目录 rowsRange ${this.topic} 失败: ${error instanceof Error ? error.message : String(error)}`,
+        `[v4-store] 完整问题目录 queries ${this.topic} 失败: ${error instanceof Error ? error.message : String(error)}`,
       );
       return { status: "retryable-failure", logEpoch: initialLogEpoch };
     } finally {
-      if (!this.closed && !committed) this.setState({ loadingOlder: false });
+      if (!this.closed && !committed) {
+        this.setState({
+          turnNavigatorDirectory: {
+            items: [],
+            status: "idle",
+            logEpoch: initialLogEpoch,
+            directoryRevision,
+          },
+        });
+      }
     }
+  }
+
+  /** 组件退避耗尽后登记终态，供目录展示与 settled 观测共读同一事实。 */
+  markTurnNavigatorDirectoryExhausted(): void {
+    if (this.closed) return;
+    const snapshot = this.state.snapshot;
+    if (!snapshot) return;
+    const directoryRevision = this.state.turnNavigatorDirectoryRevision;
+    const result = {
+      status: "retry-exhausted" as const,
+      logEpoch: snapshot.logEpoch,
+      directoryRevision,
+    };
+    this.turnNavigatorHydrationTerminal = result;
+    this.setState({
+      turnNavigatorDirectory: {
+        items: this.state.turnNavigatorDirectory?.items ?? [],
+        status: "retry-exhausted",
+        logEpoch: snapshot.logEpoch,
+        directoryRevision,
+      },
+    });
+  }
+
+  /**
+   * 目录跳转到尚未加载的旧 query 时，只按需把 rows 窗口连续补到目标 rowId。
+   * 不再因宽屏目录自动补全历史；普通向上滚动与 HLP01 首 turn 补齐语义保持不变。
+   */
+  async loadOlderUntil(rowId: number): Promise<boolean> {
+    if (this.closed || this.state.loadingOlder) return false;
+    let firstRowId = this.state.snapshot?.rows.window[0]?.rowId;
+    if (firstRowId === undefined || firstRowId <= rowId) return firstRowId !== undefined;
+    while (
+      !this.closed &&
+      this.state.snapshot?.rows.firstRowId !== null &&
+      (this.state.snapshot?.rows.window[0]?.rowId ?? Number.POSITIVE_INFINITY) > rowId &&
+      hasOlderRows(this.state.snapshot)
+    ) {
+      firstRowId = this.state.snapshot?.rows.window[0]?.rowId;
+      await this.loadOlder(PROTOCOL_V4_LIMITS.rowsRangeMaxLimit);
+      const nextFirstRowId = this.state.snapshot?.rows.window[0]?.rowId;
+      if (
+        nextFirstRowId === undefined ||
+        nextFirstRowId >= (firstRowId ?? Number.POSITIVE_INFINITY)
+      ) {
+        break;
+      }
+    }
+    return (this.state.snapshot?.rows.window[0]?.rowId ?? Number.POSITIVE_INFINITY) <= rowId;
   }
 
   /**

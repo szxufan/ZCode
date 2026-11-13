@@ -5,6 +5,7 @@ import { Streamdown } from "streamdown";
 import { ZCodeIntlProvider } from "@/i18n/IntlProvider.js";
 import { TooltipProvider } from "@/components/ui/tooltip.js";
 import { ConversationTurnNavigator } from "@/v4/ConversationTurnNavigator.js";
+import { createConversationTurnNavigatorItemsSelector } from "@/v4/conversationTurnNavigatorHelpers.js";
 import { createConversationTurnRenderUnitsSelector } from "@/v4/conversationTurnRenderUnits.js";
 import { getConversationRowsPartition } from "@/v4/conversationProjectionStore.js";
 import { useDraftConfigControl } from "@/v4/composer/useDraftConfigControl.js";
@@ -110,7 +111,13 @@ const virtualItems = [{ index: 0, start: 0, size: 100 }];
 function Navigation() {
   const [source, setSource] = useState(rows);
   const select = useMemo(() => createConversationTurnRenderUnitsSelector(), []);
+  const selectItems = useMemo(() => createConversationTurnNavigatorItemsSelector(), []);
   const units = select(getConversationRowsPartition(source), { nowMs: 5000 });
+  const items = selectItems(units, {
+    assistantEmptyPreview: "No answer yet",
+    assistantRunningPreview: "Working",
+    userFallbackPreview: "Question",
+  });
   const [jump, setJump] = useState("");
   Object.assign(window, {
     __navBoundary: {
@@ -137,12 +144,12 @@ function Navigation() {
     <main className="relative h-screen w-full @container/conversation">
       <output data-testid="jump">{jump}</output>
       <ConversationTurnNavigator
-        renderUnits={units}
+        items={items}
         scrollOffsetPx={0}
         viewportHeightPx={700}
         virtualItems={virtualItems}
         onJumpToQuery={useMemo(
-          () => (target: { unitIndex: number; rowId: number }) => setJump(JSON.stringify(target)),
+          () => (target: { unitIndex?: number; rowId: number }) => setJump(JSON.stringify(target)),
           [],
         )}
       />

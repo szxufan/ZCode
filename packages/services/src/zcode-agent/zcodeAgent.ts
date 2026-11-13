@@ -130,6 +130,7 @@ import type {
   V4ConversationFileRewindPreviewResult,
   V4ConversationInputPredictionResult,
   V4ConversationPlansResult,
+  V4ConversationQueriesResult,
   V4ConversationWorkflowRunEventsResult,
   V4ConversationWorkflowRunArtifactDataResult,
   V4ConversationWorkflowRunArtifactReadResult,
@@ -490,6 +491,14 @@ export interface ZCodeAgentConversationRowsRangeParams extends ZCodeAgentSession
 
 /** 当前有效分支里的终态 ExitPlanMode 目录。 */
 export type ZCodeAgentConversationPlansParams = ZCodeAgentSessionTarget;
+
+/** 问题导航目录轻量分页：只读 query 元数据与截断预览，不搬运正文 rows。 */
+export interface ZCodeAgentConversationQueriesParams extends ZCodeAgentSessionTarget {
+  /** 取 rowId < beforeRowId 的 query；缺省 = 从当前尾部向前。 */
+  beforeRowId?: number;
+  /** 1..rowsRangeMaxLimit（200）；缺省由 CLI 决定。 */
+  limit?: number;
+}
 
 /** 手机远控输入预测（ghost hint）；线格式见 docs/web-remote-control/mobile-input-prediction.md。 */
 export interface ZCodeAgentConversationInputPredictionParams extends ZCodeAgentSessionTarget {
@@ -1039,6 +1048,10 @@ export interface IZCodeAgentService {
   conversationPlansV4(
     params: ZCodeAgentConversationPlansParams,
   ): Promise<V4ConversationPlansResult>;
+  /** 问题目录轻量分页；与 plans 同族（只读、无状态、超时重发安全）。 */
+  conversationQueriesV4(
+    params: ZCodeAgentConversationQueriesParams,
+  ): Promise<V4ConversationQueriesResult>;
   /** 输入预测：只读、无状态；Host 开关关闭 / 无运行时 / 失败一律回空结果，不抛错。 */
   conversationInputPredictionV4(
     params: ZCodeAgentConversationInputPredictionParams,

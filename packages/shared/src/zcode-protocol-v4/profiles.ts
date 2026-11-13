@@ -8,15 +8,74 @@
 // 「两 profile 终态逐字节一致」测试。
 import type { DeliveryProfile } from "./core.js";
 import type { ConversationDelta } from "./delta.js";
-import type { ConversationRow } from "./rows.js";
+import type { ConversationRow, UserInputRow } from "./rows.js";
 
-export function filterConversationRowsForProfile(
-  rows: readonly ConversationRow[],
+export const CONVERSATION_QUERY_PREVIEW_MAX_CHARS = 220;
+export const CONVERSATION_QUERY_PREVIEW_MAX_PARAGRAPHS = 2;
+
+/** 问题导航只收录真实用户提交的 query；系统、后台、workflow 与 guide 输入不可导航。 */
+export function isNavigableConversationQueryRow(row: ConversationRow): row is UserInputRow {
+  return row.kind === "userInput" && row.origin === "realUser";
+}
+
+/**
+ * 目录预览的规范化截断：合并空白、按空行分段，超过字符/段预算即停止。
+ * CLI 服务端目录与 renderer 本地 tail 共用这份语义，避免两侧 preview 漂移。
+ */
+export function buildConversationQueryPreviewText(
+  texts: readonly string[],
+  fallback: string,
+  maxChars: number = CONVERSATION_QUERY_PREVIEW_MAX_CHARS,
+  maxParagraphs: number = CONVERSATION_QUERY_PREVIEW_MAX_PARAGRAPHS,
+): string {
+  const normalizedMaxChars = Math.max(8, maxChars);
+  const normalizedMaxParagraphs = Math.trunc(Math.max(1, maxParagraphs));
+  let preview = "";
+  let paragraphs = 1;
+  let whitespace = false;
+  let newlines = 0;
+  const truncate = (value: string): string =>
+    value.length <= normalizedMaxChars
+      ? value
+      : `${value.slice(0, normalizedMaxChars - 3).trimEnd()}...`;
+  for (const text of texts) {
+    if (preview) {
+      whitespace = true;
+      newlines = 2;
+    }
+    for (let index = 0; index < text.length; index += 1) {
+      const character = text[index]!;
+      if (/\s/u.test(character)) {
+        whitespace = true;
+        if (character === "\n") newlines += 1;
+        continue;
+      }
+      if (whitespace && preview) {
+        if (newlines >= 2) {
+          if (paragraphs >= normalizedMaxParagraphs) return truncate(preview);
+          paragraphs += 1;
+          preview += "\n";
+        } else {
+          preview += " ";
+        }
+      }
+      preview += character;
+      whitespace = false;
+      newlines = 0;
+      if (preview.length > normalizedMaxChars) return truncate(preview);
+    }
+  }
+  return preview || fallback;
+}
+
+export function filterConversationRowsForProfile<T extends readonly ConversationRow[]>(
+  rows: T,
   _profile: DeliveryProfile,
-): ConversationRow[] {
+): T {
   // HookInvocationRow 已收敛为 desktop/mobile 共用的 client-safe summary；当前没有
-  // profile-specific 完整行，仍保留纯函数边界供未来受控 row 使用。
-  return [...rows];
+  // profile-specific 完整行。这里必须免复制直通：rows/range 每页调用时整窗复制会把
+  // 分页成本放大成 O(N²/limit)，而调用方只读不修改，readonly 身份即是安全边界。
+  return rows;
 }
 
 /**

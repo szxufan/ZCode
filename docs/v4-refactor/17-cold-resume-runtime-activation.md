@@ -117,11 +117,12 @@ subscribe → durable messages M0 → 同一个 V4 publisher → 首帧进入 tr
 ```
 
 - 能力名 `historyFirst`，沿 hello/clientHello 和可信 attachment 传递；未声明能力的订阅仍等待完整恢复。
-- 历史阶段 ACK 记录 `historyReadyMs`，旧路径保留 `cliSessionRestoreMs`；完整激活耗时沿现有 resume 生命周期日志记录，不混为首屏时间。
+- 历史阶段 ACK 记录 `historyReadyMs` 并映射到 ARMS `history_ready_ms`，旧路径保留 `cliSessionRestoreMs`；完整激活耗时沿现有 resume 生命周期日志记录，不混为首屏时间。
 - snapshot/state patch 新增可选 `runtimeInitialization`：`initializing | ready | failed`，携带 `attemptId`；failed 附结构化 `reasonCode/message`。缺席表示旧协议的完整就绪语义，不增加 run phase。
 - subscribe 可携带 `retryInitialization`（观察到的失败 attemptId）；仅匹配当前 failed 尝试才能启动下一次，重复请求合并。普通重连不重跑失败尝试，不新增 RPC。
 - 首次历史只依赖持久化 materialization，复用 active branch、goal/plan 与既有 reducer，不调用 runtime、不伪造模型可执行状态。详情、附件、工作流目录与 App 交互待 ready。
 - 单次正常恢复完整读取 parent messages 一次，M0 仅在本次恢复调用栈中共享；runtime 修复 interrupted compact 后才允许读取 M1。重试重新读取持久事实。无新数据库 schema、全局缓存或 TTL。
+- 2026-11-13 起，同一 opening 的 runtime-ready pass 复用 pass 1 的 durable transcript artifact：M0 message 对象逐项相等且非 compact reload / retry、memory authority turn 不与持久 anchor 冲突、target/goal entries 未变时，只 patch `contextWindow/fileChanges` payload 并重算 memory integration；`publisher.rehydrate`、raw tail 对齐与 READY 水位不变。任一条件不满足走完整旧路径，不做增量猜测。
 - 首帧进入现有 post-response outbox 后再调度 activation，不能用固定 sleep 或仅 Promise.all 掩盖同步插件扫描。历史加载失败仍是订阅失败，不能显示虚假空历史。
 - 旧标题/删除意图迁移先到达时，也由同一个两阶段 opening 读历史、启动 runtime；命令仍等待完整 ready 后才写持久事实。后来到达的 historyFirst 订阅复用历史首帧，不等待迁移命令的激活屏障；旧能力订阅仍等待 ready。并发订阅、迁移命令只读取一次 M0、执行一次 resume，不另建 publisher 或 runtime。
 - gateway 是两阶段唯一 owner；context.sessions 入册不是 ready。初始化期间新执行命令明确拒绝，不进入 accepted input queue；既有 command query/dedupe 保留语义。

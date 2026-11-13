@@ -2,24 +2,25 @@
 
 V4 conversation query navigator 是聊天时间线左侧的紧凑跳转 rail。它不是按
 真实消息高度映射的 scroll minimap，而是按用户可见 query 顺序均匀堆叠的小横条入口。目录必须覆盖
-当前有效分支里的全部用户 query：首帧继续使用有界 tail snapshot，宽屏存在更早 rows 时通过既有
-`rows/range` 只读分页补齐完整 rows，再从 renderer projection 派生目录。它不新增第二份 session
+当前有效分支里的全部用户 query，但 2026-11-13 起不再把完整正文 rows 拉进 renderer：首帧继续使用
+有界 tail snapshot，宽屏存在更早 rows 时通过只读 `v4/conversation/queries` 拉取轻量 query
+元数据与截断预览；点击未加载条目时才用既有 `rows/range` 按需补到目标。它不新增第二份 session
 事实、replayable queue、relay 或 main process 状态。
 
 ```text
 CLI full projection
   -> bounded v4 snapshot.rows tail
   -> navigator-visible renderer
-       -> rows/range(200 rows/page) until firstRowId
-       -> epoch/cursor validation
-       -> one projection merge
-  -> buildConversationTurnRenderUnits(full rows)
+       -> v4/conversation/queries(≤200 query/page, metadata + 220-char previews)
+       -> epoch/revision validation
+       -> one directory items commit (rows.window unchanged)
+  -> local loaded tail items + server directory items
   -> ConversationTimeline virtualizer
        |-> message column
        |-> left compact query rail virtualizer
              one item: one UserInputRow(origin=realUser)
              hover/focus: that user query + owning turn assistant excerpt
-             click: mount unitIndex -> align exact rowId
+             click: loadOlderUntil(rowId) if needed -> mount turn -> align exact rowId
 ```
 
 ## 变更边界与确认记录
@@ -30,53 +31,59 @@ CLI full projection
 | 同一 product turn | 初始 query、guide 1、guide 2 可以共享 `turnId` / `unitIndex`，但必须拥有不同 `rowId`、导航项和落点 |
 | Tooltip | 第一段显示该条 user query；第二段沿用所属 product turn 的 assistant text 摘要或运行中/空结果 fallback；不拼接 tool、reasoning、subagent 或 marker 正文 |
 | Queue 边界 | 仍在 pending queue 的输入没有 timeline row/anchor，不进入导航；消费并投影为可见 real user row 后才进入 |
-| 完整目录 | 2026-07-24 用户确认：目录不能只覆盖当前 tail window；必须补齐当前有效分支的全部 rows，直到 `window[0].rowId === firstRowId` |
-| 虚拟化 | 完整目录只挂载 rail viewport 与 overscan 内的按钮；`data-item-count` 表示全量 query 数，DOM button 数不再等于目录总数 |
-| 多端边界 | desktop continuous 与 web remote replayable 共用既有 `rows/range` 只读 query；不增加跨端 FIFO、snapshot 字段或恢复状态；`conversation < 864px` 时不发请求，宽屏 tail 不足两个 query 时向前探测 |
+| 完整目录 | 2026-07-24 用户确认目录不能只覆盖当前 tail window；2026-11-13 裁决实现改为服务端轻量 query 目录分页，正文 rows 只在跳转旧条目时按需补拉 |
+| 虚拟化 | 完整目录只挂载 rail viewport 与 overscan 内的按钮；`data-item-count` 表示全量 query 数，DOM button 数不再等于目录总数；`data-window-row-count` 不因目录 hydration 自动增长 |
+| 多端边界 | desktop continuous 与 web remote replayable 共用 `v4/conversation/queries` 只读 query；不增加跨端 FIFO、snapshot 字段或恢复状态；`conversation < 864px` 时不发请求；旧 CLI method-not-found 时目录诚实降级为已加载窗口，不回退全量补拉 |
 | Composer 命中 | rail 位于 sticky composer 的左侧透明留白时仍必须 hover/click；composer dock 透明外壳不得截获事件，实际 composer 内容保持可交互 |
 
 ## Scope
 
 - navigator 不通过 JavaScript 测量 pane 与主输入列的几何距离；宽窄 pane、分屏和手机
   `/remote` 的最终显隐与占位由 CSS container query 负责。renderer 只观察具名 conversation
-  容器是否达到同一个 `864px` 数据加载阈值，避免不可见 rail 触发高成本完整历史补拉。
+  容器是否达到同一个 `864px` 数据加载阈值，避免不可见 rail 触发轻量目录分页。
 - 仅当存在 2 个及以上可导航 query 且具名 `conversation` 容器宽度达到 `864px` 时显示；低于 `864px` 时由 CSS 隐藏。复用同一阈值资格暂停目录计算，不维护逐像素宽度状态。
 - 每根横条表示一条可见 `UserInputRow(origin=realUser)`；同一
   `ConversationTurnRenderUnit` 内的多个 steer/guide query 分别建项。
 - marker-only 的 `timelineOnly` unit v1 不进入 minimap，避免 compact/fork/goal boundary
   被误读成用户和助手的一轮对话。
-- navigator 达到 `864px` 且 snapshot 仍有更早 rows 时，在后台探测完整有效分支；完整历史达到 2 条可导航 query 才一次性合并并显示目录，只有一条时扫描到起点但不常驻探测 rows。补齐期间目录标记
-  `aria-busy=true`；成功后必须显示全量 query，失败时保留当前窗口并等待新的 cursor/显式重试机会，
-  不进入 conversation error 状态。
+- navigator 达到 `864px` 且 snapshot 仍有更早 rows 时，在后台通过 `v4/conversation/queries`
+  探测完整有效分支的 query 目录；目录达到 2 条可导航 query 即显示，只有一条时也可完成探测并进入
+  `not-enough-queries` 终态。补齐期间目录标记 `aria-busy=true`；成功后必须显示全量 query，失败时保留
+  当前窗口并等待新的 revision/显式重试机会，不进入 conversation error 状态。
 
 ## Data Boundary
 
-Navigator 仍只消费 `buildConversationTurnRenderUnits(rows)`，但目录会先让同一个
-`ConversationProjectionStore` 通过既有 `rows/range` 补齐 rows：
+Navigator 的完整目录来自 CLI `ProductProjection` 的轻量只读派生；renderer 只保存目录展示态：
 
-- `visibleUserInputs` 中 `origin=realUser` 的每一行提供一个导航项和问题摘要。
-- `assistantTextRows` 沿用旧逻辑提供所属 product turn 的助手回复摘要；同一 turn
-  内的多个 query item 可以共享这段 assistant 摘要。
-- `rowId` 是 query 的精确 DOM 锚点；`unitIndex` 只负责先挂载所属虚拟 turn。
-- `isRunning` 只强调 running unit 的最后一条 real user query。
-- tool、reasoning、subagent、compact marker 的正文不进入 hover 摘要。
-- 全量补拉使用 `rowsRangeMaxLimit` 分页，在全部请求成功后一次性前插，避免每页触发一次
-  `buildConversationTurnRenderUnits` 和 virtualizer 重建。
-- 补拉期间若 `logEpoch` 变化、首行 cursor 被 snapshot/resync 改写，整批结果丢弃，禁止复活旧分支 rows。
-- 完整目录探测返回 `hydrated / not-enough-queries / retryable-failure / stale` 判别结果；
-  `hydrated` 与 `not-enough-queries` 按 `sessionId + logEpoch` 记为终态，普通 `loadOlder`
-  改变 renderer 首行不得触发重复扫描。暂时失败最多按 `250ms / 1000ms` 退避重试两次；
-  stale 不写完成标记，等待新 snapshot/epoch 重新触发。
+- 服务端目录项包含 `rowId / turnId / entityId / userPreview / assistantPreview / assistantPreviewKind / isRunning`，
+  不包含 tool、reasoning、subagent、compact marker 正文，也不把 rows 塞进 renderer projection。
+- 本地已加载 tail 仍由 `buildConversationTurnRenderUnits(rows)` 派生目录项；同 `rowId` 时本地优先，
+  以保留流式 running 状态与本地化 fallback 文案。
+- `rowId` 是 query 的精确 DOM 锚点；服务端项没有 `unitIndex`，点击时先 `loadOlderUntil(rowId)`，
+  再定位所属虚拟 turn。未加载项按 rowId 排在已加载项之前，active 的 unit 索引查找必须忽略
+  这些无 `unitIndex` 的项，不能破坏二分的有序假设。
+- `isRunning` 只强调 running product turn 的最后一条 real user query。
+- 目录分页使用 `rowsRangeMaxLimit` 作为页上限，`beforeRowId` 与 `rows/range` 同义；最后一页同样
+  遵守页上限，剩余 query 由 `hasMore` 与游标续页。同一 turn 被页边界截断时，较早 query 的
+  assistant 预览仍从完整 turn 的 assistant 正文派生，不退化为空。不返回
+  `totalQueries`，避免每页重新全量计数。
+- 分页期间若 `logEpoch` 或 `directoryRevision` 变化，整批目录丢弃；snapshot 替换清空目录，
+  realUser query 增删与 `row.removed` 递增 revision 后重新探测。
+- 完整目录探测返回 `hydrated / not-enough-queries / unsupported / retryable-failure / stale` 判别结果；
+  `hydrated`、`not-enough-queries`、`unsupported` 按 `sessionId + logEpoch + directoryRevision` 记为终态。
+  暂时失败最多按 `250ms / 1000ms` 退避重试两次，耗尽后登记 `retry-exhausted`；stale 不写完成标记。
+- 旧 CLI 返回 method-not-found 时进入 `unsupported` 终态，目录只覆盖已加载窗口；禁止回退到
+  `rows/range` 全量补拉。
 
 ```text
 desktop-continuous stream
   -> tail projection
-  -> rows/range full hydration
+  -> v4/conversation/queries directory hydration
   -> navigator items
 
 web-remote-replayable restore
   -> tail projection
-  -> same rows/range full hydration when wide navigator is visible
+  -> same lightweight directory hydration when wide navigator is visible
   -> navigator items
 ```
 
@@ -87,9 +94,9 @@ web-remote-replayable restore
 
 - Hover 或键盘 focus 横条时显示 `HoverCard`：第一段是该条用户 query，第二段是
   所属 product turn 的 assistant text 前几段；没有终态正文时显示运行中/空结果文案。
-- 点击时若 row 已挂载，直接按 `rowId` 对齐；未挂载则先调用
-  `virtualizer.scrollToIndex(unitIndex, { align: "start" })`，再在后续 animation frame
-  按 `rowId` 精确对齐，不回退到同 turn 的第一条 query。
+- 点击时若 row 已挂载，直接按 `rowId` 对齐；服务端目录项尚未加载 rows 时，先调用
+  `loadOlderUntil(rowId)` 连续补拉到目标，再 `virtualizer.scrollToIndex(unitIndex, { align: "start" })`，
+  最后在后续 animation frame 按 `rowId` 精确对齐，不回退到同 turn 的第一条 query。
 - 若用户开启 `prefers-reduced-motion: reduce`，点击使用 instant/auto 滚动；否则使用 smooth。
 - 当前 viewport 顶部附近正在显示的 real user row 推导为 active query。默认状态下 active 只通过
   color/opacity 表达，不改变横条宽度或高度。
@@ -123,7 +130,7 @@ web-remote-replayable restore
 - rail 固定在 timeline viewport 内左侧，使用紧凑等距纵向 stack；条间距不随消息高度变化。
 - rail 在 `conversation < 864px` 时使用 `visibility + opacity + translateX` 隐藏，达到 `864px` 后淡入并滑回原位；过渡必须支持 `prefers-reduced-motion`。隐藏时 Markdown 表格不得继续预留 rail 的 `48px` 左侧占位。
 - rail 的完整交互区宽度保持 `48px`；React 不测量主输入列和 timeline 的几何距离，也不通过
-  `ResizeObserver` 决定 rail 外壳挂载；ResizeObserver 只提供完整历史补拉与目录观察的容器资格，不参与布局。
+  `ResizeObserver` 决定 rail 外壳挂载；ResizeObserver 只提供轻量目录分页与目录观察的容器资格，不参与布局。
 - rail 的 stack 在所属 `ConversationTimeline` 容器内垂直居中。分屏时每个 pane 使用自己的
   timeline 容器中线，不按整个 app/window 高度定位。
 - 相邻按钮 hit area 必须连续贴合，不使用 CSS `gap` 留空隙，避免鼠标纵向滑动经过空白区域时
@@ -191,9 +198,10 @@ turn-navigator/scroll 保留功能回归。耗时用 production React 的独立 
 
 覆盖项登记在 `docs/conversation-session-case-catalog.md` 的 `TN` 分组和
 `docs/testing/conversation-session-e2e-coverage-matrix.md`。浏览器验收覆盖逐 query item 派生、同 turn
-多 query 的 active row 推导、全量分页单次合并和 hover-only 山峰视觉等级；E2E 覆盖宽 pane
+多 query 的 active row 推导、服务端目录 + 本地 tail 合并和 hover-only 山峰视觉等级；E2E 覆盖宽 pane
 显示、窗口收窄后的窄 pane 隐藏与恢复、紧凑左贴连续 hit area、composer 纵向覆盖区命中、
-query + assistant tooltip、目录虚拟化和点击精确跳转。
+query + assistant tooltip、目录虚拟化、点击未加载旧 query 后按需补拉与精确跳转，以及目录 hydration
+期间 `data-window-row-count` 保持尾窗口径。
 
 ## Impact Brief 与剪枝
 
@@ -203,9 +211,9 @@ query + assistant tooltip、目录虚拟化和点击精确跳转。
 | UI surface | `ConversationTimeline -> ConversationTurnNavigator` |
 | 展示 owner | renderer `ConversationProjectionStore` 与 React virtualizer |
 | 权威 owner | CLI `ProductProjection`；目录不成为新事实源 |
-| commit/effect | 无写 command；只调用现有 `v4/conversation/rowsRange` |
+| commit/effect | 无写 command；目录调用 `v4/conversation/queries`，跳转旧条目才调用 `v4/conversation/rowsRange` |
 | 必查下游 | scroll prepend 锚定、conversation find、active query、sticky composer 命中、宽窄 pane gate |
-| 隔离不变量 | 不扩大 wire snapshot；不修改 queue/owner/lease；不混淆 continuous/replayable；窄 pane 零请求；tail 的局部 query 数不作为完整分支计数 |
+| 隔离不变量 | 不扩大 wire snapshot；不修改 queue/owner/lease；不混淆 continuous/replayable；窄 pane 零请求；tail 的局部 query 数不作为完整分支计数；目录 hydration 不改变 `snapshot.rows.window` |
 
 剪枝结论：completed 大会话作为全量与虚拟化代表；running 只增加 epoch/cursor 并发 guard，不与
 model/provider、queue、goal、compact、theme、locale 做笛卡尔积。desktop wide 代表 pointer hit-test；

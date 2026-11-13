@@ -136,6 +136,10 @@
         // v4 权威投影沿用上游存量大文件；队列身份修复不为行数机械拆分投影器。
         "**/apps/zcode-cli/packages/bootstrap/src/zcode-protocol-v4/product-projection.ts",
         "**/apps/zcode-cli/packages/bootstrap/src/zcode-protocol-v4/v4-gateway.ts",
+        // historyFirst durable artifact 复用与问题目录轻量分页都属于同一 opening 的归约；
+        // 新增逻辑与既有 merge/发布器共享私有事实函数，不为行数机械拆分。
+        "**/apps/zcode-cli/packages/bootstrap/src/zcode-protocol-v4/cold-event-merge.ts",
+        "**/apps/zcode-cli/packages/bootstrap/src/zcode-protocol-v4/conversation-topic-publisher.ts",
         // 后台 Agent 终态改为 originMeta 结构化下发，只补充透传与冷恢复回读；不为行数机械拆分投影。
         "**/apps/zcode-cli/packages/bootstrap/src/zcode-protocol-v4/product-projection.ts",
         "**/apps/zcode-cli/packages/bootstrap/src/zcode-protocol-v4/transcript-hydration.ts",

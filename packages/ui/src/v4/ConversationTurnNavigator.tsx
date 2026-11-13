@@ -10,25 +10,23 @@ import { cn } from "@/components/lib/utils.js";
 import { HoverCard, HoverCardContent, HoverCardTrigger } from "@/components/ui/hover-card.js";
 import { useZCodeIntl } from "@/i18n/IntlProvider.js";
 import {
-  createConversationTurnNavigatorItemsSelector,
   type ConversationTurnNavigatorItem,
   resolveConversationTurnNavigatorActiveUnitIndex,
   resolveConversationTurnNavigatorBarVisualState,
   resolveConversationTurnNavigatorVisualFocusItemIndex,
   type ConversationTurnNavigatorVirtualItem,
 } from "@/v4/conversationTurnNavigatorHelpers.js";
-import type { ConversationTurnRenderUnitsPartition } from "@/v4/conversationTurnRenderUnits.js";
 
 export interface ConversationTurnNavigatorProps {
   enabled?: boolean;
-  /** 按「历史 + 尾轮」分区的 render unit；历史段引用在流式帧之间不变。 */
-  renderUnits: ConversationTurnRenderUnitsPartition;
+  /** 已合并的服务端目录页与本地已加载 tail 派生项。 */
+  items: readonly ConversationTurnNavigatorItem[];
   scrollOffsetPx: number;
   viewportHeightPx: number;
   virtualItems: readonly ConversationTurnNavigatorVirtualItem[];
   activeQueryRowId?: number;
   isHydratingDirectory?: boolean;
-  onJumpToQuery: (target: { unitIndex: number; rowId: number }, behavior: ScrollBehavior) => void;
+  onJumpToQuery: (target: { unitIndex?: number; rowId: number }, behavior: ScrollBehavior) => void;
 }
 
 function usePrefersReducedMotion() {
@@ -50,7 +48,7 @@ function usePrefersReducedMotion() {
 
 function ConversationTurnNavigatorImpl({
   enabled = true,
-  renderUnits,
+  items,
   scrollOffsetPx,
   viewportHeightPx,
   virtualItems,
@@ -61,22 +59,6 @@ function ConversationTurnNavigatorImpl({
   const { intl } = useZCodeIntl();
   const prefersReducedMotion = usePrefersReducedMotion();
   const [interactionItemIndex, setInteractionItemIndex] = useState<number | undefined>(undefined);
-  const selectItems = useMemo(() => createConversationTurnNavigatorItemsSelector(), []);
-  const items = useMemo(
-    () =>
-      selectItems(renderUnits, {
-        assistantEmptyPreview: intl.formatMessage({
-          id: "chat.turnNavigator.emptyAssistant",
-        }),
-        assistantRunningPreview: intl.formatMessage({
-          id: "chat.turnNavigator.runningAssistant",
-        }),
-        userFallbackPreview: intl.formatMessage({
-          id: "chat.turnNavigator.userFallback",
-        }),
-      }),
-    [intl, renderUnits, selectItems],
-  );
 
   const activeUnitIndex = useMemo(
     () =>
@@ -93,7 +75,7 @@ function ConversationTurnNavigatorImpl({
     const firstByUnitIndex = new Map<number, number>();
     items.forEach((item, index) => {
       byRowId.set(item.rowId, index);
-      if (!firstByUnitIndex.has(item.unitIndex)) {
+      if (item.unitIndex !== undefined && !firstByUnitIndex.has(item.unitIndex)) {
         firstByUnitIndex.set(item.unitIndex, index);
       }
     });
@@ -307,7 +289,7 @@ export const ConversationTurnNavigator = memo(ConversationTurnNavigatorImpl, (pr
   // CSS 隐藏时保留外壳的过渡，但不传播正文更新；恢复 enabled 会读取完整的最新 props。
   if (next.enabled === false) return true;
   return (
-    previous.renderUnits === next.renderUnits &&
+    previous.items === next.items &&
     previous.isHydratingDirectory === next.isHydratingDirectory &&
     previous.onJumpToQuery === next.onJumpToQuery &&
     previous.activeQueryRowId === next.activeQueryRowId &&

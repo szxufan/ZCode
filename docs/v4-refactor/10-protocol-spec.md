@@ -1536,12 +1536,42 @@ rows/range {
 } -> {
   rows: ConversationRow[];       // rowId 升序
   atSeq: number;                 // 服务端取值时的水位
+  atRevision: number;
   atLogEpoch: string;
   hasMore: boolean;              // beforeRowId 方向是否还有更早的行
 }
 ```
 
-合并规范（客户端）：按 rowId 键控插入；与订阅流的 `row.upserted/removed` 天然一致（§4.3）；`atLogEpoch` 不等于 store 当前 epoch 的结果**整体丢弃**（跨 CLI 重启的陈旧读）。
+合并规范（客户端）：按 rowId 键控插入；与订阅流的 `row.upserted/removed` 天然一致（§4.3）；`atLogEpoch` 不等于 store 当前 epoch 的结果**整体丢弃**（跨 CLI 重启的陈旧读）。服务端按 rowId 升序全序二分定位游标后切片，不允许每页复制/扫描完整窗口。
+
+### 7.1.1 conversation/queries（问题目录轻量分页）
+
+```ts
+conversation/queries {
+  sessionId: string;
+  beforeRowId?: number;          // 取 rowId < beforeRowId 的 query；缺省 = 从当前尾部向前
+  limit?: number;                // 1..200，缺省 100
+} -> {
+  queries: Array<{
+    rowId: number;
+    turnId: string;
+    entityId?: string;
+    userPreview: string;         // ≤220 chars / ≤2 paragraphs
+    assistantPreview: string;    // ≤220 chars / ≤2 paragraphs
+    assistantPreviewKind: "empty" | "running" | "text";
+    isRunning: boolean;
+  }>;
+  atSeq: number;
+  atRevision: number;
+  atLogEpoch: string;
+  hasMore: boolean;
+}
+```
+
+- 只读、无状态、超时重发安全；数据源是当前有效 projection，不建立订阅、不扩大 wire snapshot。
+- 目录项只覆盖 `UserInputRow(origin=realUser)`；`isRunning` 只属于 running product turn 的最后一条 query。
+- 不返回 `totalQueries`：每页全量计数会重新引入 O(N²)；客户端连续游标分页，不足两条且无更多页时判定 `not-enough-queries`。
+- 旧 CLI 返回 method-not-found 属正常偏斜；客户端目录降级为已加载窗口，不得回退 `rows/range` 全量补拉。
 
 ### 7.2 toolOutput/get、attachment/read 与 artifactd
 

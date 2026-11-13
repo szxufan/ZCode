@@ -14,6 +14,7 @@ const CLOSED_STATE: ConversationStoreState = {
   planDirectoryRevision: 0,
   plansLoading: false,
   turnNavigatorDirectoryRevision: 0,
+  turnNavigatorDirectory: null,
 };
 
 /** 订阅 per-session projection store（useSyncExternalStore，row 级 selector 在组件内再做）。 */

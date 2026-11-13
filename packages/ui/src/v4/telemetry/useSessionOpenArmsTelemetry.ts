@@ -1,15 +1,20 @@
-import { useLayoutEffect, useRef } from "react";
+import { useEffect, useLayoutEffect, useRef } from "react";
 import { createSessionTraceId } from "@zcode/shared";
 import type { ConversationOpenTiming, ConversationSnapshot } from "@zcode/shared/zcode-protocol-v4";
 import {
+  reportSessionDirectorySettled,
   reportSessionOpenResult,
   reportSessionOpenStart,
+  type SessionOpenDirectoryStatus,
   type SessionOpenIdentity,
   type SessionOpenKind,
   type SessionOpenArmsReporter,
   type SessionOpenTrigger,
 } from "@/lib/sessionOpenArmsTelemetry.js";
-import type { SessionOpenRendererTiming } from "@/v4/conversationProjectionStore.js";
+import type {
+  ConversationTurnNavigatorDirectoryState,
+  SessionOpenRendererTiming,
+} from "@/v4/conversationProjectionStore.js";
 
 const SESSION_OPEN_TIMEOUT_MS = 30_000;
 
@@ -83,6 +88,7 @@ function finishSessionOpen(
       cliRequestMs: openTiming?.cliRequestMs,
       cliBootstrapMs: openTiming?.cliBootstrapMs,
       cliSessionRestoreMs: openTiming?.cliSessionRestoreMs,
+      historyReadyMs: openTiming?.historyReadyMs,
       initialFrameEncodeMs: openTiming?.initialFrameEncodeMs,
       initialFrameTransportMs: rendererTiming?.initialFrameTransportMs,
       rendererSnapshotApplyMs: rendererTiming?.rendererSnapshotApplyMs,
@@ -94,6 +100,8 @@ function finishSessionOpen(
       cliProcessState: openTiming?.cliProcessState,
       sessionRuntimeState: openTiming?.sessionRuntimeState,
       snapshotRowCount: openTiming?.snapshotRowCount ?? snapshot?.rows.window.length,
+      persistedMessageCount: openTiming?.persistedMessageCount,
+      snapshotBytes: openTiming?.snapshotBytes,
     },
     options.reporter,
   );
@@ -112,6 +120,11 @@ export interface UseSessionOpenArmsTelemetryParams {
   enabled?: boolean;
   readOnly?: boolean;
   reporter?: SessionOpenArmsReporter | null;
+  /** 服务端轻量问题目录当前展示态；terminal 时上报 settled。 */
+  directoryStatus?: ConversationTurnNavigatorDirectoryState["status"];
+  directoryRevision?: number;
+  /** 无更早历史时目录无需补拉，按 ineligible 上报一次。 */
+  directoryEligible?: boolean;
 }
 
 /**
@@ -131,8 +144,12 @@ export function useSessionOpenArmsTelemetry({
   enabled = true,
   readOnly = false,
   reporter,
+  directoryStatus,
+  directoryRevision = 0,
+  directoryEligible,
 }: UseSessionOpenArmsTelemetryParams): void {
   const runtimeRef = useRef<SessionOpenRuntime | null>(null);
+  const reportedDirectoryKeyRef = useRef<string | null>(null);
   const latestTimingRef = useRef<{
     openTiming?: ConversationOpenTiming;
     rendererTiming?: SessionOpenRendererTiming;
@@ -198,6 +215,34 @@ export function useSessionOpenArmsTelemetry({
     });
     return cancelPaint;
   }, [openTiming, rendererTiming, reporter, sessionId, snapshot, status]);
+
+  useEffect(() => {
+    const runtime = runtimeRef.current;
+    if (!runtime || !sessionId || snapshot?.sessionId !== sessionId) return;
+    const terminalStatus =
+      directoryStatus === "hydrated" ||
+      directoryStatus === "not-enough-queries" ||
+      directoryStatus === "unsupported" ||
+      directoryStatus === "retry-exhausted"
+        ? directoryStatus
+        : directoryEligible === false
+          ? ("ineligible" satisfies SessionOpenDirectoryStatus)
+          : undefined;
+    if (terminalStatus === undefined) return;
+    const reportedKey = `${sessionId}:${directoryRevision}:${terminalStatus}`;
+    if (reportedDirectoryKeyRef.current === reportedKey) return;
+    reportedDirectoryKeyRef.current = reportedKey;
+    reportSessionDirectorySettled(
+      runtime.identity,
+      {
+        directoryStatus: terminalStatus,
+        settledMs: Math.max(0, now() - runtime.startedAt),
+        loadedRowCount: snapshot.rows.window.length,
+        totalRowCount: snapshot.rows.totalCount,
+      },
+      reporter,
+    );
+  }, [directoryEligible, directoryRevision, directoryStatus, reporter, sessionId, snapshot]);
 
   useLayoutEffect(() => {
     const runtime = runtimeRef.current;

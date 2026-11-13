@@ -714,6 +714,9 @@ export function SessionPane({
     enabled: shouldMeasureExistingSessionOpen,
     readOnly,
     reporter: platform,
+    directoryStatus: state.turnNavigatorDirectory?.status,
+    directoryRevision: state.turnNavigatorDirectoryRevision,
+    directoryEligible: snapshot ? hasOlderRows(snapshot) : undefined,
   });
   useEffect(() => {
     const newlyCreatedSessionId = newlyCreatedSessionIdRef.current;
@@ -4214,14 +4217,23 @@ export function SessionPane({
     return lease?.store.loadOlder();
   }, [lease]);
 
-  const handleLoadAllOlder = useCallback(() => {
+  const handleHydrateTurnNavigatorDirectory = useCallback(() => {
     return lease
-      ? lease.store.loadAllOlder()
+      ? lease.store.hydrateTurnNavigatorDirectory()
       : Promise.resolve({
           status: "stale" as const,
           logEpoch: snapshot?.logEpoch ?? "unknown",
         });
   }, [lease, snapshot?.logEpoch]);
+
+  const handleMarkTurnNavigatorDirectoryExhausted = useCallback(() => {
+    lease?.store.markTurnNavigatorDirectoryExhausted();
+  }, [lease]);
+
+  const handleLoadOlderUntil = useCallback(
+    (rowId: number) => (lease ? lease.store.loadOlderUntil(rowId) : Promise.resolve(false)),
+    [lease],
+  );
 
   useEffect(() => {
     if (
@@ -5160,7 +5172,14 @@ export function SessionPane({
                     }
                     loadingOlder={timelineSnapshot ? state.loadingOlder : false}
                     onLoadOlder={handleLoadOlder}
-                    onLoadAllOlder={state.editPresentation ? undefined : handleLoadAllOlder}
+                    onHydrateTurnNavigatorDirectory={
+                      state.editPresentation ? undefined : handleHydrateTurnNavigatorDirectory
+                    }
+                    onMarkTurnNavigatorDirectoryExhausted={
+                      handleMarkTurnNavigatorDirectoryExhausted
+                    }
+                    onLoadOlderUntil={handleLoadOlderUntil}
+                    turnNavigatorDirectory={state.turnNavigatorDirectory}
                     turnNavigatorDirectoryRevision={state.turnNavigatorDirectoryRevision}
                     bottomDock={conversationBottomDock}
                     emptyState={

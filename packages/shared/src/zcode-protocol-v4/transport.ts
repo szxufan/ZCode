@@ -162,6 +162,10 @@ export const conversationOpenTimingSchema = z
     cliProcessState: z.enum(["spawned", "reused"]).optional(),
     sessionRuntimeState: z.enum(["cold", "warm"]).optional(),
     snapshotRowCount: openTimingCountSchema,
+    /** 本次 cold/historyFirst opening 物化过的持久 message 数；仅计数，不含正文。 */
+    persistedMessageCount: openTimingCountSchema,
+    /** wire snapshot logical frame 字节数（tail window 口径）。 */
+    snapshotBytes: openTimingCountSchema,
   })
   .strict();
 export type ConversationOpenTiming = z.infer<typeof conversationOpenTimingSchema>;
@@ -356,6 +360,8 @@ export const V4_METHODS = {
   conversationUnsubscribe: "v4/conversation/unsubscribe",
   // 行分页 query（rows/range）：只读、无状态、超时重发安全。
   conversationRowsRange: "v4/conversation/rowsRange",
+  // 问题目录轻量分页：只返回 realUser query 元数据与截断预览，不搬运正文 rows。
+  conversationQueries: "v4/conversation/queries",
   // 手机输入预测（input-prediction.ts）：只读查询；旧 CLI 不认识时手机静默无 hint。
   conversationInputPrediction: "v4/conversation/inputPrediction",
   // 当前有效分支的终态 ExitPlanMode 目录；只读、无状态、超时重发安全。
@@ -580,6 +586,44 @@ export const v4ConversationRowsRangeResultSchema = z.object({
   hasMore: z.boolean(),
 });
 export type V4ConversationRowsRangeResult = z.infer<typeof v4ConversationRowsRangeResultSchema>;
+
+// ── conversation query directory ──
+// 问题导航 rail 的轻量目录页。事实来自 CLI 完整有效 projection，但 wire 只携带
+// realUser query 的元数据与截断预览；宽屏自动补目录不得再把全部正文 rows 拉进 renderer。
+export const v4ConversationQueryDirectoryItemSchema = z
+  .object({
+    rowId: z.number().int().nonnegative(),
+    turnId: z.string().min(1),
+    entityId: z.string().min(1).optional(),
+    userPreview: z.string().max(512),
+    assistantPreview: z.string().max(512),
+    assistantPreviewKind: z.enum(["empty", "running", "text"]),
+    isRunning: z.boolean(),
+  })
+  .strict();
+export type V4ConversationQueryDirectoryItem = z.infer<
+  typeof v4ConversationQueryDirectoryItemSchema
+>;
+
+export const v4ConversationQueriesParamsSchema = z.object({
+  workspace: v4ColdResumeWorkspaceSchema,
+  sessionId: z.string().min(1),
+  // 与 rows/range 同义：取 rowId 严格小于该值的最后一页 query 元数据。
+  beforeRowId: z.number().int().nonnegative().optional(),
+  limit: z.number().int().min(1).max(PROTOCOL_V4_LIMITS.rowsRangeMaxLimit).optional(),
+});
+export type V4ConversationQueriesParams = z.infer<typeof v4ConversationQueriesParamsSchema>;
+
+export const v4ConversationQueriesResultSchema = z.object({
+  // rowId 升序的一页；连续页按 beforeRowId 游标拼接。
+  queries: z.array(v4ConversationQueryDirectoryItemSchema),
+  atSeq: z.number().int().nonnegative(),
+  atRevision: z.number().int().nonnegative(),
+  atLogEpoch: z.string().min(1),
+  // beforeRowId 方向是否还有更早的可导航 query。
+  hasMore: z.boolean(),
+});
+export type V4ConversationQueriesResult = z.infer<typeof v4ConversationQueriesResultSchema>;
 
 // ── conversation plans directory ──
 // 目录来自 CLI 完整有效 projection，不能用 renderer 的有界 tail window 推导。

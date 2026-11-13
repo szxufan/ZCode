@@ -94,12 +94,13 @@
 
 - 已完成 markdown 消息固定走 `Streamdown` static 模式；只有真实流式动画进入 streaming/block 路径，避免虚拟滚动和历史懒渲染反复重挂载完成态消息时触发 Streamdown 内部更新循环。
 - `DiffViewer`、edit inline diff、`ToolLayout`、`ToolCallBlock`、`AssistantMessage`、`ChatMessage` 和 turn group 边界使用 `memo`，减少历史消息在父组件更新时的重复 commit。
+- 行高测量缓存是 renderer 本地共享 LRU（上限 4000 条），key 为 `sessionKey + turnId + 布局 scope`。切会话不再清空缓存，A→B→A 快速切换复用真实测量；内容宽度、summary 面板布局或紧凑远控形态变化通过 scope 隔离，仍由 ResizeObserver 收敛真实高度。
 - turn group 内传给单条消息的 retry、文件切换、feedback、fork 回调通过 `useCallback` 稳定，避免 memo 被 map 里的 inline function 抵消。
 - diff 只稳定 options 和 viewer 输入，不缓存实际 DOM；主题、字号、换行和行号设置变化时仍会正常重渲染。
 
 ## 每帧派生成本
 
-流式 delta 通常只改变最后一轮，但 `rows` 每帧都是新引用。虚拟化只限制 DOM 数量；renderer 在 React commit 之前仍要从完整 `rows` 派生 render unit 等数据。如果每个消费方都靠逐行比较来确认“历史没变”，每帧成本就会随历史长度线性增长。宽屏问题目录会补齐完整历史（见 `docs/ui/conversation-turn-navigator.md`），这在宽屏下尤其明显。目标是流式帧的派生成本与历史长度无关。
+流式 delta 通常只改变最后一轮，但 `rows` 每帧都是新引用。虚拟化只限制 DOM 数量；renderer 在 React commit 之前仍要从当前 `rows` 派生 render unit 等数据。如果每个消费方都靠逐行比较来确认“历史没变”，每帧成本就会随已加载历史长度线性增长。宽屏问题目录自 2026-11-13 起不再自动补齐完整正文 rows（见 `docs/ui/conversation-turn-navigator.md`），只有用户显式跳转旧 query 时才按需前插到目标。目标是流式帧的派生成本与历史长度无关。
 
 ### 冻结历史 + 尾轮分区
 
@@ -127,7 +128,7 @@ getConversationRowsPartition(rows) = { history, tail }
 - render unit：历史段 unit 按 history 引用缓存。只有历史中存在无 header 的轮次、仍在运行的轮次或可固定的插件卡片时，缓存键才额外包含 session phase、时钟或插件固定裁决。尾轮每帧 materialize。合并时有三条跨轮规则：尾轮 unit 被过滤掉时，历史末项按最后一轮重新归一化，结果按 session phase 缓存，history 引用保持不变；highspeed footer 只在“含卡片的历史 unit + 尾轮 unit”这个子序列上收口，结果与全量收口相同；最终 unit 仍按引用复用。
 - 最后一轮始终作为普通文档流的 live tail 渲染，运行、停止、完成和失败不会改变其父容器；只有新一轮出现时，旧轮才进入虚拟历史。运行时虚拟列表直接使用历史 unit 数组，引用在流式帧之间不变。
 - 插件卡片派生只依赖插件 UI 行和轮次顺序：历史不变、尾轮的轮次序列和插件 UI 行引用都不变时，复用上一份结果。
-- 问题目录和对话查找：历史段的条目与命中按 history 引用缓存。尾轮的目录条目每帧重建；查找命中与修改前一样，只缓存不在运行的 unit。未查找时返回固定的空索引并清空命中缓存，不留着上一次查询的 unit。目录条目的值只在尾轮预览变化时更新，预览最多 220 字，超过后不再变化。目录成员（realUser query rowId）同样按分区收集：历史段引用不变且尾轮成员不变时返回同一个集合对象，问题目录的锚点登记按这个对象身份失效。
+- 问题目录和对话查找：本地条目按 history 引用缓存，服务端轻量目录页作为独立展示态合并；同 rowId 时本地 tail 派生优先。尾轮条目每帧重建；查找命中与修改前一样，只缓存不在运行的 unit。未查找时返回固定的空索引并清空命中缓存，不留着上一次查询的 unit。本地与服务端预览都最多 220 字，超过后不再变化。目录成员（realUser query rowId）同样按分区收集：历史段引用不变且尾轮成员不变时返回同一个集合对象，问题目录的锚点登记按这个对象身份失效。
 - bot 话题准备消息：没有准备中的材料时结果必为空，直接跳过；有材料时仍按整窗计算，只发生在话题准备期间。材料挂在历史末项上时（尾轮为空），同一份材料复用同一个 history 数组。
 - 按行扫描的派生用 `memoizeByRows(fn)` 按行数组缓存：分别对 `partition.history` 与 `partition.tail` 调用，history 在流式帧之间引用不变，所以只在历史变化时重算。它只收拢 WeakMap 的读取、计算、写入样板；两段结果怎么合并（求或、取最新、排序后二分、建索引）由各消费方自己写。当前用户：插件引用判定、workflow 联接行、MCP 不可用提示（每个工具只取最新一条）、highspeed 到期边界（升序后二分）、highspeed 统计索引（按 sourceCommandId 取首次出现）。它只用于去重，不能阻止新增的派生直接遍历 `rows.window` 而退回 O(N)；新增每帧执行的派生时，需要在评审中检查这一点。
 - 只取决于单行内容的判定按行对象缓存，例如 `selectWorkflowJoinRows` 的工作流工具名识别：尾段每帧重算时不必对未变的工具行重复做正则归一。协议行不可变，内容变化一定产生新对象，所以缓存不需要失效逻辑。

@@ -322,6 +322,7 @@ import type {
   ZCodeAgentConversationFileRewindPreviewParams,
   ZCodeAgentConversationRowsRangeParams,
   ZCodeAgentConversationPlansParams,
+  ZCodeAgentConversationQueriesParams,
   ZCodeAgentConversationInputPredictionParams,
   ZCodeAgentConversationWorkflowRunEventsParams,
   ZCodeAgentConversationWorkflowRunArtifactDataParams,
@@ -378,6 +379,7 @@ import {
   v4ConversationFileRewindPreviewResultSchema,
   v4ConversationRowsRangeResultSchema,
   v4ConversationPlansResultSchema,
+  v4ConversationQueriesResultSchema,
   v4ConversationInputPredictionResultSchema,
   emptyInputPredictionResult,
   v4ConversationWorkflowRunEventsResultSchema,
@@ -1974,8 +1976,7 @@ export function createZCodeAgentService(
               zcodeProtocolMethods.workspaceUpdateAgentPromptPreferences,
               {
                 workspace: buildWorkspaceRef(params.workspace),
-                agentSystemPromptOverride:
-                  params.preferences.agentSystemPromptOverride ?? null,
+                agentSystemPromptOverride: params.preferences.agentSystemPromptOverride ?? null,
               },
               zcodeWorkspaceUpdateAgentPromptPreferencesResultSchema,
             );
@@ -2096,7 +2097,6 @@ export function createZCodeAgentService(
     conversationTelemetryFactEmitters.set(key, created);
     return created;
   }
-
 
   function getSessionsIndexFrameEmitter(workspace: ZCodeAgentWorkspaceTarget) {
     const key = resolveWorkspaceKey(workspace);
@@ -4520,10 +4520,7 @@ export function createZCodeAgentService(
         });
         const snapshot = await client.request(
           zcodeProtocolMethods.sessionResume,
-          buildSessionResumeParams(
-            { ...params, ...dynamicWorkflowFlags },
-            new Set(compatFields),
-          ),
+          buildSessionResumeParams({ ...params, ...dynamicWorkflowFlags }, new Set(compatFields)),
           zcodeSessionStateSnapshotSchema,
         );
         const sessionTraceId = rememberSessionTrace(params, snapshot) ?? cachedTraceId;
@@ -7015,6 +7012,21 @@ export function createZCodeAgentService(
         V4_METHODS.conversationPlans,
         { ...coldResumeWorkspace(params), sessionId: params.sessionId },
         v4ConversationPlansResultSchema,
+      );
+    },
+
+    // 问题目录轻量分页：只读 query 透传，不建立订阅、不搬运正文 rows。
+    async conversationQueriesV4(params: ZCodeAgentConversationQueriesParams) {
+      const client = await getReadOnlyClient(params);
+      return client.request(
+        V4_METHODS.conversationQueries,
+        {
+          ...coldResumeWorkspace(params),
+          sessionId: params.sessionId,
+          ...(params.beforeRowId !== undefined ? { beforeRowId: params.beforeRowId } : {}),
+          ...(params.limit !== undefined ? { limit: params.limit } : {}),
+        },
+        v4ConversationQueriesResultSchema,
       );
     },
 

@@ -4,6 +4,15 @@ import { logger } from "@/logger.js";
 export const SESSION_OPEN_ARMS_GROUP = "ui_perf";
 export const SESSION_OPEN_EVENT_START = "perf_ui_session_open_start";
 export const SESSION_OPEN_EVENT_RESULT = "perf_ui_session_open_result";
+export const SESSION_OPEN_EVENT_DIRECTORY_SETTLED = "perf_ui_session_directory_settled";
+
+export type SessionOpenDirectoryStatus =
+  | "hydrated"
+  | "not-enough-queries"
+  | "unsupported"
+  | "retry-exhausted"
+  | "stale"
+  | "ineligible";
 
 export type SessionOpenKind = "cold" | "warm" | "keep_warm";
 export type SessionOpenTrigger =
@@ -39,6 +48,7 @@ export interface SessionOpenTimingFields {
   cliRequestMs?: number;
   cliBootstrapMs?: number;
   cliSessionRestoreMs?: number;
+  historyReadyMs?: number;
   initialFrameEncodeMs?: number;
   initialFrameTransportMs?: number;
   rendererSnapshotApplyMs?: number;
@@ -61,6 +71,13 @@ export interface SessionOpenResultFields extends SessionOpenTimingFields {
   skillCount?: number;
   mcpServerCount?: number;
   mcpPendingAtInteractive?: boolean;
+}
+
+export interface SessionDirectorySettledFields {
+  directoryStatus: SessionOpenDirectoryStatus;
+  settledMs: number;
+  loadedRowCount: number;
+  totalRowCount: number;
 }
 
 let reporter: SessionOpenArmsReporter | null = null;
@@ -134,6 +151,7 @@ export function buildSessionOpenResultArmsPayload(
     cli_request_ms: roundedNonNegative(identity.cliRequestMs),
     cli_bootstrap_ms: roundedNonNegative(identity.cliBootstrapMs),
     cli_session_restore_ms: roundedNonNegative(identity.cliSessionRestoreMs),
+    history_ready_ms: roundedNonNegative(identity.historyReadyMs),
     initial_frame_encode_ms: roundedNonNegative(identity.initialFrameEncodeMs),
     initial_frame_transport_ms: roundedNonNegative(identity.initialFrameTransportMs),
     renderer_snapshot_apply_ms: roundedNonNegative(identity.rendererSnapshotApplyMs),
@@ -165,9 +183,36 @@ export function reportSessionOpenStart(
   emit(buildSessionOpenStartArmsPayload(identity), targetReporter);
 }
 
+export function buildSessionDirectorySettledArmsPayload(
+  identity: SessionOpenIdentity,
+  fields: SessionDirectorySettledFields,
+): ArmsCustomEventPayload {
+  const properties: Record<string, string | number | boolean | undefined> = {
+    ...identityProperties(identity),
+    directory_status: fields.directoryStatus,
+    settled_ms: roundedNonNegative(fields.settledMs),
+    loaded_row_count: positiveOrZeroInteger(fields.loadedRowCount),
+    total_row_count: positiveOrZeroInteger(fields.totalRowCount),
+  };
+  return {
+    name: SESSION_OPEN_EVENT_DIRECTORY_SETTLED,
+    group: SESSION_OPEN_ARMS_GROUP,
+    value: roundedNonNegative(fields.settledMs) ?? 0,
+    properties,
+  };
+}
+
 export function reportSessionOpenResult(
   identity: SessionOpenIdentity & SessionOpenResultFields,
   targetReporter?: SessionOpenArmsReporter | null,
 ): void {
   emit(buildSessionOpenResultArmsPayload(identity), targetReporter);
+}
+
+export function reportSessionDirectorySettled(
+  identity: SessionOpenIdentity,
+  fields: SessionDirectorySettledFields,
+  targetReporter?: SessionOpenArmsReporter | null,
+): void {
+  emit(buildSessionDirectorySettledArmsPayload(identity, fields), targetReporter);
 }

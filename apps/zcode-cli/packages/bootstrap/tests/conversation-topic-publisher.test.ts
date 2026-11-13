@@ -24,6 +24,7 @@ import {
   PROTOCOL_V4_LIMITS,
   applyConversationDeltas,
   conversationTopicFrameSchema,
+  isNavigableConversationQueryRow,
   utf8JsonByteLength,
 } from "@zcode/shared/zcode-protocol-v4";
 import {
@@ -33,6 +34,7 @@ import {
   PROJECTION_TERMINAL_RESERVE_BYTES,
   ProductProjection,
 } from "../src/zcode-protocol-v4/index.js";
+import { conversationQueryDirectory } from "../src/zcode-protocol-v4/materialization/index.js";
 
 // ── 事件构造 ──
 
@@ -1427,6 +1429,126 @@ describe("rows/range 游标分页（R-06）", () => {
     const wire = frame!.payload.kind === "snapshot" ? frame!.payload.snapshot : null;
     expect(wire).toEqual(authoritativeSnapshot(log.events));
   });
+
+  it("rows/range 二分与旧全量 filter/slice 结果逐行一致（随机窗口差分）", () => {
+    const { publisher, log } = longPublisher();
+    const rows = authoritativeSnapshot(log.events).rows.window;
+    const rowIds = rows.map((row) => row.rowId);
+    const cursors = [
+      undefined,
+      ...Array.from({ length: 30 }, (_, index) => {
+        const candidate = rowIds[Math.floor((index + 1) * (rowIds.length / 31))]!;
+        return candidate + (index % 2 === 0 ? 0 : 1);
+      }),
+    ];
+    for (const beforeRowId of cursors) {
+      for (const limit of [1, 7, 20, 200]) {
+        const page = publisher.getRowsRange({
+          ...(beforeRowId === undefined ? {} : { beforeRowId }),
+          limit,
+        });
+        const eligible =
+          beforeRowId === undefined ? rows : rows.filter((row) => row.rowId < beforeRowId);
+        const expected = eligible.slice(Math.max(0, eligible.length - limit));
+        expect(page.rows.map((row) => row.rowId)).toEqual(expected.map((row) => row.rowId));
+        expect(page.rows).toEqual(expected);
+        expect(page.hasMore).toBe(eligible.length > expected.length);
+      }
+    }
+  });
+
+  it("问题目录轻量分页只返回 realUser query 元数据，游标补齐全集", () => {
+    const { publisher, log } = longPublisher();
+    const snapshot = publisher.getSnapshot();
+    const expectedQueryIds = snapshot.rows.window
+      .filter(isNavigableConversationQueryRow)
+      .map((row) => row.rowId);
+
+    const collected: number[] = [];
+    let beforeRowId: number | undefined;
+    let guard = 0;
+    for (;;) {
+      expect(guard++).toBeLessThan(20);
+      const page = publisher.getQueryDirectory({
+        ...(beforeRowId === undefined ? {} : { beforeRowId }),
+        limit: 3,
+      });
+      expect(page.atLogEpoch).toBe(snapshot.logEpoch);
+      expect(page.atRevision).toBe(snapshot.revision);
+      expect(page.queries.every((item) => !("text" in item))).toBe(true);
+      expect(page.queries.every((item) => item.userPreview.length <= 220)).toBe(true);
+      collected.push(...page.queries.map((item) => item.rowId));
+      const nextBeforeRowId = page.queries[0]?.rowId;
+      if (!page.hasMore) {
+        expect(nextBeforeRowId).toBeDefined();
+        break;
+      }
+      expect(nextBeforeRowId).toBeDefined();
+      expect(nextBeforeRowId!).toBeLessThan(beforeRowId ?? Number.POSITIVE_INFINITY);
+      beforeRowId = nextBeforeRowId;
+    }
+    expect([...collected].sort((left, right) => left - right)).toEqual(expectedQueryIds);
+  });
+
+  /** 同一 turn 两条 query + 尾部 assistant 正文，用来覆盖跨页截断与 limit 契约。 */
+  function queryDirectorySnapshot(): ConversationSnapshot {
+    const base = authoritativeSnapshot(makeLog(2).events);
+    const source = base.rows.window;
+    const header = source.find((row) => row.kind === "turnHeader")!;
+    const user = source.find((row) => row.kind === "userInput")!;
+    const assistant = source.find((row) => row.kind === "assistantText")!;
+    const rows = [
+      { ...header, rowId: 101, turnId: "turn-a" },
+      { ...user, rowId: 102, turnId: "turn-a", origin: "realUser" as const, text: "first query" },
+      { ...user, rowId: 103, turnId: "turn-a", origin: "realUser" as const, text: "steer query" },
+      { ...assistant, rowId: 104, turnId: "turn-a", text: "answer a" },
+      {
+        ...header,
+        rowId: 111,
+        turnId: "turn-b",
+        origin: "userInput" as const,
+        state: "running" as const,
+      },
+      { ...user, rowId: 112, turnId: "turn-b", origin: "realUser" as const, text: "latest query" },
+      { ...assistant, rowId: 113, turnId: "turn-b", text: "answer b" },
+    ];
+    return {
+      ...base,
+      rows: {
+        ...base.rows,
+        window: rows,
+        totalCount: rows.length,
+        firstRowId: rows[0]!.rowId,
+      },
+    };
+  }
+
+  it("跨页截断同一 turn 时，较早 query 仍从完整 turn 派生 assistant 预览", () => {
+    const snapshot = queryDirectorySnapshot();
+    const first = conversationQueryDirectory(snapshot, { limit: 2 });
+    expect(first.queries.map((entry) => entry.rowId)).toEqual([103, 112]);
+    expect(first.hasMore).toBe(true);
+
+    // 第二页 beforeRowId 落在 turn-a 中间，assistant 行 rowId 更大，不在本页扫描范围。
+    const second = conversationQueryDirectory(snapshot, {
+      beforeRowId: first.queries[0]!.rowId,
+      limit: 2,
+    });
+    expect(second.queries.map((entry) => entry.rowId)).toEqual([102]);
+    expect(second.queries[0]?.assistantPreviewKind).toBe("text");
+    expect(second.queries[0]?.assistantPreview).toContain("answer a");
+  });
+
+  it("最后一页同样遵守 limit，并把剩余 query 交给 hasMore", () => {
+    // end 恰好落在 turn-b 之前：本页只剩 turn-a 的两条 query。
+    const page = conversationQueryDirectory(queryDirectorySnapshot(), {
+      beforeRowId: 111,
+      limit: 1,
+    });
+    expect(page.queries).toHaveLength(1);
+    expect(page.queries[0]?.rowId).toBe(103);
+    expect(page.hasMore).toBe(true);
+  });
 });
 
 describe("HK08 Hook lifecycle product delivery boundary", () => {
@@ -1610,14 +1732,10 @@ describe("HK08 Hook lifecycle product delivery boundary", () => {
     }
 
     expect(
-      publisher
-        .getRowsRange({ limit: 100 }, "continuous")
-        .rows.some((row) => row.kind === "hookInvocation"),
+      publisher.getRowsRange({ limit: 100 }).rows.some((row) => row.kind === "hookInvocation"),
     ).toBe(true);
     expect(
-      publisher
-        .getRowsRange({ limit: 100 }, "replayable")
-        .rows.some((row) => row.kind === "hookInvocation"),
+      publisher.getRowsRange({ limit: 100 }).rows.some((row) => row.kind === "hookInvocation"),
     ).toBe(true);
     expect(
       publisher.getRowsRange({ limit: 100 }).rows.some((row) => row.kind === "hookInvocation"),

@@ -6,6 +6,7 @@ import {
   type SessionEvent,
   type SessionId,
   type TraceId,
+  type TurnFileChangeSummary,
   type TurnId,
 } from "@zcode/contracts";
 import { ProductProjection } from "../src/zcode-protocol-v4/product-projection.js";
@@ -13,7 +14,13 @@ import { buildColdFileChangeSummaries } from "../src/zcode-protocol-v4/cold-file
 import * as coldEventMerge from "../src/zcode-protocol-v4/cold-event-merge.js";
 import { synthesizeEventsFromMessages } from "../src/zcode-protocol-v4/transcript-hydration.js";
 
-const { loadPersistedConversationMaterialization, mergeColdConversationEvents } = coldEventMerge;
+const {
+  buildColdDurableTranscriptArtifact,
+  loadPersistedConversationMaterialization,
+  mergeColdConversationEvents,
+  mergeColdConversationEventsWithArtifact,
+  patchColdDurableTranscriptArtifact,
+} = coldEventMerge;
 
 function userMessage(id: string, text: string, created: number, turnId: string): MessageWithParts {
   return {
@@ -1491,5 +1498,99 @@ describe("cold conversation three-source merge", () => {
           item.type === SessionEventType.SessionInputPromoted,
       ),
     ).toBe(false);
+  });
+});
+
+describe("history-first durable transcript artifact reuse", () => {
+  const messages = () => [
+    userMessage("u-artifact-1", "first prompt", 1_000, "runtime-turn-artifact-1"),
+    assistantMessage("a-artifact-1", "u-artifact-1", "first answer", 1_100, "runtime-turn-artifact-1"),
+    userMessage("u-artifact-2", "second prompt", 2_000, "runtime-turn-artifact-2"),
+    assistantMessage("a-artifact-2", "u-artifact-2", "second answer", 2_100, "runtime-turn-artifact-2"),
+  ];
+
+  it("patching runtime payload fields is equivalent to rebuilding the artifact", () => {
+    const fileChanges = new Map<string, TurnFileChangeSummary>([
+      [
+        "u-artifact-1",
+        {
+          additions: 3,
+          deletions: 1,
+          files: 1,
+          items: [{ path: "/a.ts", additions: 3, deletions: 1, toolNames: ["Edit"], writeCount: 1 }],
+        },
+      ],
+    ]);
+    const patched = patchColdDurableTranscriptArtifact(
+      buildColdDurableTranscriptArtifact({ sessionId: "s1", messages: messages() }),
+      { contextWindow: 123_456, fileChangeSummariesByMessageId: fileChanges },
+    );
+    const rebuilt = buildColdDurableTranscriptArtifact({
+      sessionId: "s1",
+      messages: messages(),
+      contextWindow: 123_456,
+      fileChangeSummariesByMessageId: fileChanges,
+    });
+
+    expect(patched.transcriptEvents).toEqual(rebuilt.transcriptEvents);
+    expect(patched.durableEvents).toEqual(rebuilt.durableEvents);
+    expect(
+      mergeColdConversationEventsWithArtifact(patched, {
+        memoryEvents: [],
+        sessionId: "s1",
+      }),
+    ).toEqual(
+      mergeColdConversationEventsWithArtifact(rebuilt, {
+        memoryEvents: [],
+        sessionId: "s1",
+      }),
+    );
+  });
+
+  it("refuses reuse when target authority or memory authority conflicts with persisted anchors", () => {
+    const artifact = buildColdDurableTranscriptArtifact({
+      sessionId: "s1",
+      messages: messages(),
+    });
+
+    expect(
+      mergeColdConversationEventsWithArtifact(artifact, {
+        memoryEvents: [],
+        sessionId: "s1",
+        target: null,
+      }),
+    ).toBeNull();
+
+    const unfinishedPersistedTurn = event(
+      1,
+      SessionEventType.TurnStarted,
+      { turnNumber: 2 },
+      "runtime-turn-artifact-2",
+    );
+    expect(
+      mergeColdConversationEventsWithArtifact(artifact, {
+        memoryEvents: [unfinishedPersistedTurn],
+        sessionId: "s1",
+      }),
+    ).toBeNull();
+  });
+
+  it("explicit null target authority adds no hydrated goal event (legacy parity)", () => {
+    const artifact = buildColdDurableTranscriptArtifact({
+      sessionId: "s1",
+      messages: messages(),
+      target: null,
+    });
+
+    const merged = mergeColdConversationEventsWithArtifact(artifact, {
+      memoryEvents: [],
+      sessionId: "s1",
+      target: null,
+    });
+
+    expect(merged).not.toBeNull();
+    expect(merged!.events.some((mergedEvent) => mergedEvent.id === "hydrate-goal-state")).toBe(
+      false,
+    );
   });
 });

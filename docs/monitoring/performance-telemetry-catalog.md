@@ -192,12 +192,13 @@ renderer 侧埋点，全采（100%）。
 | `perf_ui_launch_react_commit_ms`  | bundle → React 首次 commit                                    |
 | `perf_ui_launch_startup_gate_ms`  | React commit → 输入框可用（鉴权 / provider / workspace 恢复） |
 
-### 4.2 Session 首次打开（每个逻辑打开最多两条）
+### 4.2 Session 首次打开（每个逻辑打开最多三条）
 
-| 事件                          | value      | 关键 properties                                                                 |
-| ----------------------------- | ---------- | ------------------------------------------------------------------------------- |
-| `perf_ui_session_open_start`  | `1`        | `session_open_id` / `session_id` / `open_kind` / `open_trigger` / `client_mode` |
-| `perf_ui_session_open_result` | `total_ms` | `status` / `session_open_id` / `session_id` / Host/CLI/Renderer 阶段耗时字段    |
+| 事件                                  | value        | 关键 properties                                                                                  |
+| ------------------------------------- | ------------ | ------------------------------------------------------------------------------------------------ |
+| `perf_ui_session_open_start`          | `1`          | `session_open_id` / `session_id` / `open_kind` / `open_trigger` / `client_mode`                  |
+| `perf_ui_session_open_result`         | `total_ms`   | `status` / `session_open_id` / `session_id` / Host/CLI/Renderer 阶段耗时与首帧计数字段           |
+| `perf_ui_session_directory_settled`   | `settled_ms` | `directory_status` / `session_open_id` / `session_id` / `loaded_row_count` / `total_row_count`   |
 
 哨兵：任一段为负（跨进程时钟偏移）或总时长 > **300000ms**（`LAUNCH_TO_INPUT_SANITY_MAX_MS`）→ **整批丢弃**。未登录（WelcomeScreen）不上报。旧 `perf_ui_first_screen` 已废弃，语义并入 `perf_ui_launch_react_commit_ms`。
 
