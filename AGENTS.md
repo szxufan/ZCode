@@ -49,6 +49,15 @@
 - 使用异步文件和网络 IO；跨包导入使用公开入口，遵守现有路径别名。
 - 禁止 UI 直接调用 Repo、Service 引用 Runtime 具体实现、跨域导入实现细节及循环依赖。
 
+## 上游合并
+
+- 上游 `chore: sync ZCode source vX` 是 squash 同步提交：一个提交即一个完整小版本（可达 5000+ 文件、40 万行）。合并工作量按冲突数与语义重叠评估，不看上游提交数。
+- 冲突默认「fork 已删功能保持删除」：modify/delete 先用 `git log --diff-filter=D` 追溯删除提交确认是刻意移除，再批量 `git rm`；rename/delete 按上游 rename 源逐一核对，不按模块或时间接近度推断归因。
+- 合并提交必须是双父提交；若合并状态文件丢失，把 `git rev-parse upstream/main` 写回 `.git/MERGE_HEAD` 后再 commit，否则下次合并的 merge-base 断裂。
+- 验证收敛到门禁 + 定向：`pnpm typecheck`、`pnpm lint`、`pnpm architecture:check --changed`、fork 自有单测、受影响包的定向测试文件，全绿即提交。CLI core/bootstrap 全量套件交给 CI / pre-push，不在本地循环跑全量：多 worker 下的官方插件 seed 锁竞争、EBUSY、POSIX 专属断言是环境噪音，不是产品回归，不为它们改业务行为。
+- 上游新测试适配模式：英文提示词断言按 fork 中文文案改写；POSIX 专属（伪 zsh、chmod、`/private` 别名）加 `it.skipIf(process.platform === "win32")`；路径断言用 `join`/`normalize`，不硬编码分隔符；临时目录 `rm` 加 `maxRetries`/`retryDelay`。
+- 修一批测一批时用单文件/小批次复现，不在每批修复后重跑全量；后台任务跑长测试前先设时限，卡住即停并改小批次，不无限等待。
+
 ## UI 与平台边界
 
 - 遵守 `DESIGN.md`，复用已有组件，兼顾桌面与手机 Web 的布局、交互、主题和国际化。
