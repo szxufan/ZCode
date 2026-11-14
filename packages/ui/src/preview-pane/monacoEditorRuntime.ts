@@ -4,6 +4,7 @@
  */
 import * as monaco from "monaco-editor/editor/editor.api";
 import EditorWorker from "monaco-editor/editor/editor.worker?worker";
+import { toMonacoHexColor } from "./monacoThemeColors.js";
 import "monaco-editor/languages/definitions/cpp/register";
 import "monaco-editor/languages/definitions/csharp/register";
 import "monaco-editor/languages/definitions/css/register";
@@ -45,18 +46,19 @@ function readCssValue(property: string, fallback: string): string {
 
 function applyTheme(dark: boolean): void {
   const bodyStyle = typeof document === "undefined" ? null : getComputedStyle(document.body);
+  // body 背景透明（rgba(0, 0, 0, 0)）时没有可继承的底色，沿用与 base 主题一致的默认值。
+  const fallbackBackground = dark ? "#1e1e1e" : "#ffffff";
+  const backgroundFromStyle =
+    bodyStyle?.backgroundColor && bodyStyle.backgroundColor !== "rgba(0, 0, 0, 0)"
+      ? toMonacoHexColor(bodyStyle.backgroundColor, fallbackBackground)
+      : fallbackBackground;
   monaco.editor.defineTheme(THEME_NAME, {
     base: dark ? "vs-dark" : "vs",
     inherit: true,
     rules: [],
     colors: {
-      "editor.background":
-        bodyStyle?.backgroundColor && bodyStyle.backgroundColor !== "rgba(0, 0, 0, 0)"
-          ? bodyStyle.backgroundColor
-          : dark
-            ? "#1e1e1e"
-            : "#ffffff",
-      "editor.foreground": bodyStyle?.color || (dark ? "#e5e5e5" : "#1a1a1a"),
+      "editor.background": backgroundFromStyle,
+      "editor.foreground": toMonacoHexColor(bodyStyle?.color, dark ? "#e5e5e5" : "#1a1a1a"),
       "editorLineNumber.foreground": dark ? "#6b7280" : "#9ca3af",
       "editorLineNumber.activeForeground": dark ? "#d1d5db" : "#374151",
       "editor.selectionBackground": dark ? "#264f78" : "#add6ff",
@@ -89,10 +91,7 @@ export interface TextEditorHandle {
  * 后者会重建 model 内容，清空撤销栈并把光标弹到文件开头，
  * 保存/格式化后用户就无法撤销，也丢失当前阅读位置。
  */
-function replaceFullValue(
-  editor: monaco.editor.IStandaloneCodeEditor,
-  value: string,
-): void {
+function replaceFullValue(editor: monaco.editor.IStandaloneCodeEditor, value: string): void {
   const model = editor.getModel();
   if (!model || model.getValue() === value) {
     return;

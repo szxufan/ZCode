@@ -32,7 +32,13 @@ export {
 } from "./conversation-telemetry/conversationTelemetry.js";
 
 // File service — IFileService is both a type (interface) and value (descriptor)
-export { IFileService } from "./file/index.js";
+// 从 file.ts（仅服务描述符）导出，而不是 file/index.js：后者会连带 createFileService
+// → fileService → paths.ts（模块顶层调用 os.homedir()）与 textEdit（iconv/prettier）。
+// ui/renderer 经此 barrel 以 value 引用 IFileService，一旦挂上 node-only 链路，
+// vite 会把 node:os 解析为空 stub，renderer 首屏模块求值即抛
+// "TypeError: rD.homedir is not a function"，整页卡在启动画面（v3.25.0 安装包复现）。
+// server 侧仍从 file/index.js 取 createFileService，不受影响。
+export { IFileService } from "./file/file.js";
 export { IMediaPreviewService } from "./media-preview/mediaPreview.js";
 export type { MediaPreviewPreparation } from "./media-preview/mediaPreview.js";
 

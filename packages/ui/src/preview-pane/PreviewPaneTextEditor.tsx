@@ -158,23 +158,31 @@ export function PreviewPaneTextEditor({
     let disposed = false;
     let handle: TextEditorHandle | null = null;
 
-    void import("./monacoEditorRuntime.js").then((runtime) => {
-      if (disposed) return;
-      handle = runtime.createTextEditor({
-        container,
-        value: baselineRef.current,
-        language: runtime.resolveMonacoLanguage(path),
-        dark: darkRef.current,
-        onChange: (value) => {
-          contentRef.current = value;
-          applyDirty(value !== baselineRef.current);
-        },
-        onSave: () => {
-          void saveRef.current();
-        },
+    void import("./monacoEditorRuntime.js")
+      .then((runtime) => {
+        if (disposed) return;
+        handle = runtime.createTextEditor({
+          container,
+          value: baselineRef.current,
+          language: runtime.resolveMonacoLanguage(path),
+          dark: darkRef.current,
+          onChange: (value) => {
+            contentRef.current = value;
+            applyDirty(value !== baselineRef.current);
+          },
+          onSave: () => {
+            void saveRef.current();
+          },
+        });
+        editorRef.current = handle;
+      })
+      .catch((error: unknown) => {
+        // Monaco 懒加载或编辑器创建失败时若不落 loadError，编辑区只会静默空白，
+        // 用户无从得知原因（bugfix：defineTheme 收到非法色值抛异常曾走到这里被吞掉）。
+        if (disposed) return;
+        logger.error(`[PreviewPaneTextEditor] Monaco 编辑器初始化失败 path=${path}`, error);
+        setLoadError(error instanceof Error ? error.message : String(error));
       });
-      editorRef.current = handle;
-    });
 
     return () => {
       disposed = true;
