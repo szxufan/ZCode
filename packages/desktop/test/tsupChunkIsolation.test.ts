@@ -65,6 +65,16 @@ describe("desktop tsup chunk isolation", () => {
     expect(getExternal("host")).toContain("yaml");
   });
 
+  // 回归：文件就地编辑（services/file/textEdit）引入 iconv-lite/prettier 后，
+  // 曾把 CJS 依赖内联进 main ESM bundle，safer-buffer 顶层 require("buffer")
+  // 落到 esbuild __require shim，安装包启动即崩（Dynamic require of "buffer"）。
+  it("main/host 构建应外置 iconv-lite 与 prettier，避免 textEdit CJS 依赖触发动态 require 崩溃", () => {
+    for (const name of ["main", "host", "scheduler"]) {
+      expect(getExternal(name)).toContain("iconv-lite");
+      expect(getExternal(name)).toContain("prettier");
+    }
+  });
+
   it("main/host/scheduler 应内联 CUA producer，安装包不能依赖被排除的 @zcode node_modules", () => {
     for (const configName of ["main", "host", "scheduler"]) {
       expect(getNoExternal(configName)).toContain("@zcode/zcode-cua");

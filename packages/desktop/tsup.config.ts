@@ -234,6 +234,13 @@ const desktopNodeRuntimeExternals = [
   "node-forge",
   // ZIP 解包器内部依赖 CommonJS require("fs")，不能内联到 ESM main/host 产物。
   "yauzl",
+  // 文件就地编辑（services/file/textEdit）依赖的 iconv-lite 是 CJS，其依赖 safer-buffer
+  // 顶层 require("buffer")；内联进 ESM main bundle 后运行时落到 esbuild 的 __require
+  // shim，启动即崩（Dynamic require of "buffer" is not supported，v3.24.0/v3.25.0
+  // 安装包均复现）。prettier 同为 CJS 且体量巨大、内部大量动态 require，一并外置。
+  // 外置后由 Node 以真实 require 加载，electron-builder 会把 workspace 传递依赖打进 asar。
+  "iconv-lite",
+  "prettier",
 ];
 
 function createDevReadyMarkerHook(
