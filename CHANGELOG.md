@@ -1,5 +1,11 @@
 # Changelog
 
+## [3.25.1](https://github.com/szxufan/ZCode/compare/v3.25.0...v3.25.1) (2026-11-14)
+
+### Bug Fixes
+
+* **ui:** 就地编辑主题色值转 hex，修复点击编辑后编辑区静默空白 ([857f348](https://github.com/szxufan/ZCode/commit/857f3481761e08bd5dc397b74bf8db80b1d03ab4))
+
 ## [3.25.0](https://github.com/szxufan/ZCode/compare/v3.24.0...v3.25.0) (2026-11-13)
 
 ### Features
