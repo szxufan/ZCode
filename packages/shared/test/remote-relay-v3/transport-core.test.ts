@@ -7,6 +7,7 @@ import {
   generateRelayV3KeyPair,
   openRelayV3Envelope,
   relayV3KeyId,
+  relayV3EnvelopeAad,
   sealRelayV3Envelope,
   RelayV3ConnectionError,
   RelayV3TransportCore,
@@ -145,7 +146,10 @@ describe("Relay V3 transport core", () => {
     const harness = createHarness();
     const terminalKeys = generateRelayV3KeyPair();
     // 会话密钥由 harness 的 device 私钥与测试注入的 terminal 公钥共同派生。
-    const sessionKey = deriveRelayV3SessionKey(harness.deviceKeys.privateKey, terminalKeys.publicKey);
+    const sessionKey = deriveRelayV3SessionKey(
+      harness.deviceKeys.privateKey,
+      terminalKeys.publicKey,
+    );
     const kid = relayV3KeyId(harness.deviceKeys.publicKey);
     harness.core.start();
     await flush();
@@ -181,6 +185,7 @@ describe("Relay V3 transport core", () => {
           sessionKey,
           new TextEncoder().encode(JSON.stringify({ zcode_type: "bootstrap-request" })),
           kid,
+          relayV3EnvelopeAad("terminal"),
         ),
       }),
     );
@@ -190,7 +195,7 @@ describe("Relay V3 transport core", () => {
     expect(harness.core.send({ zcode_type: "app-error", code: "x" })).toBe(true);
     const outgoing = JSON.parse(harness.sent.at(-1)!);
     expect(outgoing.type).toBe("data");
-    expect(openRelayV3Envelope(sessionKey, outgoing.payload)).toEqual(
+    expect(openRelayV3Envelope(sessionKey, outgoing.payload, relayV3EnvelopeAad("device"))).toEqual(
       new TextEncoder().encode(JSON.stringify({ zcode_type: "app-error", code: "x" })),
     );
     harness.core.stop();
@@ -224,6 +229,7 @@ describe("Relay V3 transport core", () => {
           strangerSession,
           new TextEncoder().encode(JSON.stringify({ zcode_type: "app-error", code: "x" })),
           kid,
+          relayV3EnvelopeAad("terminal"),
         ),
       }),
     );
@@ -236,14 +242,19 @@ describe("Relay V3 transport core", () => {
     const harness = createHarness();
     harness.core.start();
     await flush();
-    harness.serverPush(JSON.stringify({ type: "error", code: "KICKED", message: "replaced", server_ts: 1 }));
+    harness.serverPush(
+      JSON.stringify({ type: "error", code: "KICKED", message: "replaced", server_ts: 1 }),
+    );
     // random=0.5 → 首次 KICKED 延迟 2000 + floor(0.5*3000) = 3500ms。
     harness.advance(3_500);
     await flush();
     expect(harness.openAttempts()).toBe(2);
     // 60s 内第二次 KICKED → 终态。
     harness.serverPush(JSON.stringify({ type: "error", code: "KICKED", server_ts: 2 }));
-    expect(harness.states.at(-1)).toMatchObject({ phase: "failed", failure: { kind: "session-conflict" } });
+    expect(harness.states.at(-1)).toMatchObject({
+      phase: "failed",
+      failure: { kind: "session-conflict" },
+    });
     harness.advance(120_000);
     await flush();
     expect(harness.openAttempts()).toBe(2);
@@ -275,7 +286,10 @@ describe("Relay V3 transport core", () => {
     harness.setNextOpenError(new RelayV3ConnectionError("auth-required", false));
     harness.core.start();
     await flush();
-    expect(harness.states.at(-1)).toMatchObject({ phase: "failed", failure: { kind: "auth-required" } });
+    expect(harness.states.at(-1)).toMatchObject({
+      phase: "failed",
+      failure: { kind: "auth-required" },
+    });
     harness.advance(120_000);
     await flush();
     expect(harness.openAttempts()).toBe(1);
@@ -286,7 +300,10 @@ describe("Relay V3 transport core", () => {
     harness.core.start();
     await flush();
     harness.serverPush(JSON.stringify({ type: "error", code: "AUTH_FAILED", server_ts: 1 }));
-    expect(harness.states.at(-1)).toMatchObject({ phase: "failed", failure: { kind: "auth-failed" } });
+    expect(harness.states.at(-1)).toMatchObject({
+      phase: "failed",
+      failure: { kind: "auth-failed" },
+    });
   });
 
   it("握手 15s deadline：无 auth_ack → 断开退避重连", async () => {
@@ -314,7 +331,9 @@ describe("Relay V3 transport core", () => {
       }),
     );
     harness.advance(15_000); // 心跳 5s/10s 各一次，watchdog 15s → 断开。
-    expect(harness.sent.filter((text) => text.includes("pair_status_query")).length).toBeGreaterThan(0);
+    expect(
+      harness.sent.filter((text) => text.includes("pair_status_query")).length,
+    ).toBeGreaterThan(0);
     harness.advance(1_000);
     await flush();
     expect(harness.openAttempts()).toBe(2);

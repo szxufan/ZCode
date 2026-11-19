@@ -124,7 +124,11 @@ export function RemoteControlSettingsSection({
   }
 
   const signedIn = status?.account != null;
-  const running = status?.phase === "waiting" || status?.phase === "active" || status?.phase === "connecting" || status?.phase === "starting";
+  const running =
+    status?.phase === "waiting" ||
+    status?.phase === "active" ||
+    status?.phase === "connecting" ||
+    status?.phase === "starting";
   const cooldownSeconds = Math.ceil(cooldownRemainingMs / 1000);
 
   return (
@@ -269,18 +273,73 @@ export function RemoteControlSettingsSection({
   );
 }
 
-/** 设备授权批准（R4 §5.5）：输入 headless 终端显示的 user_code，批准后回显指纹。 */
+/** 设备授权批准（R4 §5.5）：先预览指纹并与终端核对，再二次确认批准。 */
 function DeviceAuthSection() {
   const { intl } = useZCodeIntl();
   const platform = usePlatform();
   const [userCode, setUserCode] = useState("");
+  const [preview, setPreview] = useState<{
+    code: string;
+    fingerprint: string;
+    deviceMid: string;
+  } | null>(null);
   const [result, setResult] = useState<{ ok: boolean; text: string } | null>(null);
   const [busy, setBusy] = useState(false);
-  const supported = typeof platform.relayV3DeviceAuthApprove === "function";
+  const supported =
+    typeof platform.relayV3DeviceAuthApprove === "function" &&
+    typeof platform.relayV3DeviceAuthPreview === "function";
 
   if (!supported) {
     return null;
   }
+
+  const validCode = /^\d{8}$/.test(userCode);
+  // 只有当前输入码已成功预览过，才允许批准；改码会立即失效，避免批准未经核对的公钥。
+  const canApprove = preview !== null && preview.code === userCode;
+
+  const handlePreview = async () => {
+    setBusy(true);
+    setResult(null);
+    const response = await platform.relayV3DeviceAuthPreview?.(userCode);
+    setBusy(false);
+    if (response?.ok) {
+      setPreview({
+        code: userCode,
+        fingerprint: response.fingerprint,
+        deviceMid: response.deviceMid,
+      });
+    } else {
+      setPreview(null);
+      setResult({ ok: false, text: response?.message ?? "error" });
+    }
+  };
+
+  const handleApprove = async () => {
+    if (!preview) {
+      setResult({
+        ok: false,
+        text: intl.formatMessage({ id: "settings.remoteControl.deviceAuth.previewRequired" }),
+      });
+      return;
+    }
+    setBusy(true);
+    setResult(null);
+    const response = await platform.relayV3DeviceAuthApprove?.(userCode);
+    setBusy(false);
+    if (response?.ok) {
+      setResult({
+        ok: true,
+        text: intl.formatMessage(
+          { id: "settings.remoteControl.deviceAuth.approved" },
+          { fingerprint: response.fingerprint },
+        ),
+      });
+      setPreview(null);
+      setUserCode("");
+    } else {
+      setResult({ ok: false, text: response?.message ?? "error" });
+    }
+  };
 
   return (
     <section className="flex flex-col gap-3" data-testid="relay-v3-device-auth">
@@ -293,7 +352,12 @@ function DeviceAuthSection() {
       <div className="flex gap-2">
         <Input
           value={userCode}
-          onChange={(event) => setUserCode(event.target.value)}
+          onChange={(event) => {
+            setUserCode(event.target.value);
+            // 输入变化后旧预览不再属于当前码，必须重新核对。
+            setPreview(null);
+            setResult(null);
+          }}
           placeholder="12345678"
           inputMode="numeric"
           maxLength={8}
@@ -302,33 +366,49 @@ function DeviceAuthSection() {
         />
         <Button
           type="button"
-          disabled={busy || !/^\d{8}$/.test(userCode)}
-          data-testid="relay-v3-device-auth-approve"
-          onClick={async () => {
-            setBusy(true);
-            setResult(null);
-            const response = await platform.relayV3DeviceAuthApprove?.(userCode);
-            setBusy(false);
-            if (response?.ok) {
-              setResult({
-                ok: true,
-                text: intl.formatMessage(
-                  { id: "settings.remoteControl.deviceAuth.approved" },
-                  { fingerprint: response.fingerprint },
-                ),
-              });
-              setUserCode("");
-            } else {
-              setResult({ ok: false, text: response?.message ?? "error" });
-            }
-          }}
+          variant="secondary"
+          disabled={busy || !validCode}
+          data-testid="relay-v3-device-auth-preview"
+          onClick={() => void handlePreview()}
         >
-          {intl.formatMessage({ id: "settings.remoteControl.deviceAuth.approve" })}
+          {intl.formatMessage({ id: "settings.remoteControl.deviceAuth.preview" })}
+        </Button>
+        <Button
+          type="button"
+          disabled={busy || !canApprove}
+          data-testid="relay-v3-device-auth-approve"
+          onClick={() => void handleApprove()}
+        >
+          {intl.formatMessage({ id: "settings.remoteControl.deviceAuth.confirm" })}
         </Button>
       </div>
+      {preview ? (
+        <div
+          className="flex flex-col gap-1 rounded-lg border border-border p-3"
+          data-testid="relay-v3-device-auth-preview-card"
+        >
+          <p className="text-ui-sm text-foreground-subtle">
+            {intl.formatMessage(
+              { id: "settings.remoteControl.deviceAuth.device" },
+              { device: preview.deviceMid },
+            )}
+          </p>
+          <p className="text-ui-base font-mono text-foreground">
+            {intl.formatMessage(
+              { id: "settings.remoteControl.deviceAuth.fingerprint" },
+              { fingerprint: preview.fingerprint },
+            )}
+          </p>
+          <p className="text-ui-sm text-foreground-subtle">
+            {intl.formatMessage({ id: "settings.remoteControl.deviceAuth.confirmHint" })}
+          </p>
+        </div>
+      ) : null}
       {result ? (
         <p
-          className={result.ok ? "text-ui-sm text-foreground-subtle" : "text-ui-sm text-destructive"}
+          className={
+            result.ok ? "text-ui-sm text-foreground-subtle" : "text-ui-sm text-destructive"
+          }
           data-testid="relay-v3-device-auth-result"
         >
           {result.text}
@@ -352,7 +432,10 @@ function TerminalSection() {
     }
   }, [terminal.supported]);
 
-  const online = useMemo(() => terminal.devices.filter((device) => device.online), [terminal.devices]);
+  const online = useMemo(
+    () => terminal.devices.filter((device) => device.online),
+    [terminal.devices],
+  );
 
   if (!terminal.supported) {
     return null;
@@ -391,7 +474,10 @@ function TerminalSection() {
           </Button>
         ) : null}
         {terminal.status?.target ? (
-          <span className="text-ui-sm text-foreground-subtle" data-testid="relay-v3-terminal-target">
+          <span
+            className="text-ui-sm text-foreground-subtle"
+            data-testid="relay-v3-terminal-target"
+          >
             {intl.formatMessage(
               { id: "settings.remoteControl.terminal.status" },
               {
@@ -402,7 +488,9 @@ function TerminalSection() {
           </span>
         ) : null}
       </div>
-      {terminal.listError ? <p className="text-ui-sm text-destructive">{terminal.listError}</p> : null}
+      {terminal.listError ? (
+        <p className="text-ui-sm text-destructive">{terminal.listError}</p>
+      ) : null}
       <div className="flex flex-col gap-2">
         {online.length === 0 ? (
           <p className="text-ui-sm text-foreground-subtle">
@@ -439,7 +527,9 @@ function TerminalSection() {
             .filter((workspace) => workspace.bridgeable)
             .map((workspace) => (
               <div key={workspace.workspace_key} className="flex items-center gap-2">
-                <span className="min-w-0 flex-1 truncate text-ui-base">{workspace.workspace_key}</span>
+                <span className="min-w-0 flex-1 truncate text-ui-base">
+                  {workspace.workspace_key}
+                </span>
                 <Button
                   type="button"
                   variant="secondary"

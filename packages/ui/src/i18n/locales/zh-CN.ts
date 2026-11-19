@@ -2439,11 +2439,13 @@ const zhCN: Record<string, string> = {
   "codeViewer.edit.saveFailed": "保存失败，请重试。",
   "codeViewer.edit.formatFailed": "格式化失败，已保存原文。",
   "codeViewer.edit.formatUnavailable": "当前文件没有可用的格式化配置。",
-  "codeViewer.edit.notLossless": "文件已被外部改成无法无损保存的形式（编码或混合换行），只能退出编辑或覆盖保存。",
+  "codeViewer.edit.notLossless":
+    "文件已被外部改成无法无损保存的形式（编码或混合换行），只能退出编辑或覆盖保存。",
   "codeViewer.edit.blocked.binary": "二进制文件不支持就地编辑",
   "codeViewer.edit.blocked.tooLarge": "文件过大，不支持就地编辑",
   "codeViewer.edit.blocked.notLossless": "文件编码无法无损回写，不支持就地编辑",
-  "codeViewer.edit.blocked.mixedLineEndings": "文件混用了 LF 与 CRLF 换行，保存会统一换行并制造全文件 diff，因此不支持就地编辑",
+  "codeViewer.edit.blocked.mixedLineEndings":
+    "文件混用了 LF 与 CRLF 换行，保存会统一换行并制造全文件 diff，因此不支持就地编辑",
   "codeViewer.edit.blocked.partialRead": "本次预览只读取了文件的一部分，无法判定能否无损回写",
   "codeViewer.edit.blocked.hostUnsupported": "当前工作区的服务端版本过低，不支持就地编辑",
   "codeViewer.markdownPreview": "预览",
@@ -8413,6 +8415,13 @@ const zhCN: Record<string, string> = {
   "settings.remoteControl.deviceAuth.title": "批准无屏设备",
   "settings.remoteControl.deviceAuth.hint":
     "在服务器上运行 zcode server login，输入其显示的 8 位输入码完成接入。",
+  "settings.remoteControl.deviceAuth.preview": "查询指纹",
+  "settings.remoteControl.deviceAuth.fingerprint": "公钥指纹：{fingerprint}",
+  "settings.remoteControl.deviceAuth.device": "设备：{device}",
+  "settings.remoteControl.deviceAuth.confirmHint":
+    "请与服务器终端显示的指纹逐位核对一致后，再点击确认批准。",
+  "settings.remoteControl.deviceAuth.confirm": "确认批准",
+  "settings.remoteControl.deviceAuth.previewRequired": "请先查询并核对公钥指纹。",
   "settings.remoteControl.deviceAuth.approve": "批准",
   "settings.remoteControl.deviceAuth.approved": "已接入。公钥指纹：{fingerprint}",
   "settings.computerUse.toggleLabel": "启用电脑控制",

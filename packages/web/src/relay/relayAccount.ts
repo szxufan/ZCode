@@ -34,8 +34,10 @@ export class WebRelayAccount {
 
   constructor(
     private readonly resolveOrigin: () => string | null,
-    private readonly storage: Pick<Storage, "getItem" | "setItem" | "removeItem"> = typeof localStorage !==
-      "undefined"
+    private readonly storage: Pick<
+      Storage,
+      "getItem" | "setItem" | "removeItem"
+    > = typeof localStorage !== "undefined"
       ? localStorage
       : {
           getItem: () => null,
@@ -73,7 +75,9 @@ export class WebRelayAccount {
     }
   }
 
-  async sendSmsCode(phone: string): Promise<{ ok: true } | { ok: false; businessCode?: number; message?: string }> {
+  async sendSmsCode(
+    phone: string,
+  ): Promise<{ ok: true } | { ok: false; businessCode?: number; message?: string }> {
     try {
       await this.request("smsCode", { phone });
       return { ok: true };
@@ -82,7 +86,10 @@ export class WebRelayAccount {
     }
   }
 
-  async loginWithCode(phone: string, code: string): Promise<{ ok: true } | { ok: false; businessCode?: number; message?: string }> {
+  async loginWithCode(
+    phone: string,
+    code: string,
+  ): Promise<{ ok: true } | { ok: false; businessCode?: number; message?: string }> {
     try {
       const data = await this.request("login", { phone, code });
       this.establish(data.access, data.refresh, data.account);
@@ -134,7 +141,10 @@ export class WebRelayAccount {
       this.refresh = data.refresh;
       if (account) this.account = account;
       if (this.account) {
-        this.storage.setItem(STORAGE_KEY, JSON.stringify({ refresh: data.refresh, account: this.account }));
+        this.storage.setItem(
+          STORAGE_KEY,
+          JSON.stringify({ refresh: data.refresh, account: this.account }),
+        );
       }
       return true;
     } catch {
@@ -151,7 +161,8 @@ export class WebRelayAccount {
       const raw = this.storage.getItem(STORAGE_KEY);
       if (!raw) return null;
       const parsed = JSON.parse(raw) as StoredSession;
-      if (typeof parsed?.refresh !== "string" || typeof parsed?.account?.id !== "string") return null;
+      if (typeof parsed?.refresh !== "string" || typeof parsed?.account?.id !== "string")
+        return null;
       return parsed;
     } catch {
       return null;
@@ -197,14 +208,17 @@ function toError(error: unknown): { ok: false; businessCode?: number; message?: 
 }
 
 /** 二维码/链接参数解析（§5.3）：仅放行 sid/mid/name/app_version。 */
-export function parseEntryParams(search: string): {
+export function parseEntryParams(): {
   sid?: string;
   mid?: string;
   name?: string;
   appVersion?: string;
 } {
   if (typeof window !== "undefined" && window.location) {
-    const parsed = parseRelayV3QrUrl(window.location.origin + window.location.pathname + search);
+    // relay 覆盖参数不属于扫码参数白名单；先剔除再交给严格解析，否则会丢失 sid 等意图。
+    const url = new URL(window.location.href);
+    url.searchParams.delete("relay");
+    const parsed = parseRelayV3QrUrl(url.toString());
     if (parsed) {
       return {
         sid: parsed.sid,

@@ -181,9 +181,14 @@ export class RelayV3AcknowledgedRpc {
   };
   private maxDeliveredSeq = 0;
   private lastQueuedAck?: { frame: RelayV3RpcFrameAck; queuedAt: number };
+  /** TX 无推进 deadline 扫描（unref，不阻止进程/测试退出）。 */
+  private deadlineTimer?: ReturnType<typeof setInterval>;
 
   constructor(private readonly options: RelayV3AcknowledgedRpcOptions) {
     this.now = options.timing?.now ?? (() => Date.now());
+    const timer = setInterval(() => this.checkTxDeadline(), 5_000);
+    (timer as unknown as { unref?: () => void }).unref?.();
+    this.deadlineTimer = timer;
   }
 
   /** TX 入口：分片、缓存、逐片发出。bridge 未就绪/已废弃返回 false。 */
@@ -224,6 +229,8 @@ export class RelayV3AcknowledgedRpc {
   /** 同 bridge 重新 send-ready（含 same-socket 心跳重确认 matched）时重放未 ACK batch。 */
   sendReady(): void {
     if (this.disposed) return;
+    this.checkTxDeadline();
+    if (this.disposed) return;
     for (const batch of this.batches.values()) {
       this.emitBatch(batch);
     }
@@ -262,10 +269,28 @@ export class RelayV3AcknowledgedRpc {
 
   dispose(): void {
     this.disposed = true;
+    if (this.deadlineTimer !== undefined) {
+      clearInterval(this.deadlineTimer);
+      this.deadlineTimer = undefined;
+    }
     this.batches.clear();
     this.replayBytes = 0;
     this.staging = undefined;
     this.lastQueuedAck = undefined;
+  }
+
+  /** TX batch 超过 45s 无 ACK 推进：bridge 硬恢复，避免永久占用重放预算。 */
+  private checkTxDeadline(): void {
+    if (this.disposed) return;
+    const now = this.now();
+    for (const batch of this.batches.values()) {
+      if (now - batch.lastProgressAt >= RELAY_V3_RPC_DEADLINE_MS) {
+        this.options.onDegraded?.("deadline");
+        // 单次上报后立即释放，避免 adapter 未由调用方销毁时每 5s 重复触发。
+        this.dispose();
+        return;
+      }
+    }
   }
 
   // --- TX ---
@@ -347,6 +372,12 @@ export class RelayV3AcknowledgedRpc {
       // receivedFragments == fragmentCount 时槽位仍可能 undefined（重复覆盖语义不会发生），
       // 出现即视为不完整，交由下方完整性检查丢弃。
       if (!part) break;
+      // 对端可伪造 message_bytes 小于实际片长；写入前必须挡越界，否则 message.set 抛
+      // RangeError 会穿透到 transport 回调。
+      if (offset + part.length > staging.messageBytes) {
+        this.staging = undefined;
+        return;
+      }
       message.set(part, offset);
       offset += part.length;
     }

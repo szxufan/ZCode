@@ -22,6 +22,12 @@ export const RELAY_LIMITS = {
   loginLockoutMaxSeconds: 24 * 3_600,
   /** refresh 旋转 30/分钟/IP。 */
   refreshPerIpPerMinute: 30,
+  /** 一次性 ws token 申请 30/分钟/IP。 */
+  relayTokenPerIpPerMinute: 30,
+  /** 密码登录失败尝试 10/分钟/IP（账号锁定之外的第二道）。 */
+  passwordLoginPerIpPerMinute: 10,
+  /** 进程内过期事实（ws token、待批准请求、限流窗口）清理间隔。 */
+  pruneIntervalMs: 60_000,
   /** WS 连接 256/进程。 */
   wsConnections: 256,
   /** 握手（auth_init → auth_ack）15s deadline。 */
@@ -33,6 +39,8 @@ export const RELAY_LIMITS = {
   wsMaxMessageBytes: 1_048_576,
   /** WS 出站队列 128 条/连接；2s 内无法入队即丢弃该帧。 */
   wsOutboundQueueLimit: 128,
+  /** 出站队列硬上限：即使尚未到 2s 丢弃窗口，也不允许继续堆积。 */
+  wsOutboundQueueHardLimit: 256,
   wsOutboundSaturatedDropMs: 2_000,
   wsOutboundBufferBytes: 4 * 1024 * 1024,
   /** 设备数 / 活跃凭据 64 / 256 每账号，数据库原子准入。 */

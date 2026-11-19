@@ -24,7 +24,7 @@ export function RemoteApp() {
     [locale],
   );
   const [stage, setStage] = useState<Stage>("entry");
-  const [entryParams] = useState(() => parseEntryParams(location.search));
+  const [entryParams] = useState(() => parseEntryParams());
   const [relayOriginInput, setRelayOriginInput] = useState("");
   const [relayOrigin, setRelayOrigin] = useState<string | null>(null);
   const [devices, setDevices] = useState<RelayV3Device[] | null>(null);
@@ -42,13 +42,15 @@ export function RemoteApp() {
     protocol: MessagePortProtocol;
   } | null>(null);
 
-  // relay origin 解析：同源（relay 托管本页，§5.4）优先，URL ?relay= 覆盖，记忆回退。
+  // relay origin 解析：同源（relay 托管本页，§5.4）优先，本地开发才允许 ?relay= 覆盖，
+  // 记忆回退。正式域名不接受 URL 覆盖，避免分享链接把登录请求导向攻击者 relay。
   useEffect(() => {
     const url = new URL(window.location.href);
-    const override = url.searchParams.get("relay");
+    const override = isLocalDevelopmentOrigin(url.origin) ? url.searchParams.get("relay") : null;
     const sameOrigin = `${url.protocol}//${url.host}`;
     const remembered = WebRelayAccount.readRelayOrigin(localStorage);
-    const resolved = override ?? (isLikelyRelayOrigin(sameOrigin) ? sameOrigin : remembered) ?? null;
+    const resolved =
+      override ?? (isLikelyRelayOrigin(sameOrigin) ? sameOrigin : remembered) ?? null;
     setRelayOrigin(resolved);
     if (override) setRelayOriginInput(override);
     else if (resolved) setRelayOriginInput(resolved);
@@ -165,7 +167,9 @@ export function RemoteApp() {
           } else if (state.phase === "waiting") {
             setConnectStage(t("status.waiting"));
           } else if (state.phase === "failed") {
-            setConnectStage(`${t("connect.failed")}${state.failure?.message ? `：${state.failure.message}` : ""}`);
+            setConnectStage(
+              `${t("connect.failed")}${state.failure?.message ? `：${state.failure.message}` : ""}`,
+            );
           }
         },
         onAppPayload: (payload) => connectionRef.current?.handlePayload(payload),
@@ -194,7 +198,9 @@ export function RemoteApp() {
           setChatReady(true);
           setStage("chat");
         } catch (error) {
-          appendLog(`bootstrap/bridge failed: ${error instanceof Error ? error.message : String(error)}`);
+          appendLog(
+            `bootstrap/bridge failed: ${error instanceof Error ? error.message : String(error)}`,
+          );
           setConnectStage(t("connect.failed"));
         }
       }
@@ -335,7 +341,10 @@ function LoginPage({
   onRelayOriginChange,
   onLoggedIn,
 }: {
-  t: (key: Parameters<typeof formatWebString>[1], params?: Record<string, string | number>) => string;
+  t: (
+    key: Parameters<typeof formatWebString>[1],
+    params?: Record<string, string | number>,
+  ) => string;
   account: WebRelayAccount | null;
   relayOriginInput: string;
   onRelayOriginChange: (value: string) => void;
@@ -440,7 +449,10 @@ function DeviceListPage({
   onLogout,
   account,
 }: {
-  t: (key: Parameters<typeof formatWebString>[1], params?: Record<string, string | number>) => string;
+  t: (
+    key: Parameters<typeof formatWebString>[1],
+    params?: Record<string, string | number>,
+  ) => string;
   devices: RelayV3Device[] | null;
   error: string | null;
   refreshing: boolean;
@@ -478,7 +490,11 @@ function DeviceListPage({
           {refreshing ? "…" : t("devices.refresh")}
         </button>
       </div>
-      {error ? <p className="error-text" style={{ padding: "0 4px" }}>{error}</p> : null}
+      {error ? (
+        <p className="error-text" style={{ padding: "0 4px" }}>
+          {error}
+        </p>
+      ) : null}
       {!devices && !error ? (
         <div className="connect-stage">
           <div className="spinner" />
@@ -557,7 +573,10 @@ function ChatPage({
   onBack,
   onLog,
 }: {
-  t: (key: Parameters<typeof formatWebString>[1], params?: Record<string, string | number>) => string;
+  t: (
+    key: Parameters<typeof formatWebString>[1],
+    params?: Record<string, string | number>,
+  ) => string;
   chatReady: boolean;
   streamLog: string[];
   session: { client: ChannelClient } | null;
@@ -661,4 +680,14 @@ function safeJson(value: unknown): string {
 function isLikelyRelayOrigin(origin: string): boolean {
   // relay 托管页（§5.4）即同源；开发服务器（vite 端口）不是 relay origin。
   return !origin.includes("localhost:5") && !origin.includes("localhost:4");
+}
+
+/** 只有本机开发地址允许 URL 覆盖 relay origin；生产域名一律使用同源。 */
+function isLocalDevelopmentOrigin(origin: string): boolean {
+  try {
+    const host = new URL(origin).hostname;
+    return host === "localhost" || host === "127.0.0.1" || host === "::1" || host === "[::1]";
+  } catch {
+    return false;
+  }
 }

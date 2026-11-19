@@ -30,6 +30,8 @@ export interface RelayRuntimeLimiters {
   smsSendPerIp: RateLimiter;
   smsVerifyPerIp: RateLimiter;
   refreshPerIp: RateLimiter;
+  relayTokenPerIp: RateLimiter;
+  passwordLoginPerIp: RateLimiter;
   deviceAuthRequestPerIp: RateLimiter;
   deviceAuthPollPerDeviceCode: RateLimiter;
   deviceAuthApprovePerIp: RateLimiter;
@@ -57,6 +59,12 @@ export class RelayRuntime {
       smsSendPerIp: new RateLimiter(RELAY_LIMITS.smsSendPerIpPerMinute, 60_000, this.now),
       smsVerifyPerIp: new RateLimiter(RELAY_LIMITS.smsVerifyPerIpPerMinute, 60_000, this.now),
       refreshPerIp: new RateLimiter(RELAY_LIMITS.refreshPerIpPerMinute, 60_000, this.now),
+      relayTokenPerIp: new RateLimiter(RELAY_LIMITS.relayTokenPerIpPerMinute, 60_000, this.now),
+      passwordLoginPerIp: new RateLimiter(
+        RELAY_LIMITS.passwordLoginPerIpPerMinute,
+        60_000,
+        this.now,
+      ),
       deviceAuthRequestPerIp: new RateLimiter(
         RELAY_LIMITS.deviceAuthRequestPerIpPerMinute,
         60_000,

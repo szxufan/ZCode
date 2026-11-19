@@ -134,6 +134,8 @@ export class RelayV3DeviceManager {
   private latestViewState: unknown = null;
   private readonly now: () => number;
   private disposed = false;
+  /** bridge 重建时递增，供 terminal 区分新旧 attachment。 */
+  private bridgeGeneration = 0;
 
   constructor(private readonly options: RelayV3DeviceManagerOptions) {
     this.now = options.now ?? (() => Date.now());
@@ -255,7 +257,10 @@ export class RelayV3DeviceManager {
   // 启动 / 停止（票据边界）
   // ---------------------------------------------------------------------------
 
-  authorizeStart(windowId: number, target: { workspacePath: string; workspaceIdentity?: string }): string {
+  authorizeStart(
+    windowId: number,
+    target: { workspacePath: string; workspaceIdentity?: string },
+  ): string {
     const ticket = randomUUID();
     this.tickets.set(ticket, { ticket, windowId, target, expiresAt: this.now() + TICKET_TTL_MS });
     return ticket;
@@ -276,7 +281,10 @@ export class RelayV3DeviceManager {
     if (this.starting) return { accepted: true };
     const { endpointOrigin } = this.options.getRelayConfig();
     if (!endpointOrigin) {
-      this.setPhase("error", { kind: "relay-unavailable", message: "relay endpoint not configured" });
+      this.setPhase("error", {
+        kind: "relay-unavailable",
+        message: "relay endpoint not configured",
+      });
       return { accepted: false, reason: "no-endpoint" };
     }
     if (!this.account.isSignedIn()) {
@@ -365,7 +373,9 @@ export class RelayV3DeviceManager {
       throw error;
     }
     this.identity = { keyPair, deviceSid: device.device_sid };
-    this.options.logger.info("relay-v3 device registered", { kid: relayV3KeyId(keyPair.publicKey) });
+    this.options.logger.info("relay-v3 device registered", {
+      kid: relayV3KeyId(keyPair.publicKey),
+    });
   }
 
   private launchTransport(): void {
@@ -426,7 +436,10 @@ export class RelayV3DeviceManager {
           return;
         }
         this.starting = false;
-        this.setPhase("error", { kind: failure.kind, ...(failure.message ? { message: failure.message } : {}) });
+        this.setPhase("error", {
+          kind: failure.kind,
+          ...(failure.message ? { message: failure.message } : {}),
+        });
         return;
       }
       default:
@@ -458,7 +471,8 @@ export class RelayV3DeviceManager {
   }
 
   private async maybeAutoStart(): Promise<void> {
-    if (this.disposed || this.enabledTarget === null || this.transport !== null || this.starting) return;
+    if (this.disposed || this.enabledTarget === null || this.transport !== null || this.starting)
+      return;
     if (!this.account.isSignedIn()) {
       if (this.phase === "idle") this.setPhase("auth-required");
       return;
@@ -473,7 +487,12 @@ export class RelayV3DeviceManager {
       return;
     }
     const result = await this.start();
-    if (!result.accepted && result.reason && result.reason !== "auth-required" && result.reason !== "no-endpoint") {
+    if (
+      !result.accepted &&
+      result.reason &&
+      result.reason !== "auth-required" &&
+      result.reason !== "no-endpoint"
+    ) {
       this.options.logger.warn("relay-v3 auto start rejected", { reason: result.reason });
     }
   }
@@ -652,11 +671,17 @@ export class RelayV3DeviceManager {
         if (decoded.kind === "rpc") {
           channel.port1.postMessage(new Uint8Array(decoded.bytes));
         } else {
-          channel.port1.postMessage({ __zcodeRpcControl: "connection-flow-v1", state: decoded.state });
+          channel.port1.postMessage({
+            __zcodeRpcControl: "connection-flow-v1",
+            state: decoded.state,
+          });
         }
       },
       onDegraded: (reason) => {
-        this.options.logger.warn("relay-v3 bridge degraded", { bridgeSessionId: payload.bridge_session_id, reason });
+        this.options.logger.warn("relay-v3 bridge degraded", {
+          bridgeSessionId: payload.bridge_session_id,
+          reason,
+        });
         this.disposeBridge(payload.bridge_session_id, "degraded");
         this.sendToTerminal({
           zcode_type: "bridge-degraded",
@@ -668,7 +693,7 @@ export class RelayV3DeviceManager {
     const bridge: ManagedBridge = {
       bridgeSessionId: payload.bridge_session_id,
       attachmentId,
-      generation: 1,
+      generation: ++this.bridgeGeneration,
       port: channel.port1,
       adapter,
     };
@@ -680,7 +705,13 @@ export class RelayV3DeviceManager {
     channel.port1.once("close", () => this.disposeBridge(bridge.bridgeSessionId, "port-closed"));
     channel.port1.start();
     try {
-      this.options.attachHostPort({ windowId, attachmentId, terminalOwnerId, scope, port: channel.port2 });
+      this.options.attachHostPort({
+        windowId,
+        attachmentId,
+        terminalOwnerId,
+        scope,
+        port: channel.port2,
+      });
     } catch (error) {
       this.disposeBridge(bridge.bridgeSessionId, "attach-failed");
       this.options.logger.error("relay-v3 host attach failed", { error });

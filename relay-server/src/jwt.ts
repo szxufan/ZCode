@@ -14,15 +14,23 @@ export interface RelayJwtClaims {
   exp: number;
   iat: number;
   jti: string;
+  /** 签发时的 refresh 家族 ID：登出据此只撤销当前家族。 */
+  fam?: string;
 }
 
-export function signRelayAccessToken(secret: string, accountId: string, now = Date.now): string {
+export function signRelayAccessToken(
+  secret: string,
+  accountId: string,
+  now = Date.now,
+  familyId?: string,
+): string {
   const issuedAt = Math.floor(now() / 1000);
   const claims: RelayJwtClaims = {
     sub: accountId,
     exp: issuedAt + ACCESS_TTL_SECONDS,
     iat: issuedAt,
     jti: randomUUID(),
+    ...(familyId ? { fam: familyId } : {}),
   };
   const header = base64Url(JSON.stringify({ alg: "HS256", typ: "JWT" }));
   const payload = base64Url(JSON.stringify(claims));
@@ -58,5 +66,6 @@ export function verifyRelayAccessToken(
   if (provided.length !== expected.length || !timingSafeEqual(provided, expected)) return null;
   if (typeof claims.exp !== "number" || claims.exp <= Math.floor(now() / 1000)) return null;
   if (typeof claims.sub !== "string" || !claims.sub) return null;
+  if (claims.fam !== undefined && typeof claims.fam !== "string") return null;
   return claims;
 }

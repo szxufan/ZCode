@@ -41,6 +41,20 @@ describe("设备授权流程", () => {
       device_code: request.body.data.device_code,
     });
     expect(pending.body.data).toEqual({ status: "pending" });
+    // 批准前可只读预览公钥指纹，供与终端显示值核对；预览不改变 pending 状态。
+    const preview = await post(
+      "/v3/device-auth/preview",
+      { user_code: request.body.data.user_code },
+      access,
+    );
+    expect(preview.body.code).toBe(0);
+    expect(preview.body.data.public_key).toBe(publicKey);
+    expect(preview.body.data.fingerprint).toMatch(/^[0-9a-f]{16}$/);
+    expect(preview.body.data.device_mid).toMatch(/^headless_/);
+    const stillPending = await post("/v3/device-auth/poll", {
+      device_code: request.body.data.device_code,
+    });
+    expect(stillPending.body.data).toEqual({ status: "pending" });
     const approve = await post(
       "/v3/device-auth/approve",
       { user_code: request.body.data.user_code },

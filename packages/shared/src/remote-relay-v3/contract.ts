@@ -60,6 +60,7 @@ export const RELAY_V3_HTTP = {
   delete: { method: "POST", path: "/v3/device/delete" },
   relayToken: { method: "POST", path: "/v3/relay/token" },
   deviceAuthRequest: { method: "POST", path: "/v3/device-auth/request" },
+  deviceAuthPreview: { method: "POST", path: "/v3/device-auth/preview" },
   deviceAuthApprove: { method: "POST", path: "/v3/device-auth/approve" },
   deviceAuthPoll: { method: "POST", path: "/v3/device-auth/poll" },
 } as const;
@@ -73,7 +74,6 @@ export const RELAY_V3_ENVELOPE_VERSION = 3;
 export const RELAY_V3_ENVELOPE_ALG = "x25519-hkdfsha256-aes256gcm-v1";
 /** 单条 data 消息（含密文膨胀）上限 1 MiB（§4.4/§8）。 */
 export const RELAY_V3_MAX_DATA_MESSAGE_BYTES = 1_048_576;
-/** HTTP 侧密文单条上限（含信封，§8），超限 413。 */
 export const RELAY_V3_MAX_CIPHERTEXT_BYTES = 4_194_304;
 
 const envelope = z.strictObject({
@@ -233,6 +233,7 @@ const httpRequests = {
   delete: z.strictObject({ device_sid: identifier }),
   relayToken: z.strictObject({ role }),
   deviceAuthRequest: z.strictObject({ public_key: publicKeyBase64Url }),
+  deviceAuthPreview: z.strictObject({ user_code: z.string().regex(/^\d{8}$/) }),
   deviceAuthApprove: z.strictObject({ user_code: z.string().regex(/^\d{8}$/) }),
   deviceAuthPoll: z.strictObject({ device_code: z.string().min(16).max(128) }),
 };
@@ -246,6 +247,14 @@ const httpResponses = {
   delete: response(z.null()),
   relayToken: response(relayToken),
   deviceAuthRequest: response(deviceAuthRequestData),
+  deviceAuthPreview: response(
+    z.object({
+      public_key: publicKeyBase64Url,
+      fingerprint: kidHex,
+      device_mid: identifier,
+      expires_in: z.number().int().positive(),
+    }),
+  ),
   deviceAuthApprove: response(z.object({ device })),
   deviceAuthPoll: response(
     z.union([z.object({ status: z.literal("pending") }), tokenPair.extend({ device })]),

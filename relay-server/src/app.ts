@@ -34,6 +34,7 @@ export function buildRelayApp(deps: RelayAppDeps): RelayApp {
   const { db, config } = deps;
   const runtime = new RelayRuntime({ now: deps.now });
   const presence = new RelayPresence();
+  let pruneTimer: ReturnType<typeof setInterval> | undefined;
   let testSmsOutbox: Map<string, string> | null = null;
   let smsTransport = deps.smsTransport;
   if (!smsTransport) {
@@ -56,18 +57,35 @@ export function buildRelayApp(deps: RelayAppDeps): RelayApp {
   const app = Fastify({
     logger: false,
     bodyLimit: RELAY_LIMITS.cipherBodyBytes,
+    // 反代部署需显式开启，否则按直连地址限流（见 deployment.md）。
+    trustProxy: config.trustProxy,
   });
 
-  // 并发 HTTP 请求 512 → 503（§8）。
+  // 并发 HTTP 请求 512 → 503（§8）。每个请求恰好注册一次释放监听。
   app.addHook("onRequest", async (request, reply) => {
     runtime.inFlightHttp += 1;
+    // Bug 原因：释放监听曾注册在超限检查之后，503 拒绝分支提前 return 导致该请求的 +1
+    // 永不递减；过载突发后计数只增不减，累计超过上限会把后续所有请求永久拒绝。
+    // 先注册再检查，接受与拒绝的请求都在 close 时释放一次（Node 的 request close
+    // 在 keep-alive 下也按请求触发，已验证）。
+    request.raw.once("close", () => {
+      runtime.inFlightHttp = Math.max(0, runtime.inFlightHttp - 1);
+    });
     if (runtime.inFlightHttp > RELAY_LIMITS.concurrentHttp) {
-      runtime.inFlightHttp -= 1;
       return reply.status(503).send({ code: RELAY_V3_BUSINESS_CODES.INTERNAL, msg: "busy" });
     }
-    request.raw.on("close", () => {
-      runtime.inFlightHttp -= 1;
-    });
+  });
+
+  // 进程内过期事实（一次性 token、待批准请求、限流窗口）定期回收。
+  app.addHook("onReady", () => {
+    pruneTimer = setInterval(() => runtime.pruneExpired(), RELAY_LIMITS.pruneIntervalMs);
+    pruneTimer.unref?.();
+  });
+  app.addHook("onClose", () => {
+    if (pruneTimer) {
+      clearInterval(pruneTimer);
+      pruneTimer = undefined;
+    }
   });
 
   app.get("/health", async () => ({ status: "ok" }));

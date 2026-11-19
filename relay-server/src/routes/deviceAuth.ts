@@ -3,9 +3,11 @@ import type { DatabaseSync } from "node:sqlite";
 import { createHash } from "node:crypto";
 
 import {
+  decodeRelayV3Base64Url,
   parseRelayV3HttpRequest,
   RELAY_V3_BUSINESS_CODES as CODES,
   RELAY_V3_HTTP,
+  relayV3KeyId,
 } from "@zcode/shared/remote-relay-v3";
 
 import type { RelayServerConfig } from "../config.js";
@@ -51,6 +53,32 @@ export function registerDeviceAuthRoutes(
       const created = runtime.createDeviceAuthRequest(parsed.public_key);
       if (!created) return replyBusiness(reply, CODES.QUOTA_EXCEEDED, "too many pending requests");
       return replyOk(reply, created);
+    },
+  );
+
+  app.post(
+    RELAY_V3_HTTP.deviceAuthPreview.path,
+    { bodyLimit: RELAY_LIMITS.authBodyBytes },
+    async (request, reply) => {
+      const accountId = requireAccount(request, reply, config.jwtSecret, runtime.now);
+      if (!accountId) return reply;
+      const parsed = parseRelayV3HttpRequest("deviceAuthPreview", request.body);
+      if (!parsed) return replyBusiness(reply, CODES.WRONG_PARAM, "parameter error");
+      // 与 approve 共用限流，防止借预览接口枚举 user_code。
+      if (!runtime.limiters.deviceAuthApprovePerIp.hit(`ip:${clientIp(request)}`)) {
+        return replyBusiness(reply, CODES.RATE_LIMITED, "rate limited");
+      }
+      const entry = runtime.findDeviceAuthByUserCode(parsed.user_code);
+      if (!entry || entry.status !== "pending" || entry.expiresAt <= runtime.now()) {
+        return replyBusiness(reply, CODES.EXPIRED, "user code expired");
+      }
+      // 只读预览：不改变 pending 状态，用户核对指纹后再调用 approve。
+      return replyOk(reply, {
+        public_key: entry.publicKey,
+        fingerprint: relayV3KeyId(decodeRelayV3Base64Url(entry.publicKey)),
+        device_mid: deviceMidForPublicKey(entry.publicKey),
+        expires_in: Math.max(1, Math.ceil((entry.expiresAt - runtime.now()) / 1000)),
+      });
     },
   );
 
@@ -122,8 +150,14 @@ export function registerDeviceAuthRoutes(
         | undefined;
       if (!row) return replyBusiness(reply, CODES.INTERNAL, "device missing");
       try {
-        const family = issueRefreshFamily(db, entry.accountId!, runtime.now);
-        const access = signRelayAccessToken(config.jwtSecret, entry.accountId!, runtime.now);
+        // 设备授权取得的凭据家族绑定设备 SID，删除设备时按设备撤销。
+        const family = issueRefreshFamily(db, entry.accountId!, runtime.now, entry.deviceSid!);
+        const access = signRelayAccessToken(
+          config.jwtSecret,
+          entry.accountId!,
+          runtime.now,
+          family.familyId,
+        );
         entry.status = "consumed";
         runtime.deviceAuthByUserCode.delete(entry.userCode);
         return replyOk(reply, {

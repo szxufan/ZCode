@@ -38,6 +38,7 @@ export interface RefreshTokenRow {
   rotated_at: number | null;
   revoked_at: number | null;
   created_at: number;
+  device_sid: string | null;
 }
 
 export function openRelayDatabase(dbPath: string): DatabaseSync {
@@ -83,12 +84,21 @@ export function openRelayDatabase(dbPath: string): DatabaseSync {
       expires_at INTEGER NOT NULL,
       rotated_at INTEGER,
       revoked_at INTEGER,
-      created_at INTEGER NOT NULL
+      created_at INTEGER NOT NULL,
+      device_sid TEXT
     );
     CREATE INDEX IF NOT EXISTS refresh_tokens_family ON refresh_tokens(family_id);
     CREATE INDEX IF NOT EXISTS refresh_tokens_account ON refresh_tokens(account_id);
   `);
+  migrateRefreshTokensDeviceSid(db);
   return db;
+}
+
+/** 旧库补列：device_sid 用于删除设备时按设备撤销凭据（SQLite 无 ADD COLUMN IF NOT EXISTS）。 */
+function migrateRefreshTokensDeviceSid(db: DatabaseSync): void {
+  const columns = db.prepare("PRAGMA table_info(refresh_tokens)").all() as { name: string }[];
+  if (columns.some((column) => column.name === "device_sid")) return;
+  db.exec("ALTER TABLE refresh_tokens ADD COLUMN device_sid TEXT");
 }
 
 /** 启动清理：过期验证码与已终结的 refresh token（幂等，重启安全）。 */

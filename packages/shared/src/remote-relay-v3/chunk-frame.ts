@@ -58,7 +58,9 @@ export function parseRelayV3ChunkFrame(value: unknown): RelayV3ChunkFrame | null
   return result.success ? result.data : null;
 }
 
-export function parseRelayV3ChunkControl(value: unknown): RelayV3ChunkCredit | RelayV3ChunkResume | null {
+export function parseRelayV3ChunkControl(
+  value: unknown,
+): RelayV3ChunkCredit | RelayV3ChunkResume | null {
   const credit = relayV3ChunkCredit.safeParse(value);
   if (credit.success) return credit.data;
   const resume = relayV3ChunkResume.safeParse(value);
@@ -84,11 +86,16 @@ export function fragmentRelayV3ChunkStream(
   }
   const frameCount = Math.ceil(totalBytes / RELAY_V3_CHUNK_FRAME_BYTES);
   const frames: RelayV3ChunkFrame[] = [];
-  const whole = new Uint8Array(totalBytes);
+  // 增量计算整流 CRC，避免按 totalBytes（上限 4 GiB）一次性分配整份缓冲。
+  let wholeCrc = 0xffff_ffff;
   for (let index = 0; index < frameCount; index += 1) {
     const offset = index * RELAY_V3_CHUNK_FRAME_BYTES;
-    const chunk = read(offset, Math.min(RELAY_V3_CHUNK_FRAME_BYTES, totalBytes - offset));
-    whole.set(chunk, offset);
+    const length = Math.min(RELAY_V3_CHUNK_FRAME_BYTES, totalBytes - offset);
+    const chunk = read(offset, length);
+    if (chunk.length !== length) {
+      throw new RelayV3ChunkProtocolError("stream-reset");
+    }
+    wholeCrc = relayV3Crc32Update(wholeCrc, chunk);
     frames.push({
       zcode_type: "chunk-frame",
       stream_id: streamIdValue,
@@ -102,7 +109,7 @@ export function fragmentRelayV3ChunkStream(
   }
   // final 帧的 crc32 语义是整流 CRC（§2）：覆盖全量字节。
   if (frames.length > 0) {
-    frames[frames.length - 1]!.crc32 = relayV3Crc32(whole);
+    frames[frames.length - 1]!.crc32 = relayV3Crc32Finalize(wholeCrc);
   }
   return frames;
 }
@@ -132,7 +139,13 @@ export class RelayV3ChunkAssembler {
     totalBytes: number,
     private readonly onChunk: (offset: number, bytes: Uint8Array) => void,
   ) {
-    this.state = { streamId: streamIdValue, totalBytes, receivedBytes: 0, resumeOffset: 0, completed: false };
+    this.state = {
+      streamId: streamIdValue,
+      totalBytes,
+      receivedBytes: 0,
+      resumeOffset: 0,
+      completed: false,
+    };
   }
 
   getState(): RelayV3ChunkAssemblerState {
@@ -152,11 +165,19 @@ export class RelayV3ChunkAssembler {
     if (frame.total_bytes !== this.state.totalBytes) {
       throw new RelayV3ChunkProtocolError("stream-reset");
     }
+    // offset 必须与已连续接收的字节数一致，且不得越出 total_bytes；否则业务层按
+    // 对端给的 offset 落盘会被任意覆盖或写出边界。
+    if (frame.offset !== this.state.receivedBytes) {
+      throw new RelayV3ChunkProtocolError("seq-regression");
+    }
     let bytes: Uint8Array;
     try {
       bytes = decodeBase64Url(frame.data);
     } catch {
       throw new RelayV3ChunkProtocolError("crc-mismatch");
+    }
+    if (this.state.receivedBytes + bytes.length > this.state.totalBytes) {
+      throw new RelayV3ChunkProtocolError("oversize");
     }
     if (frame.flags !== "final" && relayV3Crc32(bytes) !== frame.crc32) {
       throw new RelayV3ChunkProtocolError("crc-mismatch");

@@ -95,7 +95,8 @@ OpenBitFun（`C:\Users\xufan\Trae\OpenBitFun`）证明了替代形态可行：re
 ### 3.3 Token
 
 - 登录/刷新签发 `{access_token, refresh_token}`：access 为 JWT（HS256，10 分钟，claims 仅 `sub`/`exp`/`iat`/`jti`）；refresh 为 32 字节随机串的哈希落库，30 天有效。
-- refresh 旋转：每次刷新旧 token 失效并签发新 token，构成家族；**已旋转 token 的重放撤销整个家族**（防盗号续期）。登出撤销当前家族。
+- refresh 旋转：每次刷新旧 token 失效并签发新 token，构成家族；**已旋转 token 的重放撤销整个家族**（防盗号续期）。
+- access JWT 额外携带 `fam`（当前 refresh 家族 ID，10 分钟内有效）。登出按 `fam` 只撤销当前家族；旧版无 `fam` 的 access 才回退为撤销账号全部家族。这样同一 relay 账号下的手机网页与桌面远控互不影响。
 - `Authorization: Bearer <access>` 用于所有设备/目录接口；ws 一次性 token（60 秒、原子消费）契约见 §5.2。token 不进二维码、不写日志。
 
 ### 3.4 登录时序
@@ -144,6 +145,7 @@ key      = HKDF-SHA256(salt, shared, info)  → 32 字节 AES-256-GCM 密钥
 ### 4.4 消息加密
 
 - 算法：AES-256-GCM，每条消息随机 12 字节 nonce；密文附 16 字节 GCM tag。明文为桌面 renderer 与手机页面交换的既有业务 JSON 序列化字节，业务层不感知加密。
+- 方向绑定 AAD：GCM 附加认证数据为 `"ZCode Relay V3 data v1:" + 发送方角色`（`device`/`terminal`），不进信封 JSON，由收发双方按各自角色推导（发送用自己的角色，接收用对端角色）。device 发出的密文被原样反射回 device 时因 AAD 不匹配解密失败，防双向同构协议的反射/重放。AAD 属密文兼容性的一部分：新旧版本端点互发会 `decrypt-failed` 断开重建，升级需两端同版。
 - 单条 `data` 消息（含密文膨胀：nonce、GCM tag、信封字段）上限 1 MiB。
 
 ### 4.5 信封
@@ -180,12 +182,13 @@ V3 的 `data` 消息外层结构为 `{payload, client_ts}`（上行）/ `{payloa
 | `POST /v3/auth/sms-code` | 无 | `{phone: E.164}` | `null` |
 | `POST /v3/auth/login` | 无 | `{phone, code}` 或 `{phone, password}` | `{access, refresh, account: {id, phone_masked}}` |
 | `POST /v3/auth/refresh` | 无 | `{refresh}` | 新 `{access, refresh}` |
-| `POST /v3/auth/logout` | Bearer | 无 | `null` |
+| `POST /v3/auth/logout` | Bearer | 无 | `null`（按 access 的 `fam` 只撤销当前家族） |
 | `POST /v3/device` | Bearer | `{device_mid: ≤128字符, public_key: base64url 32B}` | 设备记录 |
 | `GET /v3/device` | Bearer | 无 | 当前账号设备记录数组 |
-| `POST /v3/device/delete` | Bearer | `{device_sid}` | `null`（仅离线设备可删、删除幂等、越权返回 `no permission`） |
-| `POST /v3/relay/token` | Bearer | `{role: "device" \| "terminal"}` | `{token, expires_in: 60}` |
+| `POST /v3/device/delete` | Bearer | `{device_sid}` | `null`（仅离线设备可删、删除幂等、越权返回 `no permission`；同时撤销该设备授权取得的 refresh 家族） |
+| `POST /v3/relay/token` | Bearer | `{role: "device" \| "terminal"}` | `{token, expires_in: 60}`（30 次/分钟/IP） |
 | `POST /v3/device-auth/request` | 无 | `{public_key: base64url 32B}` | `{user_code, device_code, expires_in: 900}` |
+| `POST /v3/device-auth/preview` | Bearer | `{user_code}` | `{public_key, fingerprint, device_mid, expires_in}`（只读，不批准） |
 | `POST /v3/device-auth/approve` | Bearer | `{user_code}` | `{device: 设备记录}`（凭据经 poll 交付给发起方） |
 | `POST /v3/device-auth/poll` | 无 | `{device_code}` | 未批准：`{status: "pending"}`；已批准：`{access, refresh, device}`；过期：业务错误码 |
 
@@ -246,7 +249,7 @@ sequenceDiagram
 规则与边界：
 
 - `user_code` 为 8 位数字、单次使用、15 分钟过期；`device_code` 为 32 字节随机串，仅发起方持有。request/poll/approve 限流见 §8；`poll` 在批准前返回 `pending`，过期返回业务错误码，发起方重新发起即换新密钥对。
-- 批准界面**必须**显示请求方公钥指纹（SHA-256 前 8 字节 hex）与 `meta` 摘要，供用户人工核对——headless 接入没有面对面扫码的带外通道，指纹核对该场景下的必选项，同时是 §10 公钥替换 MITM 问题的解法。
+- 批准界面**必须**先经 `device-auth/preview` 取得请求方公钥指纹（SHA-256 前 8 字节 hex）并展示，用户与 headless 终端显示的指纹核对一致后再调用 approve；preview 不改变请求状态。headless 接入没有面对面扫码的带外通道，指纹核对该场景下的必选项，同时是 §10 公钥替换 MITM 问题的解法。
 - 批准动作不向批准方交付发起方凭据；daemon 经 `poll` 取得自己的 `{access, refresh}`，refresh token 家族语义与 §3.3 一致（落 server root 0600，重启免重登，任何同账号已认证设备可删除该设备实现远程吊销）。
 - 同一账号下待批准请求上限 8 条，超出拒绝新 request；批准成功后同 user_code 的其他 pending 请求不受影响。
 - Provider 配置引导复用现有 Provisioning 单向下发语义：批准后由批准设备经 relay E2E 通道推送一份配置，daemon 端零新增配置逻辑；远端配置的自权威化管理属 R4 后续，不阻塞接入。
@@ -303,7 +306,7 @@ sequenceDiagram
 | `accounts` | `id`、`phone_e164`（唯一）、`password_scrypt?`、`status`、`created_at` |
 | `sms_codes` | `phone`、`code_hash`、`purpose`、`expires_at`、`used`、`request_ip`、`created_at`（TTL 清理任务） |
 | `devices` | `sid`（主键）、`account_id`、`device_mid`、`public_key`、`meta`、`created_at`、`deleted_at` |
-| `refresh_tokens` | `token_hash`、`family_id`、`account_id`、`expires_at`、`rotated_from`、`revoked_at` |
+| `refresh_tokens` | `token_hash`、`family_id`、`account_id`、`expires_at`、`rotated_from`、`revoked_at`、`device_sid?`（设备授权取得的家族绑定设备，删除设备时按此撤销） |
 
 在线态、配对 owner、一次性 token 均为进程内存事实，不入库；进程重启后设备显示离线，客户端按既有退避重连，无需恢复逻辑。数据库路径 `RELAY_DB_PATH` 必填，缺失则启动失败（fail closed，沿用 OpenBitFun 约束）。
 
@@ -318,13 +321,14 @@ sequenceDiagram
 | 验证码发送 / 登录尝试 | §3.2 限流表 |
 | 设备授权 | user_code 8 位数字、15 分钟、单次使用；request 5 次/分钟/IP、每账号待批准上限 8 条；poll 30 次/分钟/device_code；approve 10 次/分钟/IP |
 | refresh 旋转 | 30/分钟/IP；重放撤销家族 |
+| relay 一次性 token | 30/分钟/IP；进程内未消费 token 由后台清理任务回收 |
 | WS 连接 | 256/进程；握手 15s deadline；ping 5s±1s / pong 45s 超时 |
 | WS 单消息 | 1 MiB（含密文膨胀预算） |
 | WS 出站队列 | 128 条/连接；2s 内无法入队即丢弃该帧 |
 | 设备数 / 活跃凭据 | 64 / 256 每账号，数据库原子准入 |
 | 密文单条 | 4 MiB 上限（含信封），超限 413 |
 
-部署（P3）：Dockerfile 多阶段构建 + docker-compose + 反向代理样例（Caddy）；仅暴露 TLS 入口；`RELAY_PORT`/`RELAY_DB_PATH`/`RELAY_STATIC_DIR`/`RELAY_SMS_*`/`RELAY_LOCAL_REGISTRATION`/`RELAY_JWT_SECRET` 为配置面。`relay-admin` CLI：`list-users`、`add-user --phone --password-stdin`、`delete-user --phone`、`set-password --phone --password-stdin`、`list-devices --phone`。
+部署（P3）：Dockerfile 多阶段构建 + docker-compose + 反向代理样例（Caddy）；仅暴露 TLS 入口；`RELAY_PORT`/`RELAY_DB_PATH`/`RELAY_STATIC_DIR`/`RELAY_SMS_*`/`RELAY_LOCAL_REGISTRATION`/`RELAY_JWT_SECRET`/`RELAY_TRUST_PROXY` 为配置面。`RELAY_TRUST_PROXY` 用于在反向代理后恢复真实客户端 IP（Fastify `trustProxy`，建议填反代所在 CIDR 或 `true` 且保证反代是唯一入口）；未配置时按直连地址限流。`RELAY_SMS_PROVIDER` 允许 `aliyun`/`test`/`none`，`none` 时验证码接口返回 503、密码登录仍可用，生产构建仍禁用 `test`。`relay-admin` CLI：`list-users`、`add-user --phone --password-stdin`、`delete-user --phone`、`set-password --phone --password-stdin`、`list-devices --phone`。
 
 ## 9. 实施里程碑
 

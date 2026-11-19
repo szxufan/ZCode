@@ -995,12 +995,20 @@ export interface IPlatformService {
   }>;
 
   /** 订阅控制状态变化，返回 disposer。 */
-  onRelayV3TerminalStatusChanged?(
-    handler: (status: RelayV3TerminalStatus) => void,
-  ): () => void;
+  onRelayV3TerminalStatusChanged?(handler: (status: RelayV3TerminalStatus) => void): () => void;
+
+  /** 设备授权（R4 §5.5）：按 user_code 预览待批准设备公钥指纹（只读，不批准）。 */
+  relayV3DeviceAuthPreview?(
+    userCode: string,
+  ): Promise<
+    | { ok: true; publicKey: string; fingerprint: string; deviceMid: string; expiresIn: number }
+    | { ok: false; message?: string; businessCode?: number }
+  >;
 
   /** 设备授权（R4 §5.5）：按 user_code 批准 headless 设备，回显公钥指纹。 */
-  relayV3DeviceAuthApprove?(userCode: string): Promise<
+  relayV3DeviceAuthApprove?(
+    userCode: string,
+  ): Promise<
     | { ok: true; fingerprint: string; deviceSid: string }
     | { ok: false; message?: string; businessCode?: number }
   >;

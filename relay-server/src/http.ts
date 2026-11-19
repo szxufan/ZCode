@@ -16,9 +16,12 @@ export function replyBusiness(reply: FastifyReply, code: number, msg: string): F
 }
 
 export function clientIp(request: FastifyRequest): string {
-  // 自部署默认处于反向代理之后；仅当直连本机时信任 X-Forwarded-For 首跳。
-  const forwarded = request.headers["x-forwarded-for"];
+  // Fastify 在配置 trustProxy 后会解析真实客户端地址；此时直接采用 request.ip。
   const remote = request.socket.remoteAddress ?? "unknown";
+  if (request.ip && request.ip !== remote) return request.ip;
+  // 未配置 trustProxy 时只在直连 loopback（本机开发/本机反代）信任 X-Forwarded-For 首跳，
+  // 避免公网客户端伪造该头绕过按 IP 限流。
+  const forwarded = request.headers["x-forwarded-for"];
   const isLoopback = remote === "127.0.0.1" || remote === "::1" || remote === "::ffff:127.0.0.1";
   if (isLoopback && typeof forwarded === "string" && forwarded.trim()) {
     return forwarded.split(",")[0]!.trim();

@@ -17,6 +17,7 @@ import {
   issueRefreshFamily,
   RefreshRejectedError,
   revokeFamiliesForAccount,
+  revokeFamily,
   rotateRefreshToken,
 } from "../refreshTokens.js";
 import type { RelayRuntime } from "../runtime.js";
@@ -135,7 +136,10 @@ export function registerAuthRoutes(
         return completeLogin(reply, account.id, parsed.phone);
       }
 
-      // 密码登录：短信不可用时的兜底（§3.1）。
+      // 密码登录：短信不可用时的兜底（§3.1）。未知账号也计入 IP 级尝试，避免撞库。
+      if (!runtime.limiters.passwordLoginPerIp.hit(`ip:${ip}`)) {
+        return replyBusiness(reply, CODES.RATE_LIMITED, "rate limited");
+      }
       if (!account || !verifyRelayPassword(parsed.password, account.password_scrypt)) {
         loginFailed();
         return replyBusiness(reply, CODES.AUTH_FAILED, "invalid credentials");
@@ -156,7 +160,12 @@ export function registerAuthRoutes(
       }
       try {
         const rotated = rotateRefreshToken(db, parsed.refresh, runtime.now);
-        const access = signRelayAccessToken(config.jwtSecret, rotated.accountId, runtime.now);
+        const access = signRelayAccessToken(
+          config.jwtSecret,
+          rotated.accountId,
+          runtime.now,
+          rotated.familyId,
+        );
         return replyOk(reply, { access, refresh: rotated.refresh });
       } catch (error) {
         if (error instanceof RefreshRejectedError) {
@@ -174,20 +183,22 @@ export function registerAuthRoutes(
       const token = bearerToken(request);
       const claims = token ? verifyRelayAccessToken(config.jwtSecret, token, runtime.now) : null;
       if (claims) {
-        revokeFamiliesForAccount(db, claims.sub, runtime.now);
+        // access 携带 fam 时只撤销当前家族；旧 token 无 fam 才回退为账号全部家族。
+        if (claims.fam) revokeFamily(db, claims.fam, runtime.now);
+        else revokeFamiliesForAccount(db, claims.sub, runtime.now);
       }
       return replyOk(reply);
     },
   );
 
   function completeLogin(reply: FastifyReply, accountId: string, phone: string) {
-    let family: { refresh: string };
+    let family: { refresh: string; familyId: string };
     try {
       family = issueRefreshFamily(db, accountId, runtime.now);
     } catch {
       return replyBusiness(reply, CODES.QUOTA_EXCEEDED, "credential quota exceeded");
     }
-    const access = signRelayAccessToken(config.jwtSecret, accountId, runtime.now);
+    const access = signRelayAccessToken(config.jwtSecret, accountId, runtime.now, family.familyId);
     return replyOk(reply, {
       access,
       refresh: family.refresh,
