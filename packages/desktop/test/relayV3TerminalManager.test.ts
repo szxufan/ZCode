@@ -14,6 +14,7 @@ import {
   openRelayV3Envelope,
   parseRelayV3IncomingMessage,
   relayV3KeyId,
+  relayV3EnvelopeAad,
   sealRelayV3Envelope,
   type RelayV3Envelope,
 } from "@zcode/shared/remote-relay-v3";
@@ -58,7 +59,11 @@ class FakePort implements MessagePortLike {
   }
 }
 
-async function waitFor<T>(probe: () => T | undefined | null, what: string, timeoutMs = 10_000): Promise<T> {
+async function waitFor<T>(
+  probe: () => T | undefined | null,
+  what: string,
+  timeoutMs = 10_000,
+): Promise<T> {
   const deadline = Date.now() + timeoutMs;
   for (;;) {
     const value = probe();
@@ -109,7 +114,10 @@ describe("Relay V3 控制端（P4，fake relay 集成）", () => {
       getRelayConfig: () => ({ endpointOrigin: relay.httpUrl }),
       account,
       deliverBridgePort: (session) => {
-        deliveredPorts.push({ bridgeSessionId: session.bridgeSessionId, workspaceKey: session.workspaceKey });
+        deliveredPorts.push({
+          bridgeSessionId: session.bridgeSessionId,
+          workspaceKey: session.workspaceKey,
+        });
       },
       createMessageChannel: () => {
         const port1 = new FakePort();
@@ -178,7 +186,10 @@ describe("Relay V3 控制端（P4，fake relay 集成）", () => {
         public_key: encodeRelayV3Base64Url(keyPair.publicKey),
       }),
     });
-    const registerEnvelope = (await registerResponse.json()) as { code: number; data: { device_sid: string } };
+    const registerEnvelope = (await registerResponse.json()) as {
+      code: number;
+      data: { device_sid: string };
+    };
     expect(registerEnvelope.code).toBe(0);
     const deviceSid = registerEnvelope.data.device_sid;
 
@@ -190,12 +201,18 @@ describe("Relay V3 控制端（P4，fake relay 集成）", () => {
     const tokenEnvelope = (await tokenResponse.json()) as { code: number; data: { token: string } };
     expect(tokenEnvelope.code).toBe(0);
 
-    const socket = new WebSocket(`${relay.wsUrl}?token=${encodeURIComponent(tokenEnvelope.data.token)}`);
+    const socket = new WebSocket(
+      `${relay.wsUrl}?token=${encodeURIComponent(tokenEnvelope.data.token)}`,
+    );
     let sessionKey: Uint8Array | null = null;
     socket.on("message", (data: WebSocket.RawData) => {
       const message = parseRelayV3IncomingMessage(JSON.parse(data.toString()));
       if (!message) return;
-      if (message.type === "pair_status_ack" && message.pair_status === "matched" && message.terminal_public_key) {
+      if (
+        message.type === "pair_status_ack" &&
+        message.pair_status === "matched" &&
+        message.terminal_public_key
+      ) {
         sessionKey = deriveRelayV3SessionKey(
           keyPair.privateKey,
           decodeRelayV3Base64Url(message.terminal_public_key),
@@ -204,13 +221,26 @@ describe("Relay V3 控制端（P4，fake relay 集成）", () => {
       }
       if (message.type !== "data" || !sessionKey) return;
       const payload = JSON.parse(
-        new TextDecoder().decode(openRelayV3Envelope(sessionKey, message.payload as RelayV3Envelope)),
+        new TextDecoder().decode(
+          openRelayV3Envelope(
+            sessionKey,
+            message.payload as RelayV3Envelope,
+            relayV3EnvelopeAad("terminal"),
+          ),
+        ),
       );
       if (payload.zcode_type === "bootstrap-request") {
         send({
           zcode_type: "bootstrap-response",
           desktop_app_version: "3.22.0-test",
-          workspaces: [{ workspace_key: "/w/target", path: "/w/target", connection: "local", bridgeable: true }],
+          workspaces: [
+            {
+              workspace_key: "/w/target",
+              path: "/w/target",
+              connection: "local",
+              bridgeable: true,
+            },
+          ],
         });
         return;
       }
@@ -232,6 +262,7 @@ describe("Relay V3 控制端（P4，fake relay 集成）", () => {
             sessionKey,
             new TextEncoder().encode(JSON.stringify(payload)),
             relayV3KeyId(keyPair.publicKey),
+            relayV3EnvelopeAad("device"),
           ),
         }),
       );
@@ -239,7 +270,11 @@ describe("Relay V3 控制端（P4，fake relay 集成）", () => {
 
     await new Promise<void>((resolve) => socket.once("open", resolve));
     socket.send(
-      JSON.stringify({ type: "auth_init", device_sid: deviceSid, meta: { name: "target-desktop" } }),
+      JSON.stringify({
+        type: "auth_init",
+        device_sid: deviceSid,
+        meta: { name: "target-desktop" },
+      }),
     );
     return { deviceSid, socket, sessionKey, keyPair };
   }

@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  encodeBase64Url,
   fragmentRelayV3RpcMessage,
   parseRelayV3RpcFrame,
   parseRelayV3RpcFrameAck,
@@ -31,7 +32,11 @@ interface Wire {
 }
 
 /** 端到端直连：A.send → wire → B.receive；B 的 ACK → wire → A.receive。 */
-function createPair(now = () => 0): { a: RelayV3AcknowledgedRpc; b: RelayV3AcknowledgedRpc; wire: Wire } {
+function createPair(now = () => 0): {
+  a: RelayV3AcknowledgedRpc;
+  b: RelayV3AcknowledgedRpc;
+  wire: Wire;
+} {
   const wire: Wire = { sent: [], received: [], degraded: [], flow: [] };
   const a = new RelayV3AcknowledgedRpc({
     bridgeSessionId: "bs_1",
@@ -58,7 +63,29 @@ function createPair(now = () => 0): { a: RelayV3AcknowledgedRpc; b: RelayV3Ackno
 }
 
 describe("Relay V3 rpc-frame 分片", () => {
-  it("CRC32 已知向量（空串 0、\"123456789\" 0xCBF43926）", () => {
+  it("伪造 message_bytes 小于实际片长：不越界、不交付（避免 RangeError 打崩）", () => {
+    const received: Uint8Array[] = [];
+    const adapter = new RelayV3AcknowledgedRpc({
+      bridgeSessionId: "bs_overflow",
+      sendPayload: () => {},
+      onMessage: (message) => received.push(message),
+    });
+    const chunk = randomBytes(512 * 1024);
+    const frame: RelayV3RpcFrame = {
+      zcode_type: "rpc-frame",
+      bridge_session_id: "bs_overflow",
+      message_seq: 1,
+      fragment_index: 0,
+      fragment_count: 1,
+      message_bytes: 1,
+      crc32: relayV3Crc32(chunk),
+      data: encodeBase64Url(chunk),
+    };
+    expect(() => adapter.receive(frame)).not.toThrow();
+    expect(received).toHaveLength(0);
+    adapter.dispose();
+  });
+  it('CRC32 已知向量（空串 0、"123456789" 0xCBF43926）', () => {
     expect(relayV3Crc32(new Uint8Array(0))).toBe(0);
     expect(relayV3Crc32(new TextEncoder().encode("123456789"))).toBe(0xcbf43926);
   });
@@ -71,15 +98,21 @@ describe("Relay V3 rpc-frame 分片", () => {
       const encoded = new TextEncoder().encode(JSON.stringify(frame));
       expect(encoded.length).toBeLessThanOrEqual(1_048_576);
     }
-    expect(frames[0]).toMatchObject({ message_seq: 1, fragment_index: 0, message_bytes: message.length });
+    expect(frames[0]).toMatchObject({
+      message_seq: 1,
+      fragment_index: 0,
+      message_bytes: message.length,
+    });
   });
 
   it("超限消息抛 oversize / too-many-fragments", () => {
-    expect(() => fragmentRelayV3RpcMessage("bs_1", 1, new Uint8Array(0))).toThrow(RelayV3RpcProtocolError);
-    // 17 MiB 超过 16 MiB 上限。
-    expect(() => fragmentRelayV3RpcMessage("bs_1", 1, new Uint8Array(RELAY_V3_RPC_MAX_MESSAGE_BYTES + 1))).toThrow(
+    expect(() => fragmentRelayV3RpcMessage("bs_1", 1, new Uint8Array(0))).toThrow(
       RelayV3RpcProtocolError,
     );
+    // 17 MiB 超过 16 MiB 上限。
+    expect(() =>
+      fragmentRelayV3RpcMessage("bs_1", 1, new Uint8Array(RELAY_V3_RPC_MAX_MESSAGE_BYTES + 1)),
+    ).toThrow(RelayV3RpcProtocolError);
   });
 
   it("小消息单片往返：交付一次并回 cumulative ACK，重放幂等去重", () => {
@@ -90,7 +123,9 @@ describe("Relay V3 rpc-frame 分片", () => {
     // ACK 已 flush：A 的 batch 释放。
     expect(a.inFlightBytes()).toBe(0);
     // 对端重放（same-socket send-ready）：B 幂等丢弃、不重复交付、补 ACK。
-    for (const frame of wire.sent.filter((item): item is RelayV3RpcFrame => item.zcode_type === "rpc-frame")) {
+    for (const frame of wire.sent.filter(
+      (item): item is RelayV3RpcFrame => item.zcode_type === "rpc-frame",
+    )) {
       b.receive(frame);
     }
     expect(wire.received).toEqual([message]);
@@ -241,7 +276,11 @@ describe("Relay V3 rpc-frame 分片", () => {
       }),
     ).toBeNull();
     expect(
-      parseRelayV3RpcFrameAck({ zcode_type: "rpc-frame-ack", bridge_session_id: "bs_1", message_seq: 1 }),
+      parseRelayV3RpcFrameAck({
+        zcode_type: "rpc-frame-ack",
+        bridge_session_id: "bs_1",
+        message_seq: 1,
+      }),
     ).toBeNull();
   });
 });

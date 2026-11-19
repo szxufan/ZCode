@@ -843,7 +843,8 @@ const enUS: Record<string, string> = {
   "chat.composer.schedule.dayAfterTomorrow": "In two days {time}",
   "chat.composer.schedule.aboutIn": "in {duration}",
   "chat.composer.schedule.confirm": "Schedule send",
-  "chat.composer.schedule.attachmentUnsupported": "Scheduled send supports text only; remove attachments first",
+  "chat.composer.schedule.attachmentUnsupported":
+    "Scheduled send supports text only; remove attachments first",
   "chat.composer.schedule.invalidTime": "Pick a future time",
   "chat.composer.schedule.tooFar": "Scheduled send supports up to one year ahead",
   "chat.composer.schedule.presetLimitReached": "At most {limit} presets",
@@ -2633,13 +2634,18 @@ const enUS: Record<string, string> = {
   "codeViewer.edit.saveFailed": "Save failed. Please try again.",
   "codeViewer.edit.formatFailed": "Formatting failed; the original text was saved.",
   "codeViewer.edit.formatUnavailable": "No formatting configuration is available for this file.",
-  "codeViewer.edit.notLossless": "The file was changed externally into a form that cannot be saved losslessly (encoding or mixed line endings). Exit editing or overwrite.",
+  "codeViewer.edit.notLossless":
+    "The file was changed externally into a form that cannot be saved losslessly (encoding or mixed line endings). Exit editing or overwrite.",
   "codeViewer.edit.blocked.binary": "Binary files cannot be edited here",
   "codeViewer.edit.blocked.tooLarge": "This file is too large to edit here",
-  "codeViewer.edit.blocked.notLossless": "This file's encoding cannot be written back losslessly, so it cannot be edited here",
-  "codeViewer.edit.blocked.mixedLineEndings": "This file mixes LF and CRLF line endings. Saving would normalize them and produce a whole-file diff, so it cannot be edited here",
-  "codeViewer.edit.blocked.partialRead": "Only part of this file was read, so it cannot be verified as losslessly editable",
-  "codeViewer.edit.blocked.hostUnsupported": "The workspace host is too old to support inline editing",
+  "codeViewer.edit.blocked.notLossless":
+    "This file's encoding cannot be written back losslessly, so it cannot be edited here",
+  "codeViewer.edit.blocked.mixedLineEndings":
+    "This file mixes LF and CRLF line endings. Saving would normalize them and produce a whole-file diff, so it cannot be edited here",
+  "codeViewer.edit.blocked.partialRead":
+    "Only part of this file was read, so it cannot be verified as losslessly editable",
+  "codeViewer.edit.blocked.hostUnsupported":
+    "The workspace host is too old to support inline editing",
   "codeViewer.markdownPreview": "Preview",
   "codeViewer.markdownSource": "Source",
   "codeViewer.svgMode": "SVG",
@@ -8843,7 +8849,8 @@ const enUS: Record<string, string> = {
     "ZCode will verify the Computer Use tools against the exact session when your first session starts.",
   "settings.computerUse.title": "Computer Use",
   "settings.remoteControl.title": "Remote Control",
-  "settings.remoteControl.unsupported": "Self-hosted remote control is not available in this environment.",
+  "settings.remoteControl.unsupported":
+    "Self-hosted remote control is not available in this environment.",
   "settings.remoteControl.account.title": "Relay account",
   "settings.remoteControl.account.phone": "Phone number",
   "settings.remoteControl.account.code": "Verification code",
@@ -8864,7 +8871,8 @@ const enUS: Record<string, string> = {
   "settings.remoteControl.phase.error": "Failed",
   "settings.remoteControl.qr.title": "Scan to connect",
   "settings.remoteControl.qr.alt": "Remote control QR code",
-  "settings.remoteControl.qr.hint": "Start remote control, then scan the QR code with a phone browser to control this computer.",
+  "settings.remoteControl.qr.hint":
+    "Start remote control, then scan the QR code with a phone browser to control this computer.",
   "settings.remoteControl.terminal.title": "Control another computer",
   "settings.remoteControl.terminal.refresh": "Refresh devices",
   "settings.remoteControl.terminal.connect": "Connect",
@@ -8876,6 +8884,13 @@ const enUS: Record<string, string> = {
   "settings.remoteControl.deviceAuth.title": "Approve a headless device",
   "settings.remoteControl.deviceAuth.hint":
     "Run zcode server login on the server, then enter the 8-digit code it shows.",
+  "settings.remoteControl.deviceAuth.preview": "Check fingerprint",
+  "settings.remoteControl.deviceAuth.fingerprint": "Key fingerprint: {fingerprint}",
+  "settings.remoteControl.deviceAuth.device": "Device: {device}",
+  "settings.remoteControl.deviceAuth.confirmHint":
+    "Compare this fingerprint digit by digit with the one shown on the server terminal before confirming.",
+  "settings.remoteControl.deviceAuth.confirm": "Confirm & approve",
+  "settings.remoteControl.deviceAuth.previewRequired": "Check the key fingerprint first.",
   "settings.remoteControl.deviceAuth.approve": "Approve",
   "settings.remoteControl.deviceAuth.approved": "Registered. Key fingerprint: {fingerprint}",
   "settings.computerUse.toggleLabel": "Enable Computer Use",

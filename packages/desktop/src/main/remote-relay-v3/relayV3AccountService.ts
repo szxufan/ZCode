@@ -1,4 +1,4 @@
-import { mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
+import { chmodSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 
 import { getAppConfigDir } from "@zcode/services/node";
@@ -80,12 +80,16 @@ export class RelayV3AccountService {
       this.session = await this.rotate(stored.refresh);
     } catch (error) {
       // 本地 refresh 已失效（过期/家族撤销）：清理落盘凭据，等待重新登录。
-      this.options.accountOptions?.log?.("relay-v3 account restore failed", { error: error instanceof Error ? error.name : "unknown" });
+      this.options.accountOptions?.log?.("relay-v3 account restore failed", {
+        error: error instanceof Error ? error.name : "unknown",
+      });
       this.clearStoredSession();
     }
   }
 
-  async sendSmsCode(phone: string): Promise<{ ok: true } | { ok: false; businessCode?: number; message?: string }> {
+  async sendSmsCode(
+    phone: string,
+  ): Promise<{ ok: true } | { ok: false; businessCode?: number; message?: string }> {
     try {
       await this.request("smsCode", { phone });
       return { ok: true };
@@ -94,7 +98,10 @@ export class RelayV3AccountService {
     }
   }
 
-  async loginWithCode(phone: string, code: string): Promise<{ ok: true } | { ok: false; businessCode?: number; message?: string }> {
+  async loginWithCode(
+    phone: string,
+    code: string,
+  ): Promise<{ ok: true } | { ok: false; businessCode?: number; message?: string }> {
     try {
       const data = await this.request("login", { phone, code });
       this.establishSession(data.access, data.refresh, data.account);
@@ -126,7 +133,7 @@ export class RelayV3AccountService {
   private async ensureSession(): Promise<SessionState | null> {
     if (!this.session) return null;
     if (this.now() >= this.session.accessExpiresAtMs - ACCESS_EXPIRY_MARGIN_MS) {
-      return this.refreshFlight ??= this.rotateWithRecovery(this.session.refresh);
+      return (this.refreshFlight ??= this.rotateWithRecovery(this.session.refresh));
     }
     return this.session;
   }
@@ -151,12 +158,24 @@ export class RelayV3AccountService {
 
   private async rotate(refresh: string): Promise<SessionState> {
     const data = await this.request("refresh", { refresh });
-    return {
+    const account = this.session?.account ??
+      this.readStoredSession()?.account ?? { id: "", phone_masked: "" };
+    const next: SessionState = {
       access: data.access,
       refresh: data.refresh,
       accessExpiresAtMs: this.accessExpiryMs(data.access),
-      account: this.session?.account ?? this.readStoredSession()?.account ?? { id: "", phone_masked: "" },
+      account,
     };
+    // 每次旋转都会让旧 refresh 在 relay 侧失效。新 refresh 必须立即落盘，否则冷启动
+    // 仍会读到旧值，触发 relay 的家族重放撤销并强制登出。
+    try {
+      this.writeStoredSession({ refresh: next.refresh, account: next.account });
+    } catch (error) {
+      this.options.accountOptions?.log?.("relay-v3 failed to persist rotated refresh", {
+        error: error instanceof Error ? error.name : "unknown",
+      });
+    }
+    return next;
   }
 
   private establishSession(access: string, refresh: string, account: RelayV3Account): void {
@@ -199,7 +218,10 @@ export class RelayV3AccountService {
   }
 
   private storedSessionPath(): string {
-    return join(this.options.accountOptions?.configDir ?? getAppConfigDir(), "relay-v3-account.json");
+    return join(
+      this.options.accountOptions?.configDir ?? getAppConfigDir(),
+      "relay-v3-account.json",
+    );
   }
 
   private readStoredSession(): StoredSession | null {
@@ -207,12 +229,19 @@ export class RelayV3AccountService {
       const parsed = JSON.parse(readFileSync(this.storedSessionPath(), "utf-8")) as unknown;
       if (typeof parsed !== "object" || parsed === null) return null;
       const record = parsed as Record<string, unknown>;
-      if (typeof record.refresh !== "string" || typeof record.account !== "object" || record.account === null) {
+      if (
+        typeof record.refresh !== "string" ||
+        typeof record.account !== "object" ||
+        record.account === null
+      ) {
         return null;
       }
       const account = record.account as Record<string, unknown>;
       if (typeof account.id !== "string" || typeof account.phone_masked !== "string") return null;
-      return { refresh: record.refresh, account: { id: account.id, phone_masked: account.phone_masked } };
+      return {
+        refresh: record.refresh,
+        account: { id: account.id, phone_masked: account.phone_masked },
+      };
     } catch {
       return null;
     }
@@ -222,13 +251,19 @@ export class RelayV3AccountService {
     const file = this.storedSessionPath();
     mkdirSync(dirname(file), { recursive: true });
     const tempFile = `${file}.${process.pid}.tmp`;
-    writeFileSync(tempFile, JSON.stringify(session), "utf-8");
+    writeFileSync(tempFile, JSON.stringify(session), { encoding: "utf-8", mode: 0o600 });
+    try {
+      // 远程控制凭据只应属于当前 OS 用户；Windows 上 chmod 无 POSIX 语义，由目录 ACL 承担。
+      chmodSync(tempFile, 0o600);
+    } catch {
+      // 权限收紧失败不阻断登录，但不再扩大凭据可读范围。
+    }
     renameSync(tempFile, file);
   }
 
   private clearStoredSession(): void {
     try {
-      writeFileSync(this.storedSessionPath(), "", "utf-8");
+      writeFileSync(this.storedSessionPath(), "", { encoding: "utf-8", mode: 0o600 });
     } catch {
       // 清理失败不阻塞登出语义。
     }

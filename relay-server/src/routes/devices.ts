@@ -11,9 +11,10 @@ import {
 import type { RelayServerConfig } from "../config.js";
 import type { DeviceRow } from "../db.js";
 import { insertDeviceWithQuota, QuotaExceededError } from "../db.js";
-import { replyBusiness, replyOk, requireAccount } from "../http.js";
+import { clientIp, replyBusiness, replyOk, requireAccount } from "../http.js";
 import { RELAY_LIMITS } from "../limits.js";
 import type { RelayPresence } from "../presence.js";
+import { revokeFamiliesForDevice } from "../refreshTokens.js";
 import type { RelayRuntime } from "../runtime.js";
 
 // §5.1 设备目录：注册（新 SID+新公钥）、列表（online 由 presence 计算）、
@@ -108,6 +109,9 @@ export function registerDeviceRoutes(
         Math.floor(runtime.now() / 1000),
         row.sid,
       );
+      // 设备吊销必须同时撤销它经 device-auth 取得的 refresh 家族，否则被删设备
+      // 仍能用旧 refresh 换 access 并重新注册新 SID 上线。
+      revokeFamiliesForDevice(db, accountId, row.sid, runtime.now);
       return replyOk(reply);
     },
   );
@@ -118,6 +122,9 @@ export function registerDeviceRoutes(
     async (request, reply) => {
       const accountId = requireAccount(request, reply, config.jwtSecret, runtime.now);
       if (!accountId) return reply;
+      if (!runtime.limiters.relayTokenPerIp.hit(`ip:${clientIp(request)}`)) {
+        return replyBusiness(reply, CODES.RATE_LIMITED, "rate limited");
+      }
       const parsed = parseRelayV3HttpRequest("relayToken", request.body);
       if (!parsed) return replyBusiness(reply, CODES.WRONG_PARAM, "parameter error");
       return replyOk(reply, runtime.issueWsToken(accountId, parsed.role));

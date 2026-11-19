@@ -140,6 +140,17 @@ describe("refresh 家族", () => {
     expect(afterLogout.body.code).not.toBe(0);
   });
 
+  it("登出只撤销当前 access 所属家族，不影响同账号其他设备", async () => {
+    const phone = "+8613800136023";
+    const first = await loginTestAccount(relay, phone);
+    const second = await loginTestAccount(relay, phone);
+    await post("/v3/auth/logout", undefined, first.access);
+    const firstRefresh = await post("/v3/auth/refresh", { refresh: first.refresh });
+    expect(firstRefresh.body.code).not.toBe(0);
+    const secondRefresh = await post("/v3/auth/refresh", { refresh: second.refresh });
+    expect(secondRefresh.body.code).toBe(0);
+  });
+
   it("refresh 过期拒绝", async () => {
     const { refresh } = await loginTestAccount(relay, "+8613800136022");
     relay.clock.advance(31 * 24 * 3_600_000);

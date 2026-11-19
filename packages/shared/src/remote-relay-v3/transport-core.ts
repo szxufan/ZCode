@@ -7,7 +7,7 @@ import {
   type RelayV3OutgoingMessage,
   type RelayV3Role,
 } from "./contract.js";
-import { openRelayV3Envelope, sealRelayV3Envelope } from "./crypto.js";
+import { openRelayV3Envelope, relayV3EnvelopeAad, sealRelayV3Envelope } from "./crypto.js";
 import { RelayV3Heartbeat, RELAY_V3_HANDSHAKE_DEADLINE_MS } from "./heartbeat.js";
 
 // Relay V3 transport 连接状态机共享内核（device 与 terminal 两个 transport 的公共部分）。
@@ -124,16 +124,22 @@ export class RelayV3TransportCore {
   private lastKickedAt?: number;
   private sessionKey?: Uint8Array;
   private stopped = true;
+  /** 方向绑定 AAD：发送用自己的角色，接收用对端角色（见 crypto.relayV3EnvelopeAad）。 */
+  private readonly sendAad: Uint8Array;
+  private readonly receiveAad: Uint8Array;
 
   constructor(private readonly options: RelayV3TransportCoreOptions) {
     this.timing = {
       now: options.timing?.now ?? (() => Date.now()),
       setTimeout: options.timing?.setTimeout ?? ((callback, ms) => setTimeout(callback, ms)),
       clearTimeout:
-        options.timing?.clearTimeout ?? ((handle) => clearTimeout(handle as Parameters<typeof clearTimeout>[0])),
+        options.timing?.clearTimeout ??
+        ((handle) => clearTimeout(handle as Parameters<typeof clearTimeout>[0])),
       random: options.timing?.random ?? Math.random,
     };
     this.backoffOptions = { ...DEFAULT_BACKOFF, ...options.backoff };
+    this.sendAad = relayV3EnvelopeAad(options.role);
+    this.receiveAad = relayV3EnvelopeAad(options.role === "device" ? "terminal" : "device");
   }
 
   getState(): RelayV3TransportState {
@@ -163,6 +169,7 @@ export class RelayV3TransportCore {
       this.sessionKey,
       new TextEncoder().encode(JSON.stringify(payload)),
       this.options.kid,
+      this.sendAad,
     );
     this.socket.send(
       JSON.stringify({ type: "data", payload: envelope } satisfies RelayV3OutgoingMessage),
@@ -221,7 +228,10 @@ export class RelayV3TransportCore {
     if (error instanceof RelayV3ConnectionError) {
       if (error.reason === "auth-required" || !error.retryable) {
         // relay 账号登录态失效或不可恢复 4xx：终态，停止自动重连（V2 语义）。
-        this.dispose({ kind: error.reason === "auth-required" ? "auth-required" : "relay-unavailable", message: error.message });
+        this.dispose({
+          kind: error.reason === "auth-required" ? "auth-required" : "relay-unavailable",
+          message: error.message,
+        });
         return;
       }
     }
@@ -254,7 +264,8 @@ export class RelayV3TransportCore {
     }
     const { kickedFirstMinMs, kickedFirstMaxMs } = this.backoffOptions;
     const delay =
-      kickedFirstMinMs + Math.floor(this.timing.random() * Math.max(1, kickedFirstMaxMs - kickedFirstMinMs));
+      kickedFirstMinMs +
+      Math.floor(this.timing.random() * Math.max(1, kickedFirstMaxMs - kickedFirstMinMs));
     this.reconnectTimer = this.scheduleTimer(() => {
       if (generation !== this.generation) return;
       this.connect(generation);
@@ -314,11 +325,15 @@ export class RelayV3TransportCore {
     }
   }
 
-  private handlePairStatusAck(message: Extract<RelayV3IncomingMessage, { type: "pair_status_ack" }>): void {
+  private handlePairStatusAck(
+    message: Extract<RelayV3IncomingMessage, { type: "pair_status_ack" }>,
+  ): void {
     this.heartbeat?.acknowledged();
     if (message.pair_status === "matched") {
       if (message.terminal_public_key) {
-        const key = this.options.deriveSessionKey({ terminalPublicKey: message.terminal_public_key });
+        const key = this.options.deriveSessionKey({
+          terminalPublicKey: message.terminal_public_key,
+        });
         if (key) {
           this.sessionKey = key;
         } else {
@@ -350,7 +365,7 @@ export class RelayV3TransportCore {
     }
     let plaintext: Uint8Array;
     try {
-      plaintext = openRelayV3Envelope(this.sessionKey, payload);
+      plaintext = openRelayV3Envelope(this.sessionKey, payload, this.receiveAad);
     } catch {
       // 解密失败不静默丢弃：记录 decrypt-failed 并断开重建（§4.5）。
       this.options.onProtocolFault?.("decrypt-failed");
@@ -382,7 +397,10 @@ export class RelayV3TransportCore {
         return;
       case "KICKED": {
         const now = this.timing.now();
-        if (this.lastKickedAt !== undefined && now - this.lastKickedAt < this.backoffOptions.kickedWindowMs) {
+        if (
+          this.lastKickedAt !== undefined &&
+          now - this.lastKickedAt < this.backoffOptions.kickedWindowMs
+        ) {
           this.dispose({ kind: "session-conflict", message: message.message });
           return;
         }
@@ -433,7 +451,9 @@ export class RelayV3TransportCore {
     this.heartbeat = new RelayV3Heartbeat(
       () => {
         if (generation !== this.generation || !this.socket) return;
-        this.socket.send(JSON.stringify({ type: "pair_status_query" } satisfies RelayV3OutgoingMessage));
+        this.socket.send(
+          JSON.stringify({ type: "pair_status_query" } satisfies RelayV3OutgoingMessage),
+        );
       },
       () => {
         if (generation !== this.generation) return;
@@ -442,7 +462,8 @@ export class RelayV3TransportCore {
       },
       {
         // 心跳计时与 core 共用同一注入时钟（测试手动推进；生产为全局 setTimeout）。
-        setTimeout: (callback, ms) => this.timing.setTimeout(callback, ms) as ReturnType<typeof setTimeout>,
+        setTimeout: (callback, ms) =>
+          this.timing.setTimeout(callback, ms) as ReturnType<typeof setTimeout>,
         clearTimeout: (handle) => this.timing.clearTimeout(handle),
       },
     );

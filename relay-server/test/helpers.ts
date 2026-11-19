@@ -40,6 +40,7 @@ export async function startTestRelay(
     dbPath: join(dir, "relay.db"),
     jwtSecret: "test-jwt-secret",
     localRegistration: "open",
+    trustProxy: false,
     production: false,
     sms: { provider: "test" },
     ...overrides,

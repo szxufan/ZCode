@@ -1,4 +1,4 @@
-import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 
 import { getAppConfigDir } from "@zcode/services/node";
@@ -30,7 +30,9 @@ export function relayV3IdentityFilePath(configDir?: string): string {
 }
 
 /** 读取或生成本机设备身份；device_sid 为 null 表示已生成密钥但尚未注册。 */
-export function loadOrGenerateRelayV3DeviceIdentity(configDir?: string): RelayV3StoredDeviceIdentity {
+export function loadOrGenerateRelayV3DeviceIdentity(
+  configDir?: string,
+): RelayV3StoredDeviceIdentity {
   const file = relayV3IdentityFilePath(configDir);
   const stored = readIdentityFile(file);
   if (stored) {
@@ -89,7 +91,13 @@ function readIdentityFile(file: string): IdentityFileShape | null {
 function writeIdentityFile(file: string, shape: IdentityFileShape): void {
   mkdirSync(dirname(file), { recursive: true });
   const tempFile = `${file}.${process.pid}.tmp`;
-  writeFileSync(tempFile, JSON.stringify(shape, null, 2), "utf-8");
+  writeFileSync(tempFile, JSON.stringify(shape, null, 2), { encoding: "utf-8", mode: 0o600 });
+  try {
+    // 设备私钥文件只应属于当前 OS 用户；Windows 无 POSIX 权限语义，由目录 ACL 隔离。
+    chmodSync(tempFile, 0o600);
+  } catch {
+    // 权限收紧失败不阻断远控启动。
+  }
   renameSync(tempFile, file);
 }
 

@@ -62,6 +62,17 @@ function compareBytes(a: Uint8Array, b: Uint8Array): number {
 
 export type RelayV3CryptoFailureKind = "invalid-public-key" | "invalid-envelope" | "decrypt-failed";
 
+const ENVELOPE_AAD_DOMAIN = "ZCode Relay V3 data v1:";
+const textEncoder = new TextEncoder();
+
+/**
+ * 信封方向绑定 AAD：发送方用自己的角色、接收方用对端角色。这样 device 发出的
+ * 密文被原样反射回 device 时会因 AAD 不匹配而解密失败，避免双向同构协议的反射/重放。
+ */
+export function relayV3EnvelopeAad(role: "device" | "terminal"): Uint8Array {
+  return textEncoder.encode(`${ENVELOPE_AAD_DOMAIN}${role}`);
+}
+
 export class RelayV3CryptoError extends Error {
   constructor(readonly kind: RelayV3CryptoFailureKind) {
     super(kind);
@@ -145,10 +156,11 @@ export function sealRelayV3Envelope(
   sessionKey: Uint8Array,
   plaintext: Uint8Array,
   kid: string,
+  aad: Uint8Array = new Uint8Array(0),
 ): RelayV3Envelope {
   const nonce = new Uint8Array(RELAY_V3_NONCE_BYTES);
   crypto.getRandomValues(nonce);
-  const ciphertext = gcm(sessionKey, nonce, new Uint8Array(0)).encrypt(plaintext);
+  const ciphertext = gcm(sessionKey, nonce, aad).encrypt(plaintext);
   return {
     v: RELAY_V3_ENVELOPE_VERSION,
     alg: RELAY_V3_ENVELOPE_ALG,
@@ -162,13 +174,17 @@ export function sealRelayV3Envelope(
  * 解密密文信封。未知 alg 或解密失败按协议错误抛出（transport 记录
  * decrypt-failed 并断开重建，不静默丢弃，§4.5）。
  */
-export function openRelayV3Envelope(sessionKey: Uint8Array, envelope: unknown): Uint8Array {
+export function openRelayV3Envelope(
+  sessionKey: Uint8Array,
+  envelope: unknown,
+  aad: Uint8Array = new Uint8Array(0),
+): Uint8Array {
   const parsed = parseRelayV3Envelope(envelope);
   if (!parsed) throw new RelayV3CryptoError("invalid-envelope");
   const nonce = decodeRelayV3Base64Url(parsed.nonce);
   const ciphertext = decodeRelayV3Base64Url(parsed.ct);
   try {
-    return gcm(sessionKey, nonce, new Uint8Array(0)).decrypt(ciphertext);
+    return gcm(sessionKey, nonce, aad).decrypt(ciphertext);
   } catch {
     throw new RelayV3CryptoError("decrypt-failed");
   }

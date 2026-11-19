@@ -45,6 +45,8 @@ export class RelayV3DaemonTransport {
   private readonly identity: ReturnType<typeof loadOrGenerateRelayV3DaemonIdentity>;
   private bridges = new Map<string, RelayV3AcknowledgedRpc>();
   private outbox: Record<string, unknown>[] = [];
+  /** 同一 bridgeSessionId 重建时递增，供控制端区分新旧 attachment。 */
+  private bridgeGeneration = 0;
 
   constructor(private readonly options: RelayV3DaemonTransportOptions) {
     this.identity = loadOrGenerateRelayV3DaemonIdentity(options.serverRoot);
@@ -95,7 +97,11 @@ export class RelayV3DaemonTransport {
   }
 
   /** 任务事件推送（数据面 spec §6）：控制端映射为本地通知。 */
-  sendDeviceEvent(event: "task-completed" | "permission-requested", taskId: string, payload: Record<string, unknown>): boolean {
+  sendDeviceEvent(
+    event: "task-completed" | "permission-requested",
+    taskId: string,
+    payload: Record<string, unknown>,
+  ): boolean {
     return this.core.send({
       zcode_type: "device-event",
       event,
@@ -129,11 +135,12 @@ export class RelayV3DaemonTransport {
         },
         onDegraded: () => this.bridges.delete(payload.bridge_session_id),
       });
+      this.bridges.get(payload.bridge_session_id)?.dispose();
       this.bridges.set(payload.bridge_session_id, adapter);
       this.core.send({
         zcode_type: "workspace-bridge-ready",
         bridge_session_id: payload.bridge_session_id,
-        bridge_generation: 1,
+        bridge_generation: ++this.bridgeGeneration,
       });
       return;
     }

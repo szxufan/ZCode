@@ -11,6 +11,7 @@ import {
   parseRelayV3IncomingMessage,
   parseRelayV3OutgoingMessage,
   relayV3KeyId,
+  relayV3EnvelopeAad,
   RelayV3CryptoError,
   sealRelayV3Envelope,
   buildRelayV3QrUrl,
@@ -163,33 +164,38 @@ describe("Relay V3 端到端加密", () => {
     const bob = generateRelayV3KeyPair();
     const sessionKey = deriveRelayV3SessionKey(alice.privateKey, bob.publicKey);
     const plaintext = new TextEncoder().encode('{"kind":"task_delta","seq":42}');
-    const envelope = sealRelayV3Envelope(sessionKey, plaintext, relayV3KeyId(bob.publicKey));
+    const aad = relayV3EnvelopeAad("device");
+    const envelope = sealRelayV3Envelope(sessionKey, plaintext, relayV3KeyId(bob.publicKey), aad);
     expect(envelope.v).toBe(3);
     expect(envelope.alg).toBe("x25519-hkdfsha256-aes256gcm-v1");
     expect(envelope.nonce).toMatch(/^[A-Za-z0-9_-]{16}$/);
-    const decrypted = openRelayV3Envelope(sessionKey, envelope);
+    const decrypted = openRelayV3Envelope(sessionKey, envelope, aad);
     expect(new TextDecoder().decode(decrypted)).toBe(new TextDecoder().decode(plaintext));
+    // 方向绑定：换成对端角色的 AAD 必须解密失败，防止密文反射。
+    expect(() =>
+      openRelayV3Envelope(sessionKey, envelope, relayV3EnvelopeAad("terminal")),
+    ).toThrowError(expect.objectContaining({ kind: "decrypt-failed" }) as RelayV3CryptoError);
     // 随机 nonce：两次加密产生不同密文，但都可解。
-    const second = sealRelayV3Envelope(sessionKey, plaintext, envelope.kid);
+    const second = sealRelayV3Envelope(sessionKey, plaintext, envelope.kid, aad);
     expect(second.ct).not.toBe(envelope.ct);
-    expect(openRelayV3Envelope(sessionKey, second)).toEqual(plaintext);
+    expect(openRelayV3Envelope(sessionKey, second, aad)).toEqual(plaintext);
     // 篡改密文 → decrypt-failed（确定性翻转首字符，避免随机碰撞成原文）。
     const flipped = envelope.ct.startsWith("B") ? "C" : "B";
     const tampered = { ...envelope, ct: `${flipped}${envelope.ct.slice(1)}` };
-    expect(() => openRelayV3Envelope(sessionKey, tampered)).toThrowError(
+    expect(() => openRelayV3Envelope(sessionKey, tampered, aad)).toThrowError(
       expect.objectContaining({ kind: "decrypt-failed" }) as RelayV3CryptoError,
     );
     // 错误会话密钥 → decrypt-failed。
     const stranger = generateRelayV3KeyPair();
     const strangerKey = deriveRelayV3SessionKey(stranger.privateKey, bob.publicKey);
-    expect(() => openRelayV3Envelope(strangerKey, envelope)).toThrowError(
+    expect(() => openRelayV3Envelope(strangerKey, envelope, aad)).toThrowError(
       expect.objectContaining({ kind: "decrypt-failed" }) as RelayV3CryptoError,
     );
     // 未知 alg / 结构非法 → invalid-envelope（接收端按协议错误断开重建，§4.5）。
-    expect(() => openRelayV3Envelope(sessionKey, { ...envelope, alg: "future" })).toThrowError(
+    expect(() => openRelayV3Envelope(sessionKey, { ...envelope, alg: "future" }, aad)).toThrowError(
       expect.objectContaining({ kind: "invalid-envelope" }) as RelayV3CryptoError,
     );
-    expect(() => openRelayV3Envelope(sessionKey, null)).toThrowError(
+    expect(() => openRelayV3Envelope(sessionKey, null, aad)).toThrowError(
       expect.objectContaining({ kind: "invalid-envelope" }) as RelayV3CryptoError,
     );
   });

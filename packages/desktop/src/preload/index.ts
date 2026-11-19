@@ -395,11 +395,14 @@ contextBridge.exposeInMainWorld("zcode", {
       workspaces,
     }),
   /** Relay V3 远控（device）：查询状态投影 */
-  relayV3GetStatus: (): Promise<import("@zcode/shared/remote-relay-v3/desktop.js").RelayV3DesktopStatus> =>
-    ipcRenderer.invoke(PlatformChannels.RelayV3GetStatus),
+  relayV3GetStatus: (): Promise<
+    import("@zcode/shared/remote-relay-v3/desktop.js").RelayV3DesktopStatus
+  > => ipcRenderer.invoke(PlatformChannels.RelayV3GetStatus),
   /** Relay V3 远控（device）：订阅状态变化 */
   onRelayV3StatusChanged: (
-    callback: (status: import("@zcode/shared/remote-relay-v3/desktop.js").RelayV3DesktopStatus) => void,
+    callback: (
+      status: import("@zcode/shared/remote-relay-v3/desktop.js").RelayV3DesktopStatus,
+    ) => void,
   ): (() => void) => {
     const handler = (_event: unknown, payload: unknown) =>
       callback(payload as import("@zcode/shared/remote-relay-v3/desktop.js").RelayV3DesktopStatus);
@@ -437,17 +440,26 @@ contextBridge.exposeInMainWorld("zcode", {
   /** Relay V3 控制端：打开目标 workspace bridge */
   relayV3TerminalOpenWorkspace: (
     workspaceKey: string,
-  ): Promise<{ ok: boolean; bridgeSessionId?: string; bridgeGeneration?: number; message?: string }> =>
-    ipcRenderer.invoke(PlatformChannels.RelayV3TerminalOpenWorkspace, { workspaceKey }),
+  ): Promise<{
+    ok: boolean;
+    bridgeSessionId?: string;
+    bridgeGeneration?: number;
+    message?: string;
+  }> => ipcRenderer.invoke(PlatformChannels.RelayV3TerminalOpenWorkspace, { workspaceKey }),
   /** Relay V3 控制端：订阅控制状态变化 */
   onRelayV3TerminalStatusChanged: (
-    callback: (status: import("@zcode/shared/remote-relay-v3/desktop.js").RelayV3TerminalStatus) => void,
+    callback: (
+      status: import("@zcode/shared/remote-relay-v3/desktop.js").RelayV3TerminalStatus,
+    ) => void,
   ): (() => void) => {
     const handler = (_event: unknown, payload: unknown) =>
       callback(payload as import("@zcode/shared/remote-relay-v3/desktop.js").RelayV3TerminalStatus);
     ipcRenderer.on(PlatformChannels.RelayV3TerminalStatusChanged, handler);
     return () => ipcRenderer.removeListener(PlatformChannels.RelayV3TerminalStatusChanged, handler);
   },
+  /** Relay V3 设备授权（R4）：按 user_code 预览公钥指纹（不改变批准状态） */
+  relayV3DeviceAuthPreview: (userCode: string) =>
+    ipcRenderer.invoke(PlatformChannels.RelayV3DeviceAuthPreview, { userCode }),
   /** Relay V3 设备授权（R4）：按 user_code 批准 headless 设备并回显公钥指纹 */
   relayV3DeviceAuthApprove: (userCode: string) =>
     ipcRenderer.invoke(PlatformChannels.RelayV3DeviceAuthApprove, { userCode }),

@@ -34,6 +34,7 @@ export function issueRefreshFamily(
   db: DatabaseSync,
   accountId: string,
   now = Date.now,
+  deviceSid?: string,
 ): { refresh: string; familyId: string } {
   if (countActiveCredentials(db, accountId, now) >= RELAY_LIMITS.activeCredentialsPerAccount) {
     throw new QuotaExceededError("active credential quota exceeded");
@@ -41,13 +42,14 @@ export function issueRefreshFamily(
   const familyId = randomUUID().replace(/-/g, "");
   const pair = issuePair();
   db.prepare(
-    "INSERT INTO refresh_tokens (token_hash, family_id, account_id, expires_at, created_at) VALUES (?, ?, ?, ?, ?)",
+    "INSERT INTO refresh_tokens (token_hash, family_id, account_id, expires_at, created_at, device_sid) VALUES (?, ?, ?, ?, ?, ?)",
   ).run(
     tokenHash(pair.refresh),
     familyId,
     accountId,
     Math.floor(now() / 1000) + REFRESH_TTL_SECONDS,
     Math.floor(now() / 1000),
+    deviceSid ?? null,
   );
   return { refresh: pair.refresh, familyId };
 }
@@ -69,6 +71,7 @@ export function rotateRefreshToken(
         expires_at: number;
         rotated_at: number | null;
         revoked_at: number | null;
+        device_sid: string | null;
       }
     | undefined;
   if (!row || row.revoked_at !== null) {
@@ -92,15 +95,28 @@ export function rotateRefreshToken(
   }
   const next = issuePair();
   db.prepare(
-    "INSERT INTO refresh_tokens (token_hash, family_id, account_id, expires_at, created_at) VALUES (?, ?, ?, ?, ?)",
+    "INSERT INTO refresh_tokens (token_hash, family_id, account_id, expires_at, created_at, device_sid) VALUES (?, ?, ?, ?, ?, ?)",
   ).run(
     tokenHash(next.refresh),
     row.family_id,
     row.account_id,
     nowSeconds + REFRESH_TTL_SECONDS,
     nowSeconds,
+    row.device_sid,
   );
   return { refresh: next.refresh, accountId: row.account_id, familyId: row.family_id };
+}
+
+/** 删除设备时撤销该设备经 device-auth 取得的 refresh 家族（同账号隔离）。 */
+export function revokeFamiliesForDevice(
+  db: DatabaseSync,
+  accountId: string,
+  deviceSid: string,
+  now = Date.now,
+): void {
+  db.prepare(
+    "UPDATE refresh_tokens SET revoked_at = ? WHERE account_id = ? AND device_sid = ? AND revoked_at IS NULL",
+  ).run(Math.floor(now() / 1000), accountId, deviceSid);
 }
 
 export function revokeFamily(db: DatabaseSync, familyId: string, now = Date.now): void {

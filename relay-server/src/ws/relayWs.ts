@@ -83,6 +83,8 @@ export function attachRelayWebSocket(
         // 持续饱和：丢弃该帧（心跳/状态类小帧，丢帧后由客户端重连语义兜底）。
         return false;
       }
+      // 硬上限兜底：即使尚未到 2s 丢弃窗口，也不能继续无界堆积。
+      if (connection.queue.length >= RELAY_LIMITS.wsOutboundQueueHardLimit) return false;
     }
     connection.queue.push(text);
     return true;

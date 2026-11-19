@@ -12,6 +12,7 @@
 | `RELAY_STATIC_DIR` |  | `/remote/v4` 手机页面静态产物目录（`pnpm --filter @zcode/web build` 的 `packages/web/dist`）。配置后「扫码即用」；未配置时桌面侧二维码入口提示不可用 |
 | `RELAY_LOCAL_REGISTRATION` |  | `open`（默认，验证码登录即建号）/ `closed`（仅 `relay-admin add-user` 预建账号） |
 | `RELAY_SMS_PROVIDER` |  | `aliyun`（默认，需下列凭据）/ `test`（非生产构建：验证码只进测试接缝不外发）/ `none`（验证码接口 503，密码登录仍可用） |
+| `RELAY_TRUST_PROXY` |  | Fastify `trustProxy` 值（`true` 或反代 CIDR，如 `172.16.0.0/12`）。反代后不设置会让所有请求共享反代 IP，按 IP 的验证码/登录/刷新限流退化为全局配额 |
 | `RELAY_SMS_ALIYUN_*` |  | Aliyun Dysmsapi 凭据（AccessKey/Secret/SignName/TemplateCode） |
 
 ## 2. Docker Compose（推荐）
@@ -59,7 +60,7 @@ ZCODE_RELAY_V3_ORIGIN=https://relay.example.com zcode server login --relay https
 # 终端显示 8 位输入码 + 公钥指纹 → 桌面端「设置 → 远程控制 → 批准无屏设备」输入码并核对指纹
 ```
 
-daemon 侧 `serve` 读取 `ZCODE_RELAY_V3_ORIGIN` + server root 凭据自动以 device 角色上线；远程吊销 = 任一已认证设备在设备列表删除该设备（refresh 家族即时撤销）。
+daemon 侧 `serve` 读取 `ZCODE_RELAY_V3_ORIGIN` + server root 凭据自动以 device 角色上线；远程吊销 = 任一已认证设备在设备列表删除该设备（删除会撤销该设备授权取得的 refresh 家族；已签发的 access 最多再存活 10 分钟）。
 
 ## 6. 客户端切换与 V2 归档
 
@@ -71,6 +72,6 @@ daemon 侧 `serve` 读取 `ZCODE_RELAY_V3_ORIGIN` + server root 凭据自动以 
 1. `RELAY_DB_PATH`/`RELAY_JWT_SECRET` 已设置且 secret 强随机；
 2. TLS 入口唯一（Caddy/反代），8080 不直接暴露公网；
 3. `RELAY_STATIC_DIR` 已配置（或确认桌面二维码提示不可用是预期）；
-4. Aliyun SMS 凭据可用或 closed-registration + `relay-admin` 预建账号；
+4. Aliyun SMS 凭据可用或 closed-registration + `relay-admin` 预建账号；反代部署已设置 `RELAY_TRUST_PROXY` 且反代是唯一入口；
 5. staging 完成一次：手机登录 → 扫码 → 密文会话 → 断线重连（replayable 恢复）；
 6. 备份 `/data`（SQLite WAL）；secret 轮换预案（旧 access 10 分钟内自然过期）。

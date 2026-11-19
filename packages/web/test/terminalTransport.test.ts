@@ -10,6 +10,7 @@ import {
   openRelayV3Envelope,
   parseRelayV3IncomingMessage,
   relayV3KeyId,
+  relayV3EnvelopeAad,
   sealRelayV3Envelope,
   type RelayV3Envelope,
 } from "@zcode/shared/remote-relay-v3";
@@ -32,7 +33,11 @@ interface DeviceHarness {
   dispose: () => void;
 }
 
-async function waitFor<T>(probe: () => T | undefined | null, what: string, timeoutMs = 10_000): Promise<T> {
+async function waitFor<T>(
+  probe: () => T | undefined | null,
+  what: string,
+  timeoutMs = 10_000,
+): Promise<T> {
   const deadline = Date.now() + timeoutMs;
   for (;;) {
     const value = probe();
@@ -92,7 +97,10 @@ describe("/remote/v4 terminal 数据通路（P2，fake relay 集成）", () => {
     });
     const connection = new RelayV3WebConnection(transport);
     transport.start();
-    await waitFor(() => (transport.getState().phase === "matched" ? true : null), "terminal matched");
+    await waitFor(
+      () => (transport.getState().phase === "matched" ? true : null),
+      "terminal matched",
+    );
 
     // 3. bootstrap：密文请求/响应（device harness 应答）。
     const bootstrap = await connection.bootstrap("web_test_client");
@@ -106,12 +114,15 @@ describe("/remote/v4 terminal 数据通路（P2，fake relay 集成）", () => {
 
     // 5. rpc-frame 经 bridge port → device 侧收到分片；ACK 回流。
     bridge.port.postMessage(new TextEncoder().encode('{"id":1,"method":"ping"}'));
-    const seenFrame = (
-      await waitFor(
-        () => device.incoming.find((item) => item.zcode_type === "rpc-frame") ?? null,
-        "rpc-frame at device",
-      )
-    ) as { zcode_type: "rpc-frame"; bridge_session_id: string; message_seq: number; fragment_count: number };
+    const seenFrame = (await waitFor(
+      () => device.incoming.find((item) => item.zcode_type === "rpc-frame") ?? null,
+      "rpc-frame at device",
+    )) as {
+      zcode_type: "rpc-frame";
+      bridge_session_id: string;
+      message_seq: number;
+      fragment_count: number;
+    };
     transport.send({
       zcode_type: "rpc-frame-ack",
       bridge_session_id: seenFrame.bridge_session_id,
@@ -143,7 +154,11 @@ describe("/remote/v4 terminal 数据通路（P2，fake relay 集成）", () => {
   // ---------------------------------------------------------------------------
 
   let storageData: Record<string, string> | null = null;
-  let accountStorage: { getItem: (key: string) => string | null; setItem: (key: string, value: string) => void; removeItem: (key: string) => void } | null = null;
+  let accountStorage: {
+    getItem: (key: string) => string | null;
+    setItem: (key: string, value: string) => void;
+    removeItem: (key: string) => void;
+  } | null = null;
 
   function memoryStorage() {
     const data: Record<string, string> = {};
@@ -189,13 +204,19 @@ describe("/remote/v4 terminal 数据通路（P2，fake relay 集成）", () => {
     const tokenEnvelope = (await tokenResponse.json()) as { code: number; data: { token: string } };
     expect(tokenEnvelope.code).toBe(0);
 
-    const socket = new WebSocket(`${relay.wsUrl}?token=${encodeURIComponent(tokenEnvelope.data.token)}`);
+    const socket = new WebSocket(
+      `${relay.wsUrl}?token=${encodeURIComponent(tokenEnvelope.data.token)}`,
+    );
     let sessionKey: Uint8Array | null = null;
     const incoming: { zcode_type: string; [key: string]: unknown }[] = [];
     socket.on("message", (data: WebSocket.RawData) => {
       const message = parseRelayV3IncomingMessage(JSON.parse(data.toString()));
       if (!message) return;
-      if (message.type === "pair_status_ack" && message.pair_status === "matched" && message.terminal_public_key) {
+      if (
+        message.type === "pair_status_ack" &&
+        message.pair_status === "matched" &&
+        message.terminal_public_key
+      ) {
         sessionKey = deriveRelayV3SessionKey(
           keyPair.privateKey,
           decodeRelayV3Base64Url(message.terminal_public_key),
@@ -204,7 +225,13 @@ describe("/remote/v4 terminal 数据通路（P2，fake relay 集成）", () => {
       }
       if (message.type !== "data" || !sessionKey) return;
       const payload = JSON.parse(
-        new TextDecoder().decode(openRelayV3Envelope(sessionKey, message.payload as RelayV3Envelope)),
+        new TextDecoder().decode(
+          openRelayV3Envelope(
+            sessionKey,
+            message.payload as RelayV3Envelope,
+            relayV3EnvelopeAad("terminal"),
+          ),
+        ),
       );
       incoming.push(payload);
       reply(payload);
@@ -215,7 +242,9 @@ describe("/remote/v4 terminal 数据通路（P2，fake relay 集成）", () => {
         send({
           zcode_type: "bootstrap-response",
           desktop_app_version: "3.22.0-test",
-          workspaces: [{ workspace_key: "/w/demo", path: "/w/demo", connection: "local", bridgeable: true }],
+          workspaces: [
+            { workspace_key: "/w/demo", path: "/w/demo", connection: "local", bridgeable: true },
+          ],
         });
         return;
       }
@@ -238,13 +267,20 @@ describe("/remote/v4 terminal 数据通路（P2，fake relay 集成）", () => {
             sessionKey,
             new TextEncoder().encode(JSON.stringify(payload)),
             relayV3KeyId(keyPair.publicKey),
+            relayV3EnvelopeAad("device"),
           ),
         }),
       );
     }
 
     await new Promise<void>((resolve) => socket.once("open", resolve));
-    socket.send(JSON.stringify({ type: "auth_init", device_sid: deviceSid, meta: { name: "web-test-device" } }));
+    socket.send(
+      JSON.stringify({
+        type: "auth_init",
+        device_sid: deviceSid,
+        meta: { name: "web-test-device" },
+      }),
+    );
 
     return {
       deviceSid,
@@ -284,7 +320,10 @@ class NodeWebSocket {
   close(): void {
     this.socket.close();
   }
-  addEventListener(kind: "open" | "error" | "close" | "message", listener: (event?: unknown) => void): void {
+  addEventListener(
+    kind: "open" | "error" | "close" | "message",
+    listener: (event?: unknown) => void,
+  ): void {
     if (kind === "message") {
       // 浏览器 WebSocket 的 message 事件携带字符串；ws 的 RawData 需转换。
       this.socket.on("message", (data: WebSocket.RawData) => listener({ data: data.toString() }));
@@ -292,7 +331,10 @@ class NodeWebSocket {
     }
     this.socket.on(kind, () => listener());
   }
-  removeEventListener(kind: "open" | "error" | "close" | "message", listener: (event?: unknown) => void): void {
+  removeEventListener(
+    kind: "open" | "error" | "close" | "message",
+    listener: (event?: unknown) => void,
+  ): void {
     this.socket.off(kind, listener as never);
   }
 }

@@ -306,6 +306,8 @@ export const PlatformChannels = {
   RelayV3TerminalOpenWorkspace: "zcode:relay-v3-terminal-open-workspace",
   /** Relay V3 控制端：Main → Renderer 控制状态变化 */
   RelayV3TerminalStatusChanged: "zcode:relay-v3-terminal-status-changed",
+  /** Relay V3 设备授权（R4 §5.5）：Renderer → Main 预览 user_code 对应公钥指纹（不批准） */
+  RelayV3DeviceAuthPreview: "zcode:relay-v3-device-auth-preview",
   /** Relay V3 设备授权（R4 §5.5）：Renderer → Main 按 user_code 批准 headless 设备 */
   RelayV3DeviceAuthApprove: "zcode:relay-v3-device-auth-approve",
   /** Renderer → Main：快捷键设置页录制态开关；true = main 暂时摘除可配置菜单 accelerator */
@@ -1001,6 +1003,12 @@ export interface PlatformChannelMap {
   [PlatformChannels.RelayV3TerminalStatusChanged]: {
     request: import("./remote-relay-v3/desktop.js").RelayV3TerminalStatus;
     response: void;
+  };
+  [PlatformChannels.RelayV3DeviceAuthPreview]: {
+    request: { userCode: string };
+    response:
+      | { ok: true; publicKey: string; fingerprint: string; deviceMid: string; expiresIn: number }
+      | { ok: false; message?: string; businessCode?: number };
   };
   [PlatformChannels.RelayV3DeviceAuthApprove]: {
     request: { userCode: string };

@@ -24,6 +24,8 @@ export interface RelayServerConfig {
   staticDir?: string;
   jwtSecret: string;
   localRegistration: "open" | "closed";
+  /** Fastify trustProxy：仅在反向代理是唯一入口时开启，否则限流按直连地址计算。 */
+  trustProxy: boolean | string;
   production: boolean;
   sms: RelaySmsConfig;
 }
@@ -49,8 +51,8 @@ export function loadRelayConfig(env: NodeJS.ProcessEnv = process.env): RelayServ
   }
   const production = env.RELAY_ENV === "production" || env.NODE_ENV === "production";
   const provider = env.RELAY_SMS_PROVIDER?.trim() || "aliyun";
-  if (provider !== "aliyun" && provider !== "test") {
-    throw new RelayConfigError(`RELAY_SMS_PROVIDER must be aliyun or test, got: ${provider}`);
+  if (provider !== "aliyun" && provider !== "test" && provider !== "none") {
+    throw new RelayConfigError(`RELAY_SMS_PROVIDER must be aliyun, test or none, got: ${provider}`);
   }
   // 生产构建禁用 test provider，验证码不写日志（§3.2）。
   if (provider === "test" && production) {
@@ -59,7 +61,7 @@ export function loadRelayConfig(env: NodeJS.ProcessEnv = process.env): RelayServ
   let sms: RelaySmsConfig = { provider: "none" };
   if (provider === "test") {
     sms = { provider: "test" };
-  } else {
+  } else if (provider === "aliyun") {
     const accessKeyId = env.RELAY_SMS_ALIYUN_ACCESS_KEY_ID?.trim() ?? "";
     const accessKeySecret = env.RELAY_SMS_ALIYUN_ACCESS_KEY_SECRET?.trim() ?? "";
     const signName = env.RELAY_SMS_ALIYUN_SIGN_NAME?.trim() ?? "";
@@ -85,6 +87,14 @@ export function loadRelayConfig(env: NodeJS.ProcessEnv = process.env): RelayServ
     throw new RelayConfigError(`RELAY_LOCAL_REGISTRATION must be open or closed`);
   }
   const staticDir = env.RELAY_STATIC_DIR?.trim() || undefined;
+  const trustProxyRaw = env.RELAY_TRUST_PROXY?.trim() ?? "";
+  let trustProxy: boolean | string = false;
+  if (trustProxyRaw === "true" || trustProxyRaw === "1") {
+    trustProxy = true;
+  } else if (trustProxyRaw && trustProxyRaw !== "false" && trustProxyRaw !== "0") {
+    // 允许填反代地址或 CIDR 列表（Fastify 原样透传）。
+    trustProxy = trustProxyRaw;
+  }
   const port = Number(env.RELAY_PORT?.trim() || "8080");
   if (!Number.isInteger(port) || port <= 0 || port > 65_535) {
     throw new RelayConfigError(`RELAY_PORT is not a valid port: ${env.RELAY_PORT}`);
@@ -95,6 +105,7 @@ export function loadRelayConfig(env: NodeJS.ProcessEnv = process.env): RelayServ
     staticDir,
     jwtSecret,
     localRegistration,
+    trustProxy,
     production,
     sms,
   };

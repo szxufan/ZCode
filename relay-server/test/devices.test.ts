@@ -1,6 +1,7 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
 import { loginTestAccount, startTestRelay, VALID_PUBLIC_KEY, type TestRelay } from "./helpers.js";
+import { issueRefreshFamily } from "../src/refreshTokens.js";
 
 // §5.1 设备目录：注册、列表、删除、配额。
 
@@ -106,6 +107,25 @@ describe("设备注册与目录", () => {
     }
     const list = await get("/v3/device", owner.access);
     expect(list.body.data).toHaveLength(0);
+  });
+
+  it("删除设备撤销该设备授权取得的 refresh 家族", async () => {
+    const { access } = await loginTestAccount(relay, "+8613800136106");
+    const created = await post(
+      "/v3/device",
+      { device_mid: "mid-revoke", public_key: VALID_PUBLIC_KEY },
+      access,
+    );
+    const sid = created.body.data.device_sid as string;
+    const row = relay.db.prepare("SELECT account_id FROM devices WHERE sid = ?").get(sid) as {
+      account_id: string;
+    };
+    // 模拟 device-auth poll 签发的设备绑定家族。
+    const family = issueRefreshFamily(relay.db, row.account_id, relay.clock.now, sid);
+    const deleted = await post("/v3/device/delete", { device_sid: sid }, access);
+    expect(deleted.body.code).toBe(0);
+    const refresh = await post("/v3/auth/refresh", { refresh: family.refresh });
+    expect(refresh.body.code).not.toBe(0);
   });
 
   it("一次性 ws token：60s 有效、单次消费", async () => {

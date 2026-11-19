@@ -48,7 +48,9 @@ describe("Relay V3 chunk-frame（R4）", () => {
 
   it("单帧 CRC 损坏 → crc-mismatch；重复帧幂等跳过", () => {
     const stream = randomBytes(64);
-    const frames = fragmentRelayV3ChunkStream("s2", 64, (offset, length) => stream.subarray(offset, offset + length));
+    const frames = fragmentRelayV3ChunkStream("s2", 64, (offset, length) =>
+      stream.subarray(offset, offset + length),
+    );
     const assembler = new RelayV3ChunkAssembler("s2", 64, () => {});
     const corrupted = { ...frames[0]!, data: encodeBase64Url(randomBytes(32)) };
     expect(() => assembler.receive(corrupted)).toThrow(RelayV3ChunkProtocolError);
@@ -85,6 +87,27 @@ describe("Relay V3 chunk-frame（R4）", () => {
     expect(assembler.getState().completed).toBe(false);
   });
 
+  it("offset 不连续或越界 → 拒绝，防止业务层按对端 offset 任意写", () => {
+    const frames = fragmentRelayV3ChunkStream("s6", 128, (o, l) => randomBytes(l));
+    const assembler = new RelayV3ChunkAssembler("s6", 128, () => {});
+    expect(() => assembler.receive({ ...frames[0]!, offset: 64 })).toThrow(
+      RelayV3ChunkProtocolError,
+    );
+    const oversize = {
+      zcode_type: "chunk-frame" as const,
+      stream_id: "s6",
+      seq: 0,
+      flags: "data" as const,
+      total_bytes: 10,
+      crc32: 0,
+      offset: 0,
+      data: encodeBase64Url(randomBytes(32)),
+    };
+    expect(() => new RelayV3ChunkAssembler("s6", 10, () => {}).receive(oversize)).toThrow(
+      RelayV3ChunkProtocolError,
+    );
+  });
+
   it("schema 严格：非法 chunk-frame / 控制帧拒绝", () => {
     expect(
       parseRelayV3ChunkFrame({
@@ -99,10 +122,18 @@ describe("Relay V3 chunk-frame（R4）", () => {
       }),
     ).toBeNull();
     expect(
-      parseRelayV3ChunkControl({ zcode_type: "chunk-credit", stream_id: "0b6bbf85-8895-4f70-9d2c-956bbf80b4d4", grant: 0 }),
+      parseRelayV3ChunkControl({
+        zcode_type: "chunk-credit",
+        stream_id: "0b6bbf85-8895-4f70-9d2c-956bbf80b4d4",
+        grant: 0,
+      }),
     ).toBeNull();
     expect(
-      parseRelayV3ChunkControl({ zcode_type: "chunk-resume", stream_id: "0b6bbf85-8895-4f70-9d2c-956bbf80b4d4", offset: 512 }),
+      parseRelayV3ChunkControl({
+        zcode_type: "chunk-resume",
+        stream_id: "0b6bbf85-8895-4f70-9d2c-956bbf80b4d4",
+        offset: 512,
+      }),
     ).not.toBeNull();
   });
 

@@ -14,14 +14,12 @@ import {
   openRelayV3Envelope,
   parseRelayV3AppPayload,
   parseRelayV3RpcFrame,
+  relayV3EnvelopeAad,
   sealRelayV3Envelope,
   type RelayV3DesktopStatus,
 } from "@zcode/shared/remote-relay-v3";
 
-import {
-  RelayV3DeviceManager,
-  type MessagePortLike,
-} from "../src/main/remote-relay-v3/index.js";
+import { RelayV3DeviceManager, type MessagePortLike } from "../src/main/remote-relay-v3/index.js";
 
 // P1 集成测试：真实 loopback fake relay（HTTP+WS）+ 真实 Node ws 终端，覆盖
 // 登录 → 注册（带公钥）→ 配对（公钥透传）→ 密文 bootstrap/bridge 协商 →
@@ -107,7 +105,9 @@ describe("Relay V3 device manager（P1，fake relay 集成）", () => {
     const hostPorts = new Map<string, FakePort>();
     const statuses: RelayV3DesktopStatus[] = [];
     const logs: string[] = [];
-    const settingsStore: { relayV3?: { lastEnabled?: { workspacePath: string; workspaceIdentity?: string } } } = {};
+    const settingsStore: {
+      relayV3?: { lastEnabled?: { workspacePath: string; workspaceIdentity?: string } };
+    } = {};
     const manager = new RelayV3DeviceManager({
       logger: {
         debug: (message, fields) => logs.push(`${message} ${JSON.stringify(fields ?? {})}`),
@@ -196,9 +196,7 @@ describe("Relay V3 device manager（P1，fake relay 集成）", () => {
       data: { device_sid: string; public_key: string }[];
     };
     expect(listEnvelope.code).toBe(0);
-    const deviceRecord = listEnvelope.data.find(
-      (device) => device.device_sid === status.deviceSid,
-    );
+    const deviceRecord = listEnvelope.data.find((device) => device.device_sid === status.deviceSid);
     expect(deviceRecord).toBeTruthy();
 
     const terminalKeys = generateRelayV3KeyPair();
@@ -212,7 +210,10 @@ describe("Relay V3 device manager（P1，fake relay 集成）", () => {
 
     const tokenResponse = await fetch(`${relay.httpUrl}/v3/relay/token`, {
       method: "POST",
-      headers: { "content-type": "application/json", authorization: `Bearer ${await currentAccessToken()}` },
+      headers: {
+        "content-type": "application/json",
+        authorization: `Bearer ${await currentAccessToken()}`,
+      },
       body: JSON.stringify({ role: "terminal" }),
     });
     const tokenEnvelope = (await tokenResponse.json()) as { code: number; data: { token: string } };
@@ -230,25 +231,36 @@ describe("Relay V3 device manager（P1，fake relay 集成）", () => {
             sessionKey,
             new TextEncoder().encode(JSON.stringify(payload)),
             kid,
+            relayV3EnvelopeAad("terminal"),
           ),
         }),
       );
     };
     const waitForTerminalPayload = (zcodeType: string) =>
-      waitFor(() => {
-        for (const value of terminalIncoming) {
-          const message = value as { type: string; payload?: unknown };
-          if (message?.type !== "data") continue;
-          try {
-            const plaintext = openRelayV3Envelope(sessionKey, message.payload);
-            const parsed = parseRelayV3AppPayload(JSON.parse(new TextDecoder().decode(plaintext)));
-            if (parsed?.zcode_type === zcodeType) return parsed;
-          } catch {
-            // 解密失败（旧连接密文等）：跳过继续找。
+      waitFor(
+        () => {
+          for (const value of terminalIncoming) {
+            const message = value as { type: string; payload?: unknown };
+            if (message?.type !== "data") continue;
+            try {
+              const plaintext = openRelayV3Envelope(
+                sessionKey,
+                message.payload,
+                relayV3EnvelopeAad("device"),
+              );
+              const parsed = parseRelayV3AppPayload(
+                JSON.parse(new TextDecoder().decode(plaintext)),
+              );
+              if (parsed?.zcode_type === zcodeType) return parsed;
+            } catch {
+              // 解密失败（旧连接密文等）：跳过继续找。
+            }
           }
-        }
-        return null;
-      }, 10_000, `terminal payload ${zcodeType}`);
+          return null;
+        },
+        10_000,
+        `terminal payload ${zcodeType}`,
+      );
     terminalSocket.on("message", (data: WebSocket.RawData) => {
       terminalIncoming.push(JSON.parse(data.toString()));
     });
@@ -286,7 +298,11 @@ describe("Relay V3 device manager（P1，fake relay 集成）", () => {
       terminal_client_session_id: "page_1",
     });
     await waitForTerminalPayload("workspace-bridge-ready");
-    await waitFor(() => (harness.attachCalls.length > 0 ? harness.attachCalls : null), 5_000, "host attach");
+    await waitFor(
+      () => (harness.attachCalls.length > 0 ? harness.attachCalls : null),
+      5_000,
+      "host attach",
+    );
     expect(harness.attachCalls[0]!.scope.kind).toBe("local");
 
     // 模拟 Host 从 port2 发 RPC 二进制（MessagePortProtocol 的原始 Uint8Array；
@@ -300,7 +316,11 @@ describe("Relay V3 device manager（P1，fake relay 集成）", () => {
           const message = value as { type: string; payload?: unknown };
           if (message?.type !== "data") continue;
           try {
-            const plaintext = openRelayV3Envelope(sessionKey, message.payload);
+            const plaintext = openRelayV3Envelope(
+              sessionKey,
+              message.payload,
+              relayV3EnvelopeAad("device"),
+            );
             const parsed = parseRelayV3RpcFrame(JSON.parse(new TextDecoder().decode(plaintext)));
             if (parsed?.zcode_type === "rpc-frame") return parsed;
           } catch {
@@ -340,7 +360,9 @@ describe("Relay V3 device manager（P1，fake relay 集成）", () => {
     // 8. 私钥不进日志（AGENTS 日志边界）。
     await harness.manager.stop();
     const identityFile = join(harness.configDir, "relay-v3-device.json");
-    const identityRaw = await import("node:fs/promises").then((fs) => fs.readFile(identityFile, "utf-8"));
+    const identityRaw = await import("node:fs/promises").then((fs) =>
+      fs.readFile(identityFile, "utf-8"),
+    );
     const privateKey = (JSON.parse(identityRaw) as { privateKey: string }).privateKey;
     expect(privateKey).toBeTruthy();
     for (const line of harness.logs) {
