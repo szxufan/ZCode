@@ -66,9 +66,7 @@ export const RELAY_V3_HTTP = {
 } as const;
 export type RelayV3HttpOperation = keyof typeof RELAY_V3_HTTP;
 
-// ---------------------------------------------------------------------------
-// 密文信封（§4.5）。relay 不解析；此处供接收端解密边界严格校验。
-// ---------------------------------------------------------------------------
+// 密文信封（§4.5）：relay 不解析；此处供接收端解密边界严格校验。
 
 export const RELAY_V3_ENVELOPE_VERSION = 3;
 export const RELAY_V3_ENVELOPE_ALG = "x25519-hkdfsha256-aes256gcm-v1";
@@ -90,9 +88,7 @@ export function parseRelayV3Envelope(value: unknown): RelayV3Envelope | null {
   return result.success ? result.data : null;
 }
 
-// ---------------------------------------------------------------------------
 // WebSocket 消息（§5.2）
-// ---------------------------------------------------------------------------
 
 // auth_init：两角色都携带目标 device_sid（配对按 (SID, role) 路由，§5.2）；
 // device 侧可选 meta，terminal 侧必填 terminal_public_key（§4.2）。
@@ -174,9 +170,7 @@ export function parseRelayV3IncomingMessage(value: unknown): RelayV3IncomingMess
   return result.success ? result.data : null;
 }
 
-// ---------------------------------------------------------------------------
 // HTTP 请求/响应（§5.1）
-// ---------------------------------------------------------------------------
 
 const account = z.object({
   id: z.string().min(1),
