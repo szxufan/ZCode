@@ -38,6 +38,7 @@ describe("AgentRuntime project Memory context", () => {
     async (taskType) => {
       const result = await executeMemoryTurn({ taskType });
 
+      // fork 的 Memory 段标题是「# 记忆（Memory）」；上游 v4.0.0 新增的「# 记忆、笔记与反馈」是另一段，不会误命中。
       expect(result.providerText).not.toContain("# 记忆（Memory）");
       expect(result.fileSystemPort.readRequests).toEqual([]);
       expect(Object.keys(result.fileSystemPort.files)).toEqual([]);
@@ -51,6 +52,7 @@ describe("AgentRuntime project Memory context", () => {
       { enabled: true, use: false },
     ]) {
       const result = await executeMemoryTurn({ memory });
+      // 同上：只看 Memory 段标题，「# 记忆、笔记与反馈」不算注入 Memory。
       expect(result.providerText).not.toContain("# 记忆（Memory）");
       expect(result.fileSystemPort.readRequests).toEqual([]);
       expect(Object.keys(result.fileSystemPort.files)).toEqual([]);

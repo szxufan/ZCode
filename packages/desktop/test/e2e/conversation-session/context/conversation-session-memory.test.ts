@@ -64,8 +64,8 @@ const SELECTOR_MARKER = "You are selecting memories that will be useful";
 const EXTRACTION_MARKER = "You are now acting as the memory extraction subagent";
 const CUSTOM_MEMORY_MARKER = "# Persistent Agent Memory";
 const MAIN_MEMORY_INDEX_POINTER =
-  "After writing the file, add a one-line pointer in `MEMORY.md` (`- [Title](file.md) — hook`).";
-const MAIN_MEMORY_INDEX_SOURCE = "user's auto-memory, persists across conversations";
+  "写完文件后，在 `MEMORY.md` 中加一行指针（`- [标题](file.md) — 钩子`）。";
+const MAIN_MEMORY_INDEX_SOURCE = "用户自动记忆，跨会话持久保存";
 const PROJECT_MEMORY_INDEX_CONTENT =
   "- [Database test policy](database-test-policy.md) — integration tests use isolated databases";
 const PROJECT_MEMORY_UPDATED_POINTER =
@@ -199,7 +199,7 @@ describe("Desktop Memory continuous 链路 WDIO", () => {
     await waitForV4TimelineContaining(EXTRACTED_DEFAULT_DONE, 90_000);
     await waitForUpstreamRequest(
       {
-        includes: [EXTRACTED_DEFAULT_PROMPT, "# Memory"],
+        includes: [EXTRACTED_DEFAULT_PROMPT, "# 记忆（Memory）\n"],
       },
       "新 session 的 default Memory Main request 未进入 provider capture",
       60_000,
@@ -243,7 +243,7 @@ describe("Desktop Memory continuous 链路 WDIO", () => {
     await sendV4Prompt(ACTIVE_AFTER_DISABLE_PROMPT);
     await waitForV4TimelineContaining(ACTIVE_AFTER_DISABLE_DONE, 90_000);
     await waitForUpstreamRequest(
-      { includes: [ACTIVE_AFTER_DISABLE_PROMPT, "# Memory"] },
+      { includes: [ACTIVE_AFTER_DISABLE_PROMPT, "# 记忆（Memory）\n"] },
       "Settings 关闭后当前 Session 不应热更新 Memory",
       60_000,
     );
@@ -306,7 +306,8 @@ describe("Desktop Memory continuous 链路 WDIO", () => {
       ),
     ).toHaveLength(2);
     for (const request of disabledRequests) {
-      expect(captureContains(request.requestJson, "# Memory")).toBe(false);
+      // 只看 Memory 段标题；默认 prompt 总带 `# 记忆、笔记与反馈`，那一段不算 Memory 注入。
+      expect(captureContains(request.requestJson, "# 记忆（Memory）\n")).toBe(false);
       expect(captureContains(request.requestJson, MAIN_MEMORY_INDEX_SOURCE)).toBe(false);
       expect(captureContains(request.requestJson, SELECTOR_MARKER)).toBe(false);
       expect(captureContains(request.requestJson, EXTRACTION_MARKER)).toBe(false);
@@ -779,12 +780,12 @@ function extractMainMemorySection(requestJson: unknown): string {
     throw new Error("provider request body must be an object");
   }
   const system = (requestJson as Record<string, unknown>).system;
-  const dynamicBlock = captureTextValues(system).find((text) => text.includes("# Memory\n\n"));
+  const dynamicBlock = captureTextValues(system).find((text) => text.includes("# 记忆（Memory）\n\n"));
   if (!dynamicBlock) throw new Error("provider request is missing the Main Memory section");
 
-  const start = dynamicBlock.indexOf("# Memory\n\n");
-  // 环境段已移到 user 公告；system 里 Memory 后面紧接 Context management。
-  const end = dynamicBlock.indexOf("\n\n# Context management", start);
+  const start = dynamicBlock.indexOf("# 记忆（Memory）\n\n");
+  // 环境段已移到 user 公告；system 里 Memory 后面紧接上下文管理段。
+  const end = dynamicBlock.indexOf("\n\n# 上下文管理", start);
   if (end < 0) throw new Error("provider request is missing the Context management boundary");
   return dynamicBlock.slice(start, end);
 }
@@ -799,10 +800,10 @@ function extractMainMemoryIndexContext(requestJson: unknown): string {
   );
   if (!contextBlock) throw new Error("provider request is missing the Main MEMORY.md source");
 
-  const contextStart = contextBlock.indexOf("Codebase and user instructions are shown below.");
-  const firstSourceStart = contextBlock.indexOf("\n\nContents of ", contextStart);
+  const contextStart = contextBlock.indexOf("以下是代码库与用户指令。");
+  const firstSourceStart = contextBlock.indexOf("\n\n以下是 ", contextStart);
   const memorySourceStart = contextBlock.indexOf(
-    `Contents of ${PROJECT_MEMORY_INDEX} (${MAIN_MEMORY_INDEX_SOURCE}):`,
+    `以下是 ${PROJECT_MEMORY_INDEX} 的内容（${MAIN_MEMORY_INDEX_SOURCE}）：`,
     firstSourceStart,
   );
   // 日期是单独的公告块，指令段在本块的 reminder 结束处收尾。

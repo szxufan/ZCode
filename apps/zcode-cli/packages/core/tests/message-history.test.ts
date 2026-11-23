@@ -52,6 +52,40 @@ describe("message history metadata", () => {
     });
   });
 
+  it("stamps entry time from its clock and keeps it out of provider messages", () => {
+    let now = 1_000;
+    const history = new MessageHistoryImpl(() => now);
+    history.addUser("prompt", { source: "real_user" });
+    now = 2_000;
+    history.addAssistant("answer");
+    now = 3_000;
+    history.addToolResult("call_1", "Read", "body", true);
+    history.addAttachment("environment", "environment");
+    // 已带时间的条目（冷恢复、先持久化的提醒）不改写。
+    history.addEntries([
+      { message: { role: "user", content: "hydrated" }, time: 500 },
+      { message: { role: "assistant", content: "fresh" } },
+    ]);
+    now = 4_000;
+    history.replaceMessages([
+      ...history.toRuntimeEntries(),
+      { message: { role: "user", content: "summary" } },
+    ]);
+    expect(history.toRuntimeEntries().map((entry) => entry.time)).toEqual([
+      1_000, 2_000, 3_000, 3_000, 500, 3_000, 4_000,
+    ]);
+    expect(
+      JSON.stringify(
+        buildProviderRequestMessages({ entries: history.toRuntimeEntries() }).messages,
+      ),
+    ).not.toContain("4000");
+
+    // 没有时钟的历史（单元测试直接构造）不加时间。
+    const untimed = new MessageHistoryImpl();
+    untimed.addUser("prompt");
+    expect(untimed.toRuntimeEntries()[0]).not.toHaveProperty("time");
+  });
+
   it("preserves assistant tokens in runtime entries without exposing them to the provider", () => {
     const history = new MessageHistoryImpl();
     const tokens = {
@@ -158,14 +192,15 @@ describe("message history metadata", () => {
     });
   });
 
-  it("counts metadata-marked request prefix before falling back to legacy text detection", () => {
+  it("counts only system messages and legacy unmarked reminders as request prefix", () => {
     const history = new MessageHistoryImpl();
     history.init([
       { role: "system", content: "system prompt" },
+      // 指令文件是持久化公告；带来源标记的条目属于会话历史。
       {
-        message: { role: "user", content: "skill listing" },
+        message: { role: "user", content: "context prefix" },
         metadata: {
-          source: "skills_listing",
+          source: "context_prefix",
         },
       },
       {
@@ -179,8 +214,8 @@ describe("message history metadata", () => {
       },
     ]);
 
-    expect(countContextPrefixMessages(history.toRuntimeEntries())).toBe(2);
-    expect(history.getCacheStats().cachedMessages).toBe(2);
+    expect(countContextPrefixMessages(history.toRuntimeEntries())).toBe(1);
+    expect(history.getCacheStats().cachedMessages).toBe(1);
 
     expect(
       countContextPrefixMessages([
@@ -191,27 +226,18 @@ describe("message history metadata", () => {
     ).toBe(2);
   });
 
-  it("builds skills listing context as a structured attachment entry", () => {
-    const skillsSection = contextSection({
-      name: "Available Skills",
-      source: "skills",
-      content: "# Skills\n- review: Inspect code",
-    });
+  it("keeps instruction attachments out of context prefix entries", () => {
     const dateSection = contextSection({
       name: "Request User Context",
       source: "request_user_context",
       content: "# currentDate\nToday's date is 2026-06-17.",
     });
     const contextResult: ContextBuildResult = {
-      sections: [skillsSection, dateSection],
-      totalChars: skillsSection.chars + dateSection.chars,
-      totalTokens: skillsSection.tokens + dateSection.tokens,
-      systemMessages: [],
+      sections: [dateSection],
+      totalChars: dateSection.chars,
+      totalTokens: dateSection.tokens,
+      systemMessages: [{ role: "system", content: "system prompt" }],
       metaUserAttachments: [
-        {
-          source: "skills_listing",
-          content: "# Skills\n- review: Inspect code",
-        },
         {
           source: "context_prefix",
           content:
@@ -220,18 +246,9 @@ describe("message history metadata", () => {
       ],
     };
 
+    // Skill 列表与指令文件由请求前的动态公告宣告，prefix 只含 system 消息。
     expect(buildContextHistoryEntries(contextResult)).toEqual([
-      {
-        kind: "attachment",
-        content: "# Skills\n- review: Inspect code",
-        metadata: { source: "skills_listing" },
-      },
-      {
-        kind: "attachment",
-        content:
-          "在回答用户问题时，你可以使用以下上下文：\n# currentDate\n今天是 2026-06-17。\n\n      重要：这些上下文可能与你的任务无关。除非与当前任务高度相关，否则不要响应这些上下文。",
-        metadata: { source: "context_prefix" },
-      },
+      { message: { role: "system", content: "system prompt" } },
     ]);
   });
 });

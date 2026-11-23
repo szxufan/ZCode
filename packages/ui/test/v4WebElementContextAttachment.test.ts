@@ -338,7 +338,25 @@ afterEach(() => {
   delete (globalThis as { IS_REACT_ACT_ENVIRONMENT?: unknown }).IS_REACT_ACT_ENVIRONMENT;
 });
 
+// 上游 v4.0.0 的 Composer 用 ComposerStatusRow 包住状态内容，并在其中用 ResizeObserver /
+// MutationObserver 与完整 DOM API 测量胶囊尺寸；本文件是最小 DOM 桩且只覆盖上下文附件，
+// 这里把它 stub 成直通 children 的容器。
+vi.mock("@/v4/ConversationStatusPanel.js", async () => {
+  const React = await import("react");
+  return {
+    ComposerStatusRow: ({ children }: { children?: React.ReactNode }) =>
+      React.createElement("div", null, children),
+  };
+});
+
 const scopeToken = Symbol("test-scope");
+
+// 上游 v4.0.0 的 Composer 接入语音输入快捷键；该 hook 经 useSettings 依赖 ServiceProvider。
+// 本文件是无 Provider 的静态渲染，只 stub 快捷键 hook（返回空键位文案），语音输入其余部分保持真实实现。
+vi.mock("@/voice-input/index.js", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/voice-input/index.js")>()),
+  useVoiceInputShortcut: () => "",
+}));
 
 describe("V4 web element context attachment", () => {
   it("accepts focused workspace events and submits the prompt with a web element context block", async () => {

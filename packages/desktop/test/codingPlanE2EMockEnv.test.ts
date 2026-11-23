@@ -24,8 +24,10 @@ describe("Coding Plan E2E mock env", () => {
   });
   it.each([
     "settings/general/settings-ui-polish.test.ts",
+    "settings/general/settings-ui-polish-ssh.test.ts",
     "ui-shell/panels/side-pane-tabs-responsive-interactions.test.ts",
-  ])("Logo 外观回归隔离模拟账号控制面：%s", (spec) => {
+    "conversation-session/plugins/manual-review/pending/conversation-session-mcp-async-startup-wait.test.ts",
+  ])("所选回归用例隔离模拟账号控制面：%s", (spec) => {
     expect(shouldPrepareCodingPlanTeamMock([`./test/e2e/${spec}`])).toBe(true);
   });
   it("定时任务创建遥测回归隔离账号控制面", () => {

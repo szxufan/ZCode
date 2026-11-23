@@ -102,7 +102,10 @@ export type {
 } from "./session/zcodeTaskService.js";
 export type { ZCodeTaskListItem } from "./session/zcodeTaskListTypes.js";
 
-export { IWindowControllerService } from "./window-controller/windowController.js";
+export {
+  IWindowControllerService,
+  isArchivedTaskDeletionBatchUnsupported,
+} from "./window-controller/windowController.js";
 export {
   IWindowProjectService,
   IWindowRemoteProjectService,
@@ -111,6 +114,7 @@ export {
 } from "#src/window-project-directory/contract.js";
 export { createWindowProjectChangesService } from "#src/window-project-directory/index.js";
 export type {
+  ProjectDisplayOrderKey,
   WindowHostControllerFrame,
   WindowHostControllerMutation,
   WindowHostControllerTaskListItem,

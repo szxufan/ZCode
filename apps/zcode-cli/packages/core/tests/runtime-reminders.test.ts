@@ -7,6 +7,7 @@ import {
   buildPlanModeExitReminderBody,
   buildRuntimeModeReminderBody,
   buildRuntimeOutputStyleReminderBody,
+  buildSilentTurnReminderBody,
   buildTodoReminderBody,
   buildProviderRequestMessages,
   buildRepeatedToolCallReminderBody,
@@ -22,9 +23,162 @@ import {
   systemReminderAttachmentEntry,
   type RuntimeMessageEntry,
 } from "../src/agent/message-history.js";
-import { buildCompactSummaryRequestMessages } from "../src/runtime/methods/compact-active-helpers.js";
+import { runtimeInputMetadata } from "../src/agent/runtime-input-presentation.js";
 
 describe("runtime request reminders", () => {
+  const silentTurn = (name = "Read"): RuntimeMessageEntry => ({
+    message: {
+      role: "assistant",
+      content: "",
+      toolCalls: [{ id: "call", name, input: {} }],
+    },
+  });
+  const silentReminder = () =>
+    systemReminderAttachmentEntry("silent_turn_reminder", "previous silence reminder");
+  // 历史里作为普通 user 消息的输入都算一个用户轮次，不只真实 prompt。
+  const userTurnInputs: RuntimeMessageEntry[] = [
+    {
+      message: { role: "user", content: "<task-notification>done</task-notification>" },
+      metadata: runtimeInputMetadata("task_notification"),
+    },
+    {
+      message: { role: "user", content: "agent reply" },
+      metadata: runtimeInputMetadata("subagent_reply"),
+    },
+    {
+      message: { role: "user", content: "[Request interrupted by user]" },
+      metadata: { source: "interrupt_marker" },
+    },
+    {
+      message: { role: "user", content: "summary" },
+      metadata: { source: "legacy_synthetic", compactBoundary: { boundaryId: "b1" } },
+    },
+  ];
+
+  // 静默提醒按时间判定（meta-user-context.md「Silent-turn reminder」）：最近一次提醒之后至少一次静默响应，
+  // 且距锚点（最近一次提醒与本段起点中较新的一个）满 60 秒。条目时间单位是毫秒，这里用秒构造。
+  const at = (seconds: number, entry: RuntimeMessageEntry): RuntimeMessageEntry => ({
+    ...entry,
+    time: seconds * 1000,
+  });
+  const prompt = (seconds: number) =>
+    at(seconds, {
+      message: { role: "user", content: "Inspect the code" },
+      metadata: realUserRuntimeMetadata(),
+    });
+  const silentAt = (...seconds: number[]) => seconds.map((second) => at(second, silentTurn()));
+  const reminderAt = (seconds: number) => at(seconds, silentReminder());
+  const fires = (entries: RuntimeMessageEntry[], nowSeconds: number) =>
+    buildSilentTurnReminderBody(entries, nowSeconds * 1000) !== null;
+
+  it("emits a silent reminder after 60 seconds and one silent response", () => {
+    expect(buildSilentTurnReminderBody([prompt(0), ...silentAt(61)], 61_000)).toBe(
+      "用户已经有一段时间没有收到你的消息了。继续任务时，有值得告知的进展（发现、计划变更）请主动同步。",
+    );
+    // 满 60 000 毫秒才发：59.999 秒还不到。
+    expect(buildSilentTurnReminderBody([prompt(0), ...silentAt(10)], 59_999)).toBeNull();
+    expect(fires([prompt(0), ...silentAt(10)], 60)).toBe(true);
+    // 时钟回拨（现在早于锚点）时不发。
+    expect(fires([prompt(100), ...silentAt(110)], 50)).toBe(false);
+    // 没有静默响应时不发。
+    expect(fires([prompt(0)], 600)).toBe(false);
+  });
+
+  it("does not emit for many fast silent responses", () => {
+    const fast = Array.from({ length: 20 }, (_, index) => at(index / 10, silentTurn()));
+    expect(fires([prompt(0), ...fast], 2)).toBe(false);
+    expect(fires([prompt(0), ...fast], 60)).toBe(true);
+  });
+
+  it("counts reasoning, empty text and placeholders as silent responses", () => {
+    const entries: RuntimeMessageEntry[] = [
+      { message: { role: "assistant", content: [{ type: "reasoning", text: "thinking" }] } },
+      {
+        message: {
+          role: "assistant",
+          content: [{ type: "reasoning", text: "", providerOptions: { opaque: {} } }],
+        },
+      },
+      { message: { role: "assistant", content: "  " } },
+      { message: { role: "assistant", content: "(no content)" } },
+      { message: { role: "assistant", content: "No response requested." } },
+    ];
+    for (const entry of entries) expect(fires([prompt(0), at(70, entry)], 70)).toBe(true);
+  });
+
+  it.each<RuntimeMessageEntry>([
+    { message: { role: "assistant", content: "Found the cause." } },
+    {
+      message: {
+        role: "assistant",
+        content: [
+          { type: "reasoning", text: "thinking" },
+          { type: "text", text: "An update." },
+        ],
+      },
+    },
+    {
+      message: { role: "user", content: "<system-reminder>User's own text</system-reminder>" },
+      metadata: realUserRuntimeMetadata(),
+    },
+    { message: { role: "user", content: "legacy real input" } },
+    ...userTurnInputs,
+    silentTurn("AskUserQuestion"),
+    silentTurn("ExitPlanMode"),
+  ])("restarts the timer at effective communication %j", (boundary) => {
+    const oldStretch = [prompt(0), reminderAt(61), ...silentAt(70, 130)];
+    const entries = [...oldStretch, at(200, boundary), ...silentAt(210)];
+    expect(fires(entries, 259)).toBe(false);
+    expect(fires(entries, 260)).toBe(true);
+    // 边界之后还没有静默响应时不发。
+    expect(fires([...oldStretch, at(200, boundary)], 600)).toBe(false);
+  });
+
+  it("does not move the timer for tool results, synthetic context or mid-turn steers", () => {
+    const entries: RuntimeMessageEntry[] = [
+      prompt(0),
+      ...silentAt(10).flatMap((entry) => [
+        entry,
+        at(20, { message: { role: "tool", content: "read result", toolCallId: "call" } }),
+        at(30, { message: { role: "user", content: "legacy tool result", toolCallId: "call" } }),
+        at(40, systemReminderAttachmentEntry("environment", "environment")),
+        at(50, {
+          message: { role: "user", content: "background notice" },
+          metadata: legacySyntheticRuntimeMetadata(),
+        }),
+        at(55, {
+          message: { role: "user", content: "also check the tests" },
+          metadata: runtimeInputMetadata("user_steer"),
+        }),
+      ]),
+    ];
+    expect(fires(entries, 60)).toBe(true);
+  });
+
+  it("waits 60 seconds after each reminder and has no cap per stretch", () => {
+    const entries = [prompt(0), ...silentAt(30)];
+    let reminder = 60;
+    for (let count = 0; count < 6; count++) {
+      expect(fires(entries, reminder)).toBe(true);
+      entries.push(reminderAt(reminder));
+      // 提醒之后还没有静默响应。
+      expect(fires(entries, reminder + 120)).toBe(false);
+      entries.push(...silentAt(reminder + 1));
+      expect(fires(entries, reminder + 59)).toBe(false);
+      reminder += 60;
+    }
+    expect(fires(entries, reminder)).toBe(true);
+  });
+
+  it("does not emit when the anchor has no time", () => {
+    const untimedPrompt: RuntimeMessageEntry = {
+      message: { role: "user", content: "Inspect the code" },
+      metadata: realUserRuntimeMetadata(),
+    };
+    expect(fires([untimedPrompt, ...silentAt(70)], 600)).toBe(false);
+    // 最近一次提醒没有时间：不退回更早的锚点。
+    expect(fires([prompt(0), silentReminder(), ...silentAt(70)], 600)).toBe(false);
+  });
   it("maps a subagent message to direct user-like runtime metadata", () => {
     expect(runtimeMetadataForSyntheticUserMessageSource("subagent_message")).toEqual(
       legacySyntheticRuntimeMetadata(),
@@ -435,8 +589,9 @@ describe("runtime request reminders", () => {
   });
 
   it("projects compact summary requests with attachment ordering and skipped cache write", () => {
-    const messages = buildCompactSummaryRequestMessages(
-      [
+    // 压缩请求与普通请求同一投影：摘要提示接在历史最后，跳过缓存写入。
+    const { messages } = buildProviderRequestMessages({
+      entries: [
         { message: { role: "system", content: "system prompt" } },
         {
           message: { role: "user", content: "<system-reminder>\nprefix\n</system-reminder>" },
@@ -447,9 +602,11 @@ describe("runtime request reminders", () => {
           metadata: realUserRuntimeMetadata(),
         },
         systemReminderAttachmentEntry("output_style", "Use concise output for this turn."),
+        { message: { role: "user", content: "Create compact summary." } },
       ],
-      "Create compact summary.",
-    );
+      applyCacheControl: true,
+      skipCacheWrite: true,
+    });
 
     expect(messages).toHaveLength(5);
     expect(messages[1]).toEqual({
@@ -483,6 +640,9 @@ describe("runtime request reminders", () => {
         ),
         { message: { role: "user", content: "hello" }, metadata: realUserRuntimeMetadata() },
       ],
+      // 补换行只在合并相邻 user 内容的协议上（Anthropic）。
+      // fork 早先合并时漏掉了这个选项，断言与 src「不传时不补换行」的语义不符；恢复上游现行写法。
+      foldRemindersIntoToolResults: true,
     });
 
     expect(messages[1]).toEqual({
@@ -492,3 +652,4 @@ describe("runtime request reminders", () => {
     });
   });
 });
+

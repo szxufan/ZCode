@@ -17,6 +17,8 @@ const CODING_PLAN_COMMON_ENV_KEYS = [
 
 const CODING_PLAN_TEAM_SPEC_MARKERS = [
   "conversation-session-toolsearch",
+  // Native MCP 回归使用模拟计划登录态，账号控制面必须同样留在本地。
+  "conversation-session-mcp-async-startup-wait.test.ts",
   "conversation-session-tool-discovery-card.test.ts",
   // 远程导航验收不依赖线上公告；隔离账号控制面，避免营销弹窗遮挡连接交互。
   "conversation-session-rpn-project-navigation.test.ts",
@@ -25,8 +27,10 @@ const CODING_PLAN_TEAM_SPEC_MARKERS = [
   "conversation-session-r3-mixed-entries.test.ts",
   // 远端 Composer 切回已生效套餐：本机与容器（经 SSH 反向隧道）共用同一账号 mock。
   "conversation-session-remote-composer-plan-reselect.test.ts",
+  "conversation-session-remote-composer-plan-switch-wait-provisioning.test.ts",
   // 模拟登录态访问线上账号接口会触发 401 弹窗，遮挡 Logo 的真实 hover 和截图。
   "settings-ui-polish.test.ts",
+  "settings-ui-polish-ssh.test.ts",
   "side-pane-tabs-responsive-interactions.test.ts",
   "conversation-session-share-tool-presentation.test.ts",
   // 发布入口要求登录；遗漏此用例会播种匿名账号，连分享按钮都无法展示。
@@ -40,6 +44,8 @@ const CODING_PLAN_TEAM_SPEC_MARKERS = [
   "provider-builtin-refresh-failure.test.ts",
   "conversation-session-model-provider-restart-recovery.test.ts",
   "conversation-session-model-provider-effective-selection.test.ts",
+  // 草稿模型迁移的账号套餐分支需要已开通的个人/团队套餐与可注入的 client/configs。
+  "conversation-session-draft-model-migration-account-plan.test.ts",
   "conversation-session-worker-effective-selection.test.ts",
   "highspeed-owner-compat.test.ts",
   "highspeed-owner-ui-race.test.ts",
@@ -58,6 +64,8 @@ const CODING_PLAN_TEAM_SPEC_MARKERS = [
   // Bug 原因：连续切模回放也播种了模拟登录态；未隔离控制面时，线上 401
   // 会触发登录过期弹窗，遮住第二轮的模型菜单，导致与切模无关的失败。
   "conversation-session-active-model-context.test.ts",
+  // 项目 Token 断网恢复需要团队账号控制面的换证故障开关与默认套餐数据面回复。
+  "conversation-session-project-token-network-retry.test.ts",
 ] as const;
 
 export function shouldPrepareCodingPlanTeamMock(specs: readonly string[]) {

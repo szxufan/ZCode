@@ -10,6 +10,7 @@
 - 翻译约定：专有名词与标识符保持英文原文——ZCode、AGENTS.md、Git、工具名（Skill、TodoWrite、AskUserQuestion 等）、permission mode 名（plan、yolo 等）、`file_path:line_number`、协议字段、markdown/代码示例。叙述性规则文案译为中文。
 - Memory 段的 frontmatter 代码示例（`name:`/`description:`/`metadata:` 键）保持英文原样：memory 写入与召回按这些键解析，翻译会破坏解析。
 - 翻译范围（本期）：`apps/zcode-cli/packages/core/src/context/` 下的固定段落（cli-prefix、identity、desktop、env-info 标签、skills 标题句、memory、request-user-context 信封、current-date、workflow-actor 契约）与 `runtime/helpers/runtime-reminders.ts` 的回合内提醒。
+- 上游后续在该目录新增的固定段落同样纳入翻译范围，文案进 `packages/shared/src/agent-prompt/`，不在 core 内联英文。已承接：上游 v4.0.0 的 Finishing Work（收尾）与 Memory Notes（记忆、笔记与反馈）。
 - 不在范围（保持英文）：子代理提示词（subagent/*）、标题生成侧车、工具描述、runtime-reminders 之外的合成消息。
 
 ### 1.2 默认提示词唯一来源
@@ -28,6 +29,11 @@
 
 - 运行时 `ContextBuilderConfig.systemPromptOverride`（非空）**替换**：identity（含安全声明与 `# Harness`）、Dynamic Behavior、Session Guidance、Context Management。
 - **保留**：cli-prefix（`你是 ZCode，一个交互式编码智能体`）、Desktop Context、Environment/Git 信息、Memory 段、Output Style 段、skills / AGENTS.md / 当前日期（meta_user）。理由：这些是运行时事实或独立机制，用户编辑的是"性格与规范"正文。
+- 上游 v4.0.0 新增的两段固定提示词**不在可覆盖正文内**，配置档生效时照常输出（合并上游时的取舍：不借合并之机改动本节既有的覆盖边界）：
+  - Finishing Work（收尾）：结束回合的边界与普通障碍的处理。
+  - Memory Notes（记忆、笔记与反馈）：是对 Memory 段的补充，Memory 段本身保留，因此它随 Memory 段一起保留。
+  - 两者都不发给工作流子代理（上游语义：工作流子代理有自己的收尾契约）。
+- Total Tokens 预算行受 `totalTokensReminder` 开关控制（上游 v4.0.0 起默认关闭，每个 runtime 创建时读一次）；打开时它是动态事实，配置档覆盖不省略它。
 - 与既有路径的关系：
   - `customSystemPrompt`（动态工作流子代理专用）语义完全不变：仍整段替换 stable body 并跳过全部动态 system 段。
   - `workflowActor` 与 `systemPromptOverride` 可并存；`systemPromptOverride` 与 `workflowActor` 同时生效时 override 优先替换交互身份段，`workflowActor` 路径不受影响（工作流子代理不读用户配置档）。

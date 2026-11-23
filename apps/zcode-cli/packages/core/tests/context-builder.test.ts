@@ -12,8 +12,10 @@ import {
   agentDesktopContextCopy,
   buildAgentContextManagementBody,
   buildAgentDynamicBehaviorBody,
+  buildAgentFinishingWorkBody,
   buildAgentHarnessBlock,
   buildAgentIdentityBody,
+  buildAgentMemoryNotesBody,
 } from "@zcode/shared";
 import { createContextBuilder } from "../src/context/index.js";
 import { createTestRuntimeModel } from "./test-runtime-model.js";
@@ -24,9 +26,12 @@ import {
   buildEnvInfoSection,
   buildGitSystemContextSection,
   buildIdentitySection,
-  buildSkillsSection,
 } from "../src/context/index.js";
 import { formatMemoryIndexContent } from "../src/memory/index-content.js";
+import {
+  buildSkillsContent,
+  DEFAULT_SKILL_METADATA_BUDGET,
+} from "../src/context/sections/skills.js";
 import { readToolEntry } from "../src/tool/handlers/read.js";
 import { createToolRegistry } from "../src/tool/registry.js";
 import type { ContextBuildResult, ContextMetaUserAttachmentSource } from "../src/context/types.js";
@@ -60,7 +65,14 @@ const AUTONOMY_APPENDIX_PROMPT =
 
 // 上游 v3.18 在 system 末尾追加固定的 token 预算行；fork 的 additional 仍保留中文
 // 自主运行附录（未跟随上游移除），因此不并入上游 REMOVED_AUTONOMY_PARAGRAPHS 断言。
+// 上游 v4.0.0 起该行默认关闭（ContextBuilderConfig.totalTokensReminder === true 才输出），
+// 期望它出现的用例必须显式打开开关。
 const TOTAL_TOKENS_LINE = "<total_tokens>15000000 tokens left</total_tokens>";
+
+// 主会话 system[2] 在上下文管理之后的两段（system-prompt-contract.md「Finishing work and memory notes」）。
+// 不按模型区分，没有 Memory 目录时也发；正文唯一来源是 packages/shared/src/agent-prompt（fork 中文）。
+const EXPECTED_FINISHING_WORK_PROMPT = buildAgentFinishingWorkBody();
+const EXPECTED_MEMORY_NOTES_PROMPT = buildAgentMemoryNotesBody();
 
 // 环境、模型、日期只产出 section，由运行时宣告；其余来源读 meta user carrier。
 const RUNTIME_ANNOUNCED_SECTIONS = {
@@ -161,7 +173,7 @@ describe("ContextBuilder meta user context", () => {
     expect(result.systemMessages[2]?.content).not.toContain("# Agent Identity");
   });
 
-  it("keeps the act and autonomy prompts after context management and ends with the token budget line", () => {
+  it("keeps the act and autonomy prompts after context management, then finishing work, memory notes and the token budget line", () => {
     const result = createContextBuilder({
       workingDirectory: "/workspace",
       envInfo: {
@@ -171,6 +183,8 @@ describe("ContextBuilder meta user context", () => {
         osVersion: "Darwin 25.4.0",
         nodeVersion: "v24.14.0",
       },
+      // 上游 v4.0.0 起 token 预算行默认关闭；本用例锁定它在开关打开时仍是 system 的最后一段。
+      totalTokensReminder: true,
     }).build();
 
     const contextManagement = result.sections.find(
@@ -181,13 +195,78 @@ describe("ContextBuilder meta user context", () => {
     expect(contextManagement?.content).toBe(
       `${DEFAULT_CONTEXT_MANAGEMENT_PROMPT}\n\n${ADDITIONAL_ACT_DONT_REDERIVE_PROMPT}\n\n${AUTONOMY_APPENDIX_PROMPT}`,
     );
-    // fork 保留自主运行附录；末尾再接上游 v3.18 的固定 token 预算行。
-    expect(dynamicSystem.endsWith(`${AUTONOMY_APPENDIX_PROMPT}\n\n${TOTAL_TOKENS_LINE}`)).toBe(
-      true,
-    );
+    // fork 保留自主运行附录；其后依次是上游 v4.0.0 的收尾、记忆两段，末尾才是固定的 token 预算行。
+    expect(
+      dynamicSystem.endsWith(
+        `${AUTONOMY_APPENDIX_PROMPT}\n\n${EXPECTED_FINISHING_WORK_PROMPT}\n\n${EXPECTED_MEMORY_NOTES_PROMPT}\n\n${TOTAL_TOKENS_LINE}`,
+      ),
+    ).toBe(true);
     expect(dynamicSystem.split(ADDITIONAL_ACT_DONT_REDERIVE_PROMPT)).toHaveLength(2);
     expect(dynamicSystem.split(AUTONOMY_APPENDIX_PROMPT)).toHaveLength(2);
+    expect(dynamicSystem.split(EXPECTED_FINISHING_WORK_PROMPT)).toHaveLength(2);
+    expect(dynamicSystem.split(EXPECTED_MEMORY_NOTES_PROMPT)).toHaveLength(2);
     expect(dynamicSystem.split(TOTAL_TOKENS_LINE)).toHaveLength(2);
+  });
+
+  it("sends Finishing work and memory notes after context management, with or without a Memory root", () => {
+    for (const memoryRoot of [undefined, "/workspace/.zcode/memory"]) {
+      const dynamicSystem = String(
+        createContextBuilder({
+          workingDirectory: "/workspace",
+          envInfo: {
+            cwd: "/workspace",
+            platform: "darwin",
+            shell: "zsh",
+            osVersion: "Darwin 25.4.0",
+            nodeVersion: "v24.14.0",
+          },
+          ...(memoryRoot ? { memoryRoot } : {}),
+        }).build().systemMessages[2]?.content ?? "",
+      );
+
+      // 不按模型区分；没有 Memory 目录时也发，段内第一句说明保存规则只在有目录时适用。
+      // fork 的上下文管理段带自主运行附录；token 预算行默认关闭，记忆两段之后就是 system 的结尾。
+      expect(
+        dynamicSystem.endsWith(
+          `${AUTONOMY_APPENDIX_PROMPT}\n\n${EXPECTED_FINISHING_WORK_PROMPT}\n\n${EXPECTED_MEMORY_NOTES_PROMPT}`,
+        ),
+      ).toBe(true);
+      expect(dynamicSystem.includes("# 记忆（Memory）\n")).toBe(memoryRoot !== undefined);
+      expect(dynamicSystem).not.toContain("<total_tokens>");
+    }
+  });
+
+  it("does not send Finishing work or memory notes for workflow actors or a custom system prompt", () => {
+    const envInfo = {
+      cwd: "/workspace",
+      platform: "darwin",
+      shell: "zsh",
+      osVersion: "Darwin 25.4.0",
+      nodeVersion: "v24.14.0",
+    } as const;
+    const actorSystem = createContextBuilder({
+      workingDirectory: "/workspace",
+      envInfo,
+      workflowActor: { name: "reviewer" },
+    })
+      .build()
+      .systemMessages.map((message) => String(message.content))
+      .join("");
+    const customSystem = createContextBuilder({
+      workingDirectory: "/workspace",
+      envInfo,
+      customSystemPrompt: "You are concise for this task.",
+    })
+      .build()
+      .systemMessages.map((message) => String(message.content))
+      .join("");
+
+    // 工作流子代理保留上下文管理段（fork 版末尾是自主运行附录），其后不再有别的 system 段。
+    expect(actorSystem.endsWith(AUTONOMY_APPENDIX_PROMPT)).toBe(true);
+    for (const system of [actorSystem, customSystem]) {
+      expect(system).not.toContain("# 收尾");
+      expect(system).not.toContain("# 记忆、笔记与反馈");
+    }
   });
 
   it("keeps the ZCode Desktop Context as a runtime-announced section outside the system prompt", () => {
@@ -356,7 +435,6 @@ describe("ContextBuilder meta user context", () => {
         },
       },
       currentDate: "2026-06-04",
-      language: "Chinese",
       outputStyle: {
         name: "Terse",
         prompt: "Keep responses short.",
@@ -430,7 +508,6 @@ describe("ContextBuilder meta user context", () => {
         osVersion: "Linux 6.6.0",
         nodeVersion: "v24.14.0",
       },
-      language: "Chinese",
       outputStyle: {
         name: "Learning",
         prompt: "Explain tradeoffs while solving the task.",
@@ -493,8 +570,9 @@ describe("ContextBuilder meta user context", () => {
     );
     const memorySection = result.sections.find((section) => section.source === "memory");
     expect(memorySection?.content).toBe(expected);
+    // 只数 Memory 段标题本身；`# 记忆、笔记与反馈`（上游 v4.0.0 新增的独立段）是另一段。
     expect(
-      String(result.systemMessages[2]?.content ?? "").match(/# 记忆（Memory）/g),
+      String(result.systemMessages[2]?.content ?? "").match(/^# 记忆（Memory）$/gm),
     ).toHaveLength(1);
   });
 
@@ -604,7 +682,6 @@ describe("ContextBuilder meta user context", () => {
         gitStatusLines: [" M package.json"],
         recentCommits: ["abc123 test commit"],
       },
-      language: "Chinese",
     }).build();
 
     expect(result.systemMessages.map((message) => message.role)).toEqual([
@@ -721,7 +798,6 @@ describe("ContextBuilder meta user context", () => {
         osVersion: "Linux 6.6.0",
         nodeVersion: "v24.14.0",
       },
-      language: "日本語",
     }).build();
 
     const dynamic = String(result.systemMessages[2]?.content ?? "");
@@ -1080,7 +1156,7 @@ describe("ContextBuilder meta user context", () => {
     expect(promptContext).not.toContain("Read-only:");
   });
 
-  it("renders skills as a separate meta user system reminder", () => {
+  it("keeps the skill listing out of the builder and only adds the slash skill guidance", () => {
     const result = createContextBuilder({
       workingDirectory: "/workspace",
       currentDate: "2026-05-04",
@@ -1117,9 +1193,11 @@ describe("ContextBuilder meta user context", () => {
       "system",
       "system",
     ]);
-    expect(result.metaUserAttachments.map((attachment) => attachment.source)).toEqual([
-      "skills_listing",
-    ]);
+    // 列表由 runtime 的 skills_listing 收集器追加增量；builder 不再渲染（docs/skills-live-catalog.md）。
+    expect(result.metaUserAttachments).toEqual([]);
+    expect(result.sections.map((section) => section.content).join("\n")).not.toContain(
+      "以下技能可通过 Skill 工具使用",
+    );
     expect(result.systemMessages[0]?.content).not.toContain("demo-skill");
     expect(result.systemMessages[2]?.content).toContain("# 会话专项指导");
     expect(result.systemMessages[2]?.content).toContain("当用户输入 `/<skill-name>` 时");
@@ -1130,9 +1208,6 @@ describe("ContextBuilder meta user context", () => {
     expect(result.systemMessages[2]?.content).not.toContain(
       "Use the Agent tool with specialized agents",
     );
-    expect(metaAttachment(result, "skills_listing")).not.toContain("<system-reminder>");
-    expect(metaAttachment(result, "skills_listing")).toContain("以下技能可通过 Skill 工具使用");
-    expect(metaAttachment(result, "skills_listing")).toContain("demo-skill");
     expect(metaAttachment(result, "context_prefix")).toBe("");
     expect(metaAttachment(result, "date")).toMatch(/^# currentDate\n今天是/);
   });
@@ -1381,57 +1456,51 @@ describe("ContextBuilder meta user context", () => {
   });
 
   it("includes slash skill guidance in the available-skills metadata", () => {
-    const section = buildSkillsSection({
-      outcome: {
-        diagnostics: [],
-        totalDiscovered: 1,
-        skills: [
-          {
-            name: "demo-skill",
-            description: "Use this for demos",
-            path: "/workspace/.zcode/skills/demo/SKILL.md",
-            directory: "/workspace/.zcode/skills/demo",
-            rootPath: "/workspace/.zcode/skills",
-            scope: "project",
-            source: "zcode",
-            safeToAutoLoad: true,
-            frontmatterKeys: [],
-            policy: { allowImplicitInvocation: true },
-          },
-        ],
-      },
-    });
+    const content = buildSkillsContent(
+      [
+        {
+          name: "demo-skill",
+          description: "Use this for demos",
+          path: "/workspace/.zcode/skills/demo/SKILL.md",
+          directory: "/workspace/.zcode/skills/demo",
+          rootPath: "/workspace/.zcode/skills",
+          scope: "project",
+          source: "zcode",
+          safeToAutoLoad: true,
+          frontmatterKeys: [],
+          policy: { allowImplicitInvocation: true },
+        },
+      ],
+      DEFAULT_SKILL_METADATA_BUDGET,
+    );
 
-    expect(section?.content).not.toContain("`/<skill-name>`");
-    expect(section?.content).not.toContain("Do not guess missing skill names.");
+    expect(content).not.toContain("`/<skill-name>`");
+    expect(content).not.toContain("Do not guess missing skill names.");
   });
 
   it("shows plugin-qualified skill names in the available-skills metadata", () => {
-    const section = buildSkillsSection({
-      outcome: {
-        diagnostics: [],
-        totalDiscovered: 1,
-        skills: [
-          {
-            name: "test-driven-development",
-            description: "Use this for TDD workflows",
-            pluginName: "superpowers",
-            qualifiedName: "superpowers:test-driven-development",
-            path: "/plugins/superpowers/skills/test-driven-development/SKILL.md",
-            directory: "/plugins/superpowers/skills/test-driven-development",
-            rootPath: "/plugins/superpowers/skills",
-            scope: "system",
-            source: "plugin",
-            safeToAutoLoad: true,
-            frontmatterKeys: [],
-            policy: { allowImplicitInvocation: true },
-          },
-        ],
-      },
-    });
+    const content = buildSkillsContent(
+      [
+        {
+          name: "test-driven-development",
+          description: "Use this for TDD workflows",
+          pluginName: "superpowers",
+          qualifiedName: "superpowers:test-driven-development",
+          path: "/plugins/superpowers/skills/test-driven-development/SKILL.md",
+          directory: "/plugins/superpowers/skills/test-driven-development",
+          rootPath: "/plugins/superpowers/skills",
+          scope: "system",
+          source: "plugin",
+          safeToAutoLoad: true,
+          frontmatterKeys: [],
+          policy: { allowImplicitInvocation: true },
+        },
+      ],
+      DEFAULT_SKILL_METADATA_BUDGET,
+    );
 
-    expect(section?.content).toContain("superpowers:test-driven-development");
-    expect(section?.content).toContain("也可用 test-driven-development 加载");
+    expect(content).toContain("superpowers:test-driven-development");
+    expect(content).toContain("也可用 test-driven-development 加载");
   });
 });
 
@@ -1482,6 +1551,9 @@ describe("context builder — system prompt override", () => {
     expect(result.sections.some((section) => section.source === "desktop_context")).toBe(true);
     expect(result.sections.some((section) => section.source === "env_info")).toBe(true);
     expect(dynamic).toContain("# 记忆（Memory）");
+    // 上游 v4.0.0 的收尾与记忆两段不在配置档可覆盖范围内，覆盖生效时照常输出（规格 §1.4）。
+    expect(dynamic).toContain(EXPECTED_FINISHING_WORK_PROMPT);
+    expect(dynamic).toContain(EXPECTED_MEMORY_NOTES_PROMPT);
     // 输出风格是运行时公告，builder 段不再输出。
     expect(result.sections.some((section) => section.source === "output_style")).toBe(false);
   });
@@ -1696,44 +1768,6 @@ describe("context builder — workflow actor identity", () => {
     // 档位时代的两句不得残留（docs/dynamic-workflow/authoring.md）。
     expect(text).not.toContain("read-only");
     expect(text).not.toContain("a capability your tools do not give you");
-  });
-
-  it("lists skills only when the Skill tool is actually registered", () => {
-    const skills = {
-      skills: [
-        {
-          name: "demo-skill",
-          description: "Demo skill",
-          path: "/workspace/.zcode/skills/demo/SKILL.md",
-          directory: "/workspace/.zcode/skills/demo",
-          rootPath: "/workspace/.zcode/skills",
-          scope: "project" as const,
-          source: "zcode" as const,
-          safeToAutoLoad: true,
-          frontmatterKeys: [],
-          policy: { allowImplicitInvocation: true },
-        },
-      ],
-      diagnostics: [],
-      totalDiscovered: 1,
-    };
-    const sources = (guidanceToolNames: readonly string[] | undefined) =>
-      createContextBuilder({
-        workingDirectory: "/workspace",
-        envInfo,
-        skills: skills as never,
-        workflowActor: { name: "judge" },
-        ...(guidanceToolNames === undefined ? {} : { guidanceToolNames }),
-      })
-        .build()
-        .metaUserAttachments.map((attachment) => attachment.source);
-
-    // 工具表里没有 Skill → 不列技能（列了只会让它相信自己有一个没有的工具）。
-    expect(sources(["submit_result", "escalate"])).not.toContain("skills_listing");
-    // Skill 在表里 → 照列。
-    expect(sources(["Skill", "submit_result", "escalate"])).toContain("skills_listing");
-    // 工具表缺席（旧调用方 / 测试）→ 维持旧行为。
-    expect(sources(undefined)).toContain("skills_listing");
   });
 
   it("refuses workflowActor together with customSystemPrompt", () => {

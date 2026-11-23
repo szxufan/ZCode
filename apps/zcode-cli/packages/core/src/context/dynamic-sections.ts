@@ -1,6 +1,8 @@
 import {
   buildAgentContextManagementBody,
   buildAgentDynamicBehaviorBody,
+  buildAgentFinishingWorkBody,
+  buildAgentMemoryNotesBody,
   buildAgentSessionGuidanceBody,
   defaultAgentSessionGuidanceLines,
 } from "@zcode/shared";
@@ -63,8 +65,20 @@ export function buildContextManagementSection(): ContextSection {
   );
 }
 
-/** 固定的 token 预算行，是 system 的最后一段；倒数由每次请求的提醒附件表达。 */
-export function buildTotalTokensSection(): ContextSection {
+// 默认 prompt 的收尾与记忆保存两段（上游 v4.0.0），不按模型区分；没有 Memory 目录时也发，
+// 段内自己说明保存规则的适用条件。文案取自 @zcode/shared 的中文正文。
+// 这两段不在 systemPromptOverride 的覆盖范围内：配置档生效时照常输出（规格 §1.4）。
+export function buildFinishingWorkSection(): ContextSection {
+  return createDynamicSection("Finishing Work", "finishing_work", buildAgentFinishingWorkBody());
+}
+
+export function buildMemoryNotesSection(): ContextSection {
+  return createDynamicSection("Memory Notes", "memory_notes", buildAgentMemoryNotesBody());
+}
+
+/** 固定的 token 预算行，是 system 的最后一段；倒数由每次请求的提醒附件表达。开关关闭时不产出。 */
+export function buildTotalTokensSection(enabled: boolean): ContextSection | null {
+  if (!enabled) return null;
   return createDynamicSection("Total Tokens", "total_tokens", TOTAL_TOKENS_SYSTEM_LINE);
 }
 

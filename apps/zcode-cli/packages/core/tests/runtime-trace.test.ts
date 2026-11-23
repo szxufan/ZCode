@@ -1,3 +1,4 @@
+import { createMockMcpPort } from "./mcp-runtime-fixture.js";
 import { withoutAgentListingMessages } from "./test-agent-listing.js";
 import { describe, expect, it } from "vitest";
 import {
@@ -48,10 +49,6 @@ const ENVIRONMENT_REMINDER = expect.stringMatching(
 // 日期跟随真实时钟。默认测试模型不合并相邻 user，紧跟输入的那块也不补换行。
 const TODAY_REMINDER = expect.stringMatching(
   /^<system-reminder>\n# currentDate\n今天是 \d{4}-\d{2}-\d{2}。\n<\/system-reminder>$/,
-);
-// 真实用户消息的轮首重新起算，token 预算提醒为满额。
-const TOTAL_TOKENS_TURN_START_REMINDER = reminderText(
-  "<total_tokens>15000000 tokens left</total_tokens>",
 );
 
 function providerMessagesToText(messages: readonly { content?: unknown }[] | undefined): string {
@@ -364,18 +361,10 @@ describe("AgentRuntime trace propagation", () => {
       traceId: traceContext.traceId,
     });
     const messageTailRoles = steeredRequest?.messageTailRoles as string[] | undefined;
-    // 纯文本回复后取出的 guide 重新起算 token 预算；提醒（MCS 关时为单独的 user reminder）
-    // 按投影规则冒泡到这条 user 输入之前。
-    expect(messageTailRoles?.slice(-3)).toEqual(["assistant", "user", "user"]);
+    expect(messageTailRoles?.slice(-2)).toEqual(["assistant", "user"]);
     const steeredMessageTail = steeredRequest?.messageTail as
       | Array<Record<string, unknown>>
       | undefined;
-    expect(steeredMessageTail?.at(-2)).toMatchObject({
-      contentBytes:
-        "<system-reminder>\n<total_tokens>15000000 tokens left</total_tokens>\n</system-reminder>"
-          .length,
-      role: "user",
-    });
     expect(steeredMessageTail?.at(-1)).toMatchObject({
       contentBytes: "keep the original task but switch to option B".length,
       role: "user",
@@ -809,7 +798,6 @@ describe("AgentRuntime trace propagation", () => {
       sessionId,
       {
         systemPrompt: "You are terse for this session.",
-        language: "Chinese",
         outputStyle: {
           name: "Terse",
           prompt: "Keep responses short.",
@@ -873,31 +861,25 @@ describe("AgentRuntime trace propagation", () => {
     expect(requests[0]?.[3]?.content).toContain("你由名为");
     // 自定义 prompt 也宣告 output style 指令，紧跟模型公告。
     expect(requests[0]?.[4]?.content).toContain("# 输出风格：Terse\nKeep responses short.");
-    // 自定义 prompt 不带 system 预算行，但轮首的 token 预算提醒照常发，排在 output_style 之前。
-    expect(requests[0]?.[5]).toEqual({
-      role: "user",
-      content:
-        "<system-reminder>\n<total_tokens>15000000 tokens left</total_tokens>\n</system-reminder>",
-    });
+    // 上游 v4.0.0：token 预算提醒默认关闭，模型公告之后不再有轮首的 token 预算提醒。
     // 输入附件（output_style）在前，请求前公告（date）在后，与两个收集器的顺序一致。
+    expect(requests[0]?.[5]?.role).toBe("user");
+    expect(requests[0]?.[5]?.content).toContain("Terse 输出风格已生效");
+    expect(requests[0]?.[5]?.content).toContain("<system-reminder>");
     expect(requests[0]?.[6]?.role).toBe("user");
-    expect(requests[0]?.[6]?.content).toContain("Terse 输出风格已生效");
-    expect(requests[0]?.[6]?.content).toContain("<system-reminder>");
+    expect(requests[0]?.[6]?.content).not.toContain("# agentsMd");
+    expect(requests[0]?.[6]?.content).not.toContain("# claudeMd");
+    expect(requests[0]?.[6]?.content).not.toContain("Project context:");
+    expect(requests[0]?.[6]?.content).not.toContain("- Package manager: pnpm");
+    expect(requests[0]?.[6]?.content).not.toContain("- `test`: vitest");
+    expect(requests[0]?.[6]?.content).toMatch(/# currentDate\n今天是 \d{4}-\d{2}-\d{2}。/);
+    expect(requests[0]?.[6]?.content).not.toContain("# user_instructions");
+    expect(requests[0]?.[6]?.content).not.toContain("hello");
     expect(requests[0]?.[7]?.role).toBe("user");
-    expect(requests[0]?.[7]?.content).not.toContain("# agentsMd");
-    expect(requests[0]?.[7]?.content).not.toContain("# claudeMd");
-    expect(requests[0]?.[7]?.content).not.toContain("Project context:");
-    expect(requests[0]?.[7]?.content).not.toContain("- Package manager: pnpm");
-    expect(requests[0]?.[7]?.content).not.toContain("- `test`: vitest");
-    expect(requests[0]?.[7]?.content).toMatch(/# currentDate\n今天是 \d{4}-\d{2}-\d{2}。/);
-    expect(requests[0]?.[7]?.content).not.toContain("# user_instructions");
-    expect(requests[0]?.[7]?.content).not.toContain("hello");
-    expect(requests[0]?.[8]?.role).toBe("user");
-    expect(requests[0]?.[8]?.content).toContain("hello");
+    expect(requests[0]?.[7]?.content).toContain("hello");
     const providerText = providerMessagesToText(requests[0]);
-    expect(
-      requests[0]?.slice(0, 2).some((message) => message.content.includes("total_tokens")),
-    ).toBe(false);
+    // token 预算提醒默认关闭：整个请求里没有任何 total_tokens（system 预算行与轮首提醒都不发）。
+    expect(providerText).not.toContain("total_tokens");
     expect(providerText).not.toContain("# Session Guidance");
     expect(providerText).not.toContain("# 会话专项指导");
     expect(providerText).not.toContain("## Current Environment");
@@ -1009,7 +991,6 @@ describe("AgentRuntime trace propagation", () => {
           osVersion: "Linux 6.6.0",
           nodeVersion: "v24.14.0",
         },
-        language: "Spanish",
         mcp: {
           enabled: true,
           servers: {
@@ -1080,12 +1061,10 @@ describe("AgentRuntime trace propagation", () => {
           "# 输出风格：Learning\nExplain tradeoffs while solving the task.",
         ),
       },
-      { role: "user", cacheControl: undefined, content: TOTAL_TOKENS_TURN_START_REMINDER },
       { role: "user", cacheControl: undefined, content: styleActive },
       { role: "user", cacheControl: undefined, content: TODAY_REMINDER },
       { role: "user", cacheControl: undefined, content: "first question" },
       { role: "assistant", cacheControl: undefined, content: "first response" },
-      { role: "user", cacheControl: undefined, content: TOTAL_TOKENS_TURN_START_REMINDER },
       { role: "user", cacheControl: undefined, content: styleActive },
       { role: "user", cacheControl: EPHEMERAL, content: "second question" },
     ]);
@@ -1123,7 +1102,7 @@ describe("AgentRuntime trace propagation", () => {
     );
     expect(dynamicSystem).not.toContain("Respond in Spanish");
     // 上游 v3.18：output style 改为运行时公告（meta_user），不再进入 dynamic system；
-    // 指令正文只在 messages[4] 的公告里出现一次（deep-equal 已覆盖）。
+    // 指令正文只在 messages[5] 的公告里出现一次（deep-equal 已覆盖）。
     expect(dynamicSystem).not.toContain("# 输出风格：Learning");
     expect(dynamicSystem).not.toContain("Explain tradeoffs while solving the task.");
     expect(dynamicSystem).not.toContain("# Function Result Clearing");
@@ -1133,11 +1112,12 @@ describe("AgentRuntime trace propagation", () => {
     expect(dynamicSystem).not.toContain("scratchpad");
     expect(dynamicSystem).not.toContain("token_budget");
 
-    expect(second?.messages[9]?.content).toContain("first question");
-    expect(second?.messages[9]?.content).not.toContain("Learning 输出风格已生效");
-    expect(second?.messages[13]?.content).toContain("second question");
-    const firstOutputStyleReminder = second?.messages[7]?.content ?? "";
-    const secondOutputStyleReminder = second?.messages[12]?.content ?? "";
+    // 上游 v4.0.0：token 预算提醒默认关闭，序列里不再有轮首的 total_tokens 提醒，下标相应前移。
+    expect(second?.messages[8]?.content).toContain("first question");
+    expect(second?.messages[8]?.content).not.toContain("Learning 输出风格已生效");
+    expect(second?.messages[11]?.content).toContain("second question");
+    const firstOutputStyleReminder = second?.messages[6]?.content ?? "";
+    const secondOutputStyleReminder = second?.messages[10]?.content ?? "";
     expect(firstOutputStyleReminder).toContain("Learning 输出风格已生效");
     expect(secondOutputStyleReminder).toContain("Learning 输出风格已生效");
     expect(firstOutputStyleReminder).toContain("<system-reminder>");
@@ -1241,13 +1221,11 @@ describe("AgentRuntime trace propagation", () => {
     await runtime.executeTurn("first question");
     await runtime.executeTurn("second question");
 
-    // 完整形状：三段 system，然后是输入附件（环境、模型、token 预算）、请求前公告（日期）和第一问，
-    // 公告不带 cacheControl。
+    // 完整形状：三段 system，然后是请求前公告（环境、模型、日期）和第一问，公告不带 cacheControl。
     expect(requests[0]?.map(({ role, cacheControl }) => ({ role, cacheControl }))).toEqual([
       { role: "system", cacheControl: undefined },
       { role: "system", cacheControl: EPHEMERAL },
       { role: "system", cacheControl: EPHEMERAL },
-      { role: "user", cacheControl: undefined },
       { role: "user", cacheControl: undefined },
       { role: "user", cacheControl: undefined },
       { role: "user", cacheControl: undefined },
@@ -1256,7 +1234,6 @@ describe("AgentRuntime trace propagation", () => {
     expect(requests[0]?.slice(3).map((message) => message.content)).toEqual([
       ENVIRONMENT_REMINDER,
       MODEL_REMINDER,
-      TOTAL_TOKENS_TURN_START_REMINDER,
       TODAY_REMINDER,
       "first question",
     ]);
@@ -1319,25 +1296,30 @@ describe("AgentRuntime trace propagation", () => {
     expect(requests[0]?.[2]?.content).toContain(
       "结束回合前，检查你的最后一段。",
     );
-    expect(
-      requests[0]?.[2]?.content.endsWith(
-        // fork 保留自主运行附录；末尾再接上游 v3.18 的固定 token 预算行。
-        "某个信号与已知故障模式相似，不代表它是同一原因。\n\n<total_tokens>15000000 tokens left</total_tokens>",
-      ),
-    ).toBe(true);
+    // 上游 v4.0.0：上下文管理段之后依次是收尾（# 收尾）、记忆（# 记忆、笔记与反馈）两段；
+    // fork 的上下文管理段末尾是自主运行附录，所以紧跟 # 收尾 的是附录的最后一句。
+    expect(requests[0]?.[2]?.content).toContain(
+      "在运行会改变系统状态的命令前——重启、删除、改配置——先核对证据是否真的支持这个具体动作。某个信号与已知故障模式相似，不代表它是同一原因。\n\n# 收尾\n",
+    );
+    expect(requests[0]?.[2]?.content.indexOf("# 收尾")).toBeLessThan(
+      requests[0]?.[2]?.content.indexOf("# 记忆、笔记与反馈") ?? -1,
+    );
+    // token 预算行默认关闭（totalTokensReminder 未开启），记忆段就是 dynamic system 的结尾。
+    expect(requests[0]?.[2]?.content.endsWith("基于上下文工作，而不是产出中间文件。")).toBe(true);
+    expect(requests[0]?.[2]?.content).not.toContain("<total_tokens>");
     expect(requests[0]?.[2]?.content).not.toContain("不是 Git 仓库");
     expect(requests[0]?.[2]?.content).not.toContain("- **Git**:");
-    expect(requests[0]?.[7]).toEqual({
+    // 三段 system + 环境、模型、日期三条公告之后就是第一问（token 预算提醒默认关闭）。
+    expect(requests[0]?.[6]).toEqual({
       role: "user",
       content: "first question",
       cacheControl: { type: "ephemeral" },
     });
-    expect(requests[1]?.slice(0, -3).map(({ role, content }) => ({ role, content }))).toEqual(
+    expect(requests[1]?.slice(0, -2).map(({ role, content }) => ({ role, content }))).toEqual(
       requests[0]?.map(({ role, content }) => ({ role, content })),
     );
-    expect(requests[1]?.at(-4)?.cacheControl).toBeUndefined();
-    expect(requests[1]?.at(-3)?.content).toBe("first response");
-    expect(requests[1]?.at(-2)?.content).toBe(TOTAL_TOKENS_TURN_START_REMINDER);
+    expect(requests[1]?.at(-3)?.cacheControl).toBeUndefined();
+    expect(requests[1]?.at(-2)?.content).toBe("first response");
     expect(requests[1]?.at(-1)).toEqual({
       role: "user",
       content: "second question",
@@ -1416,12 +1398,11 @@ describe("AgentRuntime trace propagation", () => {
     await runtime.executeTurn("first question");
     await runtime.executeTurn("second question");
 
-    // 结构化前缀：环境、模型、token 预算、指令、日期公告都是 user 侧附件，排在第一问之前，不带 cacheControl。
+    // 结构化前缀：环境、模型、指令、日期公告都是 user 侧附件，排在第一问之前，不带 cacheControl。
     // fork 中文文案：指令公告外层是 AGENT_META_USER_OPENING/CLOSING 载体，文件块为「（工作区指令，随代码库提交）」。
     const prefix = [
       { role: "user", cacheControl: undefined, content: ENVIRONMENT_REMINDER },
       { role: "user", cacheControl: undefined, content: MODEL_REMINDER },
-      { role: "user", cacheControl: undefined, content: TOTAL_TOKENS_TURN_START_REMINDER },
       {
         role: "user",
         cacheControl: undefined,
@@ -1455,13 +1436,12 @@ describe("AgentRuntime trace propagation", () => {
       ...prefix,
       { role: "user", cacheControl: undefined, content: "first question" },
       { role: "assistant", cacheControl: undefined, content: "first response" },
-      { role: "user", cacheControl: undefined, content: TOTAL_TOKENS_TURN_START_REMINDER },
       { role: "user", cacheControl: EPHEMERAL, content: "second question" },
     ]);
-    expect(requests[1]?.[8]?.content).toContain("first question");
-    expect(requests[1]?.[8]?.cacheControl).toBeUndefined();
-    expect(requests[1]?.[11]?.content).toContain("second question");
-    expect(requests[1]?.[11]?.cacheControl).toEqual({ type: "ephemeral" });
+    expect(requests[1]?.[7]?.content).toContain("first question");
+    expect(requests[1]?.[7]?.cacheControl).toBeUndefined();
+    expect(requests[1]?.[9]?.content).toContain("second question");
+    expect(requests[1]?.[9]?.cacheControl).toEqual({ type: "ephemeral" });
   });
 
   it("emits date change reminder once without refreshing request prefix date", async () => {
@@ -1829,24 +1809,6 @@ class CapturingLogger implements Logger {
       error,
     });
   }
-}
-
-function createMockMcpPort(overrides: Partial<McpPort> = {}): McpPort {
-  return {
-    connectConfiguredServers: async () => emptyMcpSnapshot(),
-    connectServer: async () => ({
-      status: "connected",
-      transport: "stdio",
-      toolCount: 1,
-      updatedAt: "now",
-    }),
-    disconnectServer: async () => undefined,
-    status: async () => ({}),
-    listTools: async () => [],
-    callTool: async () => ({ content: [{ type: "text", text: "pong" }] }),
-    close: async () => {},
-    ...overrides,
-  };
 }
 
 function emptyMcpSnapshot(): McpConnectionSnapshot {

@@ -272,6 +272,49 @@ export function buildRuntimeOutputStyleReminderBody(
   return `${outputStyle.name} 输出风格已生效。请继续遵循该风格的具体指引。`;
 }
 
+/** 回复语言设置被清空时的清除公告；与 output style 的重置同一形态。fork 中文文案。 */
+export const LANGUAGE_CLEARED_REMINDER = "回复语言偏好已清除。请与用户使用的语言保持一致。";
+
+const LANGUAGE_REMINDER_HEAD = "# 回复语言\n始终使用 ";
+
+/**
+ * 回复语言公告正文；language 是用户在设置里输入的原文（docs/i18n/agent-reply-language.md）。
+ * 插入前转义：用户输入不能破坏 <system-reminder> 标签，也不能换行插入额外的段落。
+ */
+export function buildLanguageReminderBody(language: string): string {
+  return languageReminderBody(escapeLanguage(language));
+}
+
+/**
+ * 由公告正文找回（已转义的）语言。语言在正文里出现三次，模板其余部分固定，所以能由长度反推；
+ * 再用它重建正文，逐字相等才算。附件 metadata 只有来源名，不另存语言。不是公告正文时返回 undefined。
+ */
+export function languageOfReminderBody(body: string): string | undefined {
+  const languageLength = (body.length - languageReminderBody("").length) / 3;
+  if (!Number.isInteger(languageLength) || languageLength <= 0) return undefined;
+  const start = LANGUAGE_REMINDER_HEAD.length;
+  const language = body.slice(start, start + languageLength);
+  return languageReminderBody(language) === body ? language : undefined;
+}
+
+// & < > 转命名实体，控制字符（\p{Cc} 即 U+0000–U+001F、U+007F–U+009F）与 U+2028/2029 转数字实体；引号不转。
+function escapeLanguage(language: string): string {
+  return language
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replace(/[\p{Cc}\u2028\u2029]/gu, (char) => `&#${char.charCodeAt(0)};`);
+}
+
+// 文案走 fork 中文体系。解析契约（languageOfReminderBody）：语言占位恰好出现三次，
+// 第一次紧跟在 LANGUAGE_REMINDER_HEAD 之后；改模板时必须保持这两点。
+function languageReminderBody(language: string): string {
+  return [
+    `${LANGUAGE_REMINDER_HEAD}${language} 回复。所有解释、注释以及与用户的沟通都使用 ${language}。技术术语和代码标识符保持原样。`,
+    `书写${language}时保持完整的正字法正确性，包括所有必需的变音符号、重音和特殊字符。绝不用 ASCII 等价物代替带变音的字母（例如不要把 "não" 写成 "nao"、"für" 写成 "fur"、"löschen" 写成 "loeschen"）。`,
+  ].join("\n");
+}
+
 function formatTodoListForReminder(todos: readonly TodoItem[]): string[] {
   return todos.map((todo, index) => `${index + 1}. [${todo.status}] ${todo.content}`);
 }
@@ -303,10 +346,9 @@ function countRuntimeModeReminders(entries: readonly RuntimeMessageEntry[]): num
 
 // ---- 静默回合提醒（机制与上游一致；文案走 fork 中文体系） ----
 
-const SILENT_TURN_REMINDER_CONFIG = Object.freeze({
-  TURNS_BETWEEN_REMINDERS: 5,
-  MAX_REMINDERS_PER_STRETCH: 3,
-});
+// 静默提醒按时间判定，所有模型相同，每段不设上限（meta-user-context.md「Silent-turn reminder」）。
+// 上游 v4.0.0 由「每 5 轮、每段最多 3 次」改为距锚点满 60 秒；机制跟上游，文案走 fork 中文体系。
+const SILENT_TURN_REMINDER_MS = 60_000;
 const SILENT_TURN_REMINDER_BODY =
   "用户已经有一段时间没有收到你的消息了。继续任务时，有值得告知的进展（发现、计划变更）请主动同步。";
 // 只有空白或这些占位文字的 assistant 文本不算与用户沟通。
@@ -320,23 +362,31 @@ function isVisibleAssistantText(text: string): boolean {
   return trimmed.length > 0 && !SILENT_TURN_PLACEHOLDER_TEXTS.has(trimmed);
 }
 
+/**
+ * 最近一次提醒之后至少一次静默响应，且距锚点满 60 秒时返回提醒正文。锚点是倒扫时遇到的第一个
+ * 静默提醒、有效沟通的响应或用户轮次（三者中最新的一个），找到就停；锚点没有时间时不发。
+ * nowMs 是收集时的时钟。
+ */
 export function buildSilentTurnReminderBody(
   entries: readonly RuntimeMessageEntry[],
+  nowMs: number,
 ): string | null {
   let silentTurns = 0;
-  let reminders = 0;
+  let anchor: RuntimeMessageEntry | undefined;
   for (let index = entries.length - 1; index >= 0; index--) {
     const entry = entries[index]!;
     if (entry.metadata?.source === "silent_turn_reminder") {
-      reminders++;
-      if (reminders >= SILENT_TURN_REMINDER_CONFIG.MAX_REMINDERS_PER_STRETCH) return null;
-      continue;
+      anchor = entry;
+      break;
     }
     if (isRuntimeAttachmentEntry(entry)) continue;
     const { message } = entry;
     // 新的用户轮次结束静默段：新轮通知、中断标记与 compact summary 也算。
-    // 中途输入（user_steer 等，含旧版本存下的立即发送）不算，不结束静默段。
-    if (isUserTurnInput(entry)) break;
+    // 中途输入（user_steer 等，含旧版本存下的立即发送）不算，不结束静默段，也不改锚点。
+    if (isUserTurnInput(entry)) {
+      anchor = entry;
+      break;
+    }
     if (message.role !== "assistant") continue;
     const communicated =
       typeof message.content === "string"
@@ -350,15 +400,15 @@ export function buildSilentTurnReminderBody(
         (call) =>
           call.name === ASK_USER_QUESTION_TOOL_NAME || call.name === EXIT_PLAN_MODE_TOOL_NAME,
       )
-    )
+    ) {
+      anchor = entry;
       break;
+    }
     // 每个已提交 assistant entry 是一次模型响应；工具数量和工具结果都不增加轮次。
-    // 只累计最新提醒之后的响应，历史提醒仍用于限制同一段静默中的重复次数。
-    if (reminders === 0) silentTurns++;
+    silentTurns++;
   }
-  return silentTurns >= SILENT_TURN_REMINDER_CONFIG.TURNS_BETWEEN_REMINDERS
-    ? SILENT_TURN_REMINDER_BODY
-    : null;
+  if (silentTurns === 0 || anchor?.time === undefined) return null;
+  return nowMs - anchor.time >= SILENT_TURN_REMINDER_MS ? SILENT_TURN_REMINDER_BODY : null;
 }
 
 // ---- 输出风格提醒（fork 保留 output_style section；提醒正文与上游一致） ----
