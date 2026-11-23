@@ -17,7 +17,6 @@ import { buildCliPrefixSection } from "./sections/cli-prefix.js";
 import { buildIdentitySection } from "./sections/identity.js";
 import { buildWorkflowActorIdentitySection } from "./sections/workflow-actor.js";
 import { buildEnvironmentSections, buildGitSystemContextSection } from "./sections/env-info.js";
-import { buildSkillsSection } from "./sections/skills.js";
 import { buildRequestUserContextSection } from "./sections/request-user-context.js";
 import { buildCurrentDateSection } from "./sections/current-date.js";
 import { buildMemorySection } from "./sections/memory.js";
@@ -26,6 +25,8 @@ import { buildDesktopContextSection } from "./sections/desktop.js";
 import {
   buildContextManagementSection,
   buildDynamicBehaviorSection,
+  buildFinishingWorkSection,
+  buildMemoryNotesSection,
   buildSessionGuidanceSection,
   buildTotalTokensSection,
 } from "./dynamic-sections.js";
@@ -35,8 +36,6 @@ import {
 // -----------------------------------------------
 
 const EPHEMERAL_CACHE_CONTROL = { type: "ephemeral" as const };
-/** Skill 工具的注册名（与 tool/handlers/skill.ts 的 metadata.name 同字面；contracts 没有常量）。 */
-const SKILL_TOOL_NAME = "Skill";
 
 export class ContextBuilder {
   private config: ContextBuilderConfig;
@@ -150,9 +149,11 @@ export class ContextBuilder {
     // stable body，而是跳过默认 system prompt 体系和 systemContext；否则用户提供
     // custom prompt 后仍会混入 Session Guidance / output style 等动态 system 段。
     // 工作流子代理跳过其中面向「与用户对话」的三段（desktop、Dynamic Behavior、session
-    // guidance——契约里已把 Report outcomes faithfully 搬过去），保留 memory 与其后各段。
+    // guidance——契约里已把 Report outcomes faithfully 搬过去），也跳过 Finishing work 与
+    // memory notes 两段；保留 memory、Context management 与 token 预算行。
     // systemPromptOverride 只替换身份与行为规范段（Dynamic Behavior / Session Guidance /
-    // Context Management），其余动态事实段照常输出（规格 §1.4）。
+    // Context Management），其余动态事实段照常输出（规格 §1.4）；上游 v4.0.0 新增的
+    // Finishing work / memory notes 两段不在覆盖范围内。
     if (!hasCustomSystemPrompt) {
       if (!isWorkflowActor && this.config.presentationSurface === "zcode_desktop") {
         sections.push(buildDesktopContextSection(Boolean(this.config.genUiOutputDirectory)));
@@ -191,8 +192,16 @@ export class ContextBuilder {
       if (!hasSystemPromptOverride) {
         sections.push(buildContextManagementSection());
       }
-      // total tokens 用量段是动态事实，不随系统提示词配置档覆盖而省略。
-      sections.push(buildTotalTokensSection());
+      // 工作流子代理有自己的收尾契约，不收主会话的这两段。
+      if (!isWorkflowActor) {
+        sections.push(buildFinishingWorkSection(), buildMemoryNotesSection());
+      }
+      // total tokens 用量段是动态事实，不随系统提示词配置档覆盖而省略；
+      // 是否输出由 totalTokensReminder 开关决定（上游 v4.0.0 起默认关闭）。
+      const totalTokensSection = buildTotalTokensSection(this.config.totalTokensReminder === true);
+      if (totalTokensSection) {
+        sections.push(totalTokensSection);
+      }
 
       const gitSystemContextSection = buildGitSystemContextSection(this.config.envInfo);
       if (gitSystemContextSection) {
@@ -203,19 +212,9 @@ export class ContextBuilder {
       sections.push(...environmentSections);
     }
 
-    // 4. Skills appear as a meta user system-reminder, matching provider block layout.
-    // guidanceToolNames 是 runtime 当下的
-    // 工具表；一个 Skill 工具未注册的工作流子代理被告知「以下技能可经 Skill 工具使用」，
-    // 只会让它相信自己有一个没有的工具。表缺席（测试 / 旧调用方）时保持既有行为。
-    if (this.config.skills && this.skillToolAvailable()) {
-      const skillsSection = buildSkillsSection({
-        outcome: this.config.skills,
-        metadataBudget: this.config.skillMetadataBudget,
-      });
-      if (skillsSection) {
-        sections.push(skillsSection);
-      }
-    }
+    // 4. Skill 列表不在这里渲染：由 runtime 的 skills_listing 收集器按实时目录追加增量
+    //（根目录 docs/skills-live-catalog.md）。这里曾按会话开始时的目录再渲染一份完整列表，
+    // 改为增量后没有读取方，删除。
 
     // 5. Meta user context: workspace instructions/project memory first, date second.
     const requestUserContextSection = buildRequestUserContextSection({
@@ -251,11 +250,6 @@ export class ContextBuilder {
       systemMessages,
       metaUserAttachments,
     };
-  }
-
-  private skillToolAvailable(): boolean {
-    const names = this.config.guidanceToolNames;
-    return names === undefined || names.includes(SKILL_TOOL_NAME);
   }
 
   private assembleSystemMessages(sections: ContextSection[]): ModelInputMessage[] {
@@ -317,10 +311,11 @@ const RUNTIME_ANNOUNCED_SOURCES: ReadonlySet<ContextSection["source"]> = new Set
 
 export function buildMetaUserAttachments(sections: ContextSection[]): ContextMetaUserAttachment[] {
   // 来源明确分流；不再把日期、环境和 Git 折进指令 carrier。
-  // 内容包装沿用 fork 的中文载体：skills 原样，context 前缀带 AGENT_META_USER_OPENING/CLOSING。
+  // 内容包装沿用 fork 的中文载体：context 前缀带 AGENT_META_USER_OPENING/CLOSING。
+  // skills 列表不再经过这里：由 runtime 的 skills_listing 收集器直接以列表正文作为附件
+  //（不加信封，与 fork 此前「skills 原样」一致），标题句取 @zcode/shared 的中文文案。
   const sourceMap: Partial<Record<ContextSection["source"], ContextMetaUserAttachment["source"]>> =
     {
-      skills: "skills_listing",
       request_user_context: "context_prefix",
       session_context: "session_context",
     };
@@ -333,10 +328,7 @@ export function buildMetaUserAttachments(sections: ContextSection[]): ContextMet
         (sourceMap[section.source] ?? "context_prefix") === attachmentSource,
     );
     // session_context 的 Git 段自带一层信封；与直接公告路径保持同一双层布局。
-    const content =
-      attachmentSource === "skills_listing"
-        ? buildSkillsMetaUserBody(grouped)
-        : buildContextMetaUserBody(grouped);
+    const content = buildContextMetaUserBody(grouped);
     if (!content) continue;
     const files = grouped.flatMap((section) => section.instructionFiles ?? []);
     attachments.push({
@@ -371,15 +363,6 @@ export function buildContextMetaUserBody(sections: ContextSection[]): string | n
   return [AGENT_META_USER_OPENING, buildSectionContent(sections), "", AGENT_META_USER_CLOSING].join(
     "\n",
   );
-}
-
-export function buildSkillsMetaUserBody(sections: ContextSection[]): string | null {
-  const content = buildSectionContent(sections);
-  if (!content) {
-    return null;
-  }
-
-  return content;
 }
 
 function buildSectionContent(sections: ContextSection[]): string {

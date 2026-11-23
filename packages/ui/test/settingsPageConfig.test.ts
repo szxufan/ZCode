@@ -113,13 +113,14 @@ describe("settingsPageConfig", () => {
     const { settingsSectionGroups } = createSettingsPageConfig({ isMacDesktop: true });
     const basics = settingsSectionGroups.find((group) => group.id === "basics");
 
+    // 上游 v4.0.0 把「远程设备」从浏览器之后挪到电脑控制之后（快捷键之前）；fork 的顺序断言跟随。
     expect(basics?.sections.map((section) => section.id)).toEqual([
       "general",
       "appearance",
       "modelProvider",
       "browser",
-      "remoteDevices",
       "computerUse",
+      "remoteDevices",
       "shortcuts",
     ]);
     expect(

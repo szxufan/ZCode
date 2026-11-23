@@ -1,6 +1,9 @@
 import { describe, expect, it } from "vitest";
 import {
+  AGENT_ENV_CMD_SHELL_RULE,
   AGENT_PROMPT_BUILTIN_PROFILE_ID,
+  buildAgentFinishingWorkBody,
+  buildAgentMemoryNotesBody,
   composeDefaultAgentPromptBody,
   resolveAgentPromptOverride,
 } from "#src/agent-prompt/index.js";
@@ -31,6 +34,33 @@ describe("agent prompt copy", () => {
     const body = composeDefaultAgentPromptBody({ includeSessionGuidance: false });
     expect(body).not.toContain("# 会话专项指导");
     expect(body).toContain("# 上下文管理");
+  });
+});
+
+// 上游 v4.0.0 新增的两段固定提示词：fork 译成中文，且不在配置档可覆盖正文内（规格 §1.4）。
+describe("fixed sections added by upstream v4.0.0", () => {
+  it("keeps finishing work and memory notes in Chinese and out of the overridable body", () => {
+    const finishing = buildAgentFinishingWorkBody();
+    const memoryNotes = buildAgentMemoryNotesBody();
+
+    expect(finishing.startsWith("# 收尾")).toBe(true);
+    expect(memoryNotes.startsWith("# 记忆、笔记与反馈")).toBe(true);
+    expect(finishing).toContain("结束回合意味着你的工作就此停住");
+    expect(finishing).toContain("这不影响对有风险或破坏性的操作先做确认的要求");
+    expect(memoryNotes).toContain("只保存既适用又持久的内容");
+    expect(memoryNotes).toContain("「记忆（Memory）」");
+    // 笔记里的提醒涉及风险操作时，仍要等人确认（上游同段的边界）。
+    expect(memoryNotes).toContain("直到有人给出确认");
+
+    const body = composeDefaultAgentPromptBody();
+    expect(body).not.toContain("# 收尾");
+    expect(body).not.toContain("# 记忆、笔记与反馈");
+  });
+
+  it("translates the cmd.exe shell rule while keeping command names", () => {
+    expect(AGENT_ENV_CMD_SHELL_RULE).toContain("Bash 工具的命令由 cmd.exe 解析");
+    expect(AGENT_ENV_CMD_SHELL_RULE).toContain("ls、cat、head、tail、grep、wc");
+    expect(AGENT_ENV_CMD_SHELL_RULE).toContain("dir、type 或 findstr");
   });
 });
 

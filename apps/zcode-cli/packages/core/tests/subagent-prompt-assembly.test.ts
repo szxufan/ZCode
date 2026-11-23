@@ -495,6 +495,9 @@ describe("subagent provider-visible prompt assembly", () => {
     expect(systems[0]).toBe("你是 ZCode，一个交互式编码智能体");
     expect(systems[1]).toMatch(/^\n\nMessages from the agent that launched you/u);
     expect(systems[1]).toContain("\n\nNotes:");
+    // 主会话的收尾与记忆笔记两段（上游 v4.0.0 新增，fork 中文标题）不进子代理。
+    expect(systems.join("")).not.toContain("# 收尾");
+    expect(systems.join("")).not.toContain("# 记忆、笔记与反馈");
     expect(result.sections.find((section) => section.source === "env_info")?.content).toContain(
       "# 环境",
     );
@@ -541,6 +544,8 @@ describe("subagent provider-visible prompt assembly", () => {
             isGitRepository: false,
           },
           subagents: {
+            // 这些用例按前台 Agent 写成，关闭「Agent 总在后台」开关（07-subagent.md「ZCode 当前实现」）。
+            alwaysBackground: false,
             profiles: [
               {
                 name: "persistent-reviewer",
@@ -688,7 +693,7 @@ describe("subagent provider-visible prompt assembly", () => {
     );
 
     await runtime.executeTurn("first child request");
-    runtime.updateConfig({ language: "zh-CN" });
+    runtime.updateConfig({ outputStyle: undefined });
     await runtime.executeTurn("second child request after refresh");
 
     expect(requests).toHaveLength(2);

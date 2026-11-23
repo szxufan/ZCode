@@ -39,6 +39,8 @@
     "./remote-relay-v3": "./src/remote-relay-v3/index.ts",
     "./testing/fake-relay-v3": "./test/fixtures/fake-relay-v3.ts",
     "./testing/relay-v3-consistency": "./test/fixtures/relay-v3-consistency.ts",
+    "./preinstalled-tools": "./src/preinstalled-tools/contract.ts",
+    "./preinstalled-tools/node": "./src/preinstalled-tools/node.ts",
     "./credential-security": "./src/credential-security/module.ts"
   },
   "scripts": {

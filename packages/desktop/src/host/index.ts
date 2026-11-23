@@ -1,3 +1,6 @@
+import { resolvePreinstalledToolsRelease } from "@zcode/shared/preinstalled-tools";
+import { resolvePreinstalledToolsBinDir } from "@zcode/shared/preinstalled-tools/node";
+import { ZCODE_PRODUCT_FLAVOR, resolveZCodeRuntimeEnv } from "@zcode/shared";
 import { normalizeRemoteConnectionError, sanitizeRemoteConnectionLog } from "@zcode/shared";
 import { createCredentialCipherBridge } from "@zcode/shared/credential-security";
 import { join } from "node:path";
@@ -97,7 +100,7 @@ import {
   type AppControlServiceHandle,
   type WindowHostExtensions,
   getAppConfigDir,
-
+  getZCodeDataRootDir,
   type BotProjectConnection,
   type HostApiNetworkTransport,
 } from "@zcode/services/node";
@@ -877,16 +880,16 @@ const runtimeProcessLifecycleReporter = {
   },
 } satisfies NonNullable<Parameters<typeof createLocalServices>[0]>["processLifecycleReporter"];
 
+let activeV4SessionCount = 0;
+let legacyRuntimeTaskCount = 0;
 const runtimeTaskReporter = {
+  onActiveSessionCountChanged(event: { runningTaskCount: number }) {
+    activeV4SessionCount = event.runningTaskCount;
+    reportHostRunningTaskCount();
+  },
   onRunningTaskCountChanged(event) {
-    if (!parentPort) {
-      return;
-    }
-
-    parentPort.postMessage({
-      type: HostResponseTypes.AgentRunningTaskCountChanged,
-      runningTaskCount: event.runningTaskCount,
-    });
+    legacyRuntimeTaskCount = event.runningTaskCount;
+    reportHostRunningTaskCount();
   },
 } satisfies NonNullable<Parameters<typeof createLocalServices>[0]>["taskRuntimeReporter"];
 
@@ -910,8 +913,14 @@ const cuaOperationStateReporter = {
 
 let untrackedPromptRpcCount = 0;
 function reportHostRunningTaskCount(): void {
-  runtimeTaskReporter.onRunningTaskCountChanged({
-    runningTaskCount: workspaceTaskTracker.getTotalRunningTaskCount() + untrackedPromptRpcCount,
+  // v4 会话与旧代理分别报告，统一出口避免旧 ready 归零覆盖仍在执行的后台工作。
+  parentPort?.postMessage({
+    type: HostResponseTypes.AgentRunningTaskCountChanged,
+    runningTaskCount:
+      activeV4SessionCount +
+      legacyRuntimeTaskCount +
+      workspaceTaskTracker.getTotalRunningTaskCount() +
+      untrackedPromptRpcCount,
   });
 }
 
@@ -1385,6 +1394,11 @@ let persistedApplicationLocale: Locale | undefined;
 function resolveHostClientLanguage(): Locale | undefined {
   return applicationLocale ?? persistedApplicationLocale;
 }
+/**
+ * Agent 回复语言（null 为未设置），应答 CLI 的 session/readReplyLanguage。
+ * 值由 Main 持有；这里只认 InitLocal 初值与 reply-language-changed，不读 setting.json。
+ */
+let replyLanguage: string | null = null;
 let activeHostApiNetworkTransport: HostApiNetworkTransport | null = null;
 let sourceServerDirectory: SourceServerDirectory | null = null;
 let sourceServerConnectionManager: SourceServerConnectionManager | null = null;
@@ -2315,6 +2329,9 @@ function exposeServicesOnMessagePort(
     : undefined;
   services.register(IWindowControllerService, windowHostControllerRuntime.service);
   // 未读自动写入只归窗口 base renderer；手机和 remote facade 不能重复消费同一完成信号。
+  // 上游 v4.0.0 在此传入 onProjectDisplayOrder（侧栏手动顺序叠加到手机 readTree），依赖
+  // services/window-project-directory/webRemoteProjectTreeActivity；该模块已随 fork 移除
+  // 云端手机远控一并删除，这里保持 fork 的单参数调用，不随合并带回。
   const controllerAttachment = windowHostControllerRuntime.createAttachmentService(
     clientMode === "desktop-continuous" && attachmentScope.kind === "local",
   );
@@ -2709,6 +2726,13 @@ parentPort.on("message", async (e: Electron.MessageEvent) => {
   // 在任何 await 之前同步赋值：InitLocal 与变更消息同端口按序到达，初值不会覆盖较新的变更。
   if (msg.type === HostMessageTypes.InitLocal && msg.locale) {
     applicationLocale = msg.locale;
+  }
+  if (msg.type === HostMessageTypes.InitLocal) {
+    replyLanguage = msg.replyLanguage ?? null;
+  }
+  if (msg.type === HostMessageTypes.ReplyLanguageChanged) {
+    replyLanguage = msg.replyLanguage;
+    return;
   }
   if (msg.type === HostMessageTypes.ApplicationLocaleChanged) {
     applicationLocale = msg.locale;
@@ -3414,6 +3438,14 @@ parentPort.on("message", async (e: Electron.MessageEvent) => {
           log: (message, details) => logger.warn(message, details),
           establishOwner: () => {
             const initializedServices = createLocalServices({
+              // 固定目录与发布目标无关；准备完成后，既有会话下一条命令即可找到入口。
+              preinstalledToolsBinDir: resolvePreinstalledToolsBinDir({
+                dataRoot: getZCodeDataRootDir(),
+                release: resolvePreinstalledToolsRelease({
+                  runtimeEnv: resolveZCodeRuntimeEnv(process.env),
+                  productFlavor: ZCODE_PRODUCT_FLAVOR,
+                }),
+              }),
               onAppControlServiceCreated: (handle) => {
                 appControlForExtensions = handle;
               },
@@ -3616,6 +3648,7 @@ parentPort.on("message", async (e: Electron.MessageEvent) => {
               prepareLegacyAccountConnections,
               hostApiNetworkTransport,
               resolveClientLanguage: resolveHostClientLanguage,
+              resolveReplyLanguage: () => replyLanguage,
               authorizeLocalMediaPreviewPath,
               // launch.md「The user's choice」：本机用户选择变化后，推给本窗口所有在线的远程 Host。
               forwardDynamicWorkflowUserMode: (mode) => {

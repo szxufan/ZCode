@@ -1,49 +1,20 @@
 // ============================================================
-// Skills Section Builder
+// Skills 列表格式（skills_listing 收集器使用）
 // ============================================================
 
 import { AGENT_SKILLS_INTRO, agentSkillAliasSuffix, agentSkillFileSuffix } from "@zcode/shared";
-import type { SkillLoadOutcome, SkillMetadata } from "@zcode/contracts";
-import type { ContextSection } from "../types.js";
-import { estimateTokens } from "../utils.js";
+import type { SkillMetadata } from "@zcode/contracts";
 
-const DEFAULT_SKILL_METADATA_BUDGET = 20_000;
+export const DEFAULT_SKILL_METADATA_BUDGET = 20_000;
 const MAX_DESCRIPTION_CHARS = 250;
 
-interface SkillsSectionOptions {
-  outcome: SkillLoadOutcome;
-  metadataBudget?: number;
-}
-
-export function buildSkillsSection(options: SkillsSectionOptions): ContextSection | null {
-  if (options.outcome.skills.length === 0) {
-    return null;
-  }
-
-  const content = buildSkillsContent(
-    options.outcome.skills,
-    options.metadataBudget ?? DEFAULT_SKILL_METADATA_BUDGET,
-  );
-
-  return {
-    name: "Skills",
-    source: "skills",
-    injectionTarget: "meta_user",
-    cacheHint: "dynamic",
-    chars: content.length,
-    tokens: estimateTokens(content),
-    content,
-    preview: content.slice(0, 100),
-  };
-}
-
-function buildSkillsContent(skills: SkillMetadata[], budget: number): string {
+/** 列表公告正文：完整格式超过预算时，本次所有行降级为名称加路径。增量公告用同一规则。 */
+export function buildSkillsContent(skills: readonly SkillMetadata[], budget: number): string {
+  // 标题句与行内后缀沿用 fork 的中文载体（packages/shared/src/agent-prompt），
+  // 列表改由 skills_listing 收集器渲染后，完整公告与增量公告都从这里取文案。
   const lines = [AGENT_SKILLS_INTRO, ""];
-
-  const sortedSkills = [...skills].sort((a, b) =>
-    skillDisplayName(a).localeCompare(skillDisplayName(b)),
-  );
-  const skillLines = sortedSkills.map((skill) => formatSkillLine(skill, MAX_DESCRIPTION_CHARS));
+  const sortedSkills = sortSkillsForListing(skills);
+  const skillLines = sortedSkills.map((skill) => formatSkillLine(skill));
   const full = [...lines, ...skillLines].join("\n");
   if (full.length <= budget) {
     return full;
@@ -56,7 +27,16 @@ function buildSkillsContent(skills: SkillMetadata[], budget: number): string {
   return [...lines, ...namesOnly].join("\n");
 }
 
-function formatSkillLine(skill: SkillMetadata, maxDescriptionChars: number): string {
+/** 列表的固定顺序：按显示名比较。 */
+export function sortSkillsForListing(skills: readonly SkillMetadata[]): SkillMetadata[] {
+  return [...skills].sort((a, b) => skillDisplayName(a).localeCompare(skillDisplayName(b)));
+}
+
+/** 完整格式的一行；增量公告的指纹按这一行计算，不受预算降级影响。 */
+export function formatSkillLine(
+  skill: SkillMetadata,
+  maxDescriptionChars = MAX_DESCRIPTION_CHARS,
+): string {
   const description = skill.whenToUse
     ? `${skill.description} - ${skill.whenToUse}`
     : skill.description;
@@ -67,7 +47,7 @@ function formatSkillLine(skill: SkillMetadata, maxDescriptionChars: number): str
   return `- ${skillDisplayName(skill)}: ${trimmed}${bareAliasSuffix(skill)}${agentSkillFileSuffix(skill.path)}`;
 }
 
-function skillDisplayName(skill: SkillMetadata): string {
+export function skillDisplayName(skill: SkillMetadata): string {
   return skill.qualifiedName ?? skill.name;
 }
 

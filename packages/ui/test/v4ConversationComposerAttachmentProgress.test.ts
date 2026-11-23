@@ -158,6 +158,13 @@ function renderComposer(overrides: Record<string, unknown> = {}) {
   );
 }
 
+// 上游 v4.0.0 的 Composer 接入语音输入快捷键；该 hook 经 useSettings 依赖 ServiceProvider。
+// 本文件是无 Provider 的静态渲染，只 stub 快捷键 hook（返回空键位文案），语音输入其余部分保持真实实现。
+vi.mock("@/voice-input/index.js", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/voice-input/index.js")>()),
+  useVoiceInputShortcut: () => "",
+}));
+
 describe("ConversationComposer attachment upload progress", () => {
   it("只让聚焦且未禁用的 composer 监听 add-to-chat，并保留 CUA 常驻入口", () => {
     const html = renderComposer({

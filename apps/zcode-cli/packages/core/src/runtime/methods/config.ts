@@ -1,4 +1,6 @@
 import { resolveToolSearchMode } from "../../tool/search/exposure.js";
+import { WAIT_FOR_MCP_SERVERS_TOOL_NAME } from "@zcode/contracts";
+import { isMcpServerWaitOffered } from "./mcp.js";
 import type {
   CollaborationMode,
   ExecutionShellSelection,
@@ -50,7 +52,7 @@ export async function setExecutionState(
 
 export function updateConfig(
   this: AgentRuntimeInternal,
-  patch: Pick<AgentRuntimeConfig, "mode" | "planEnabled" | "language" | "outputStyle" | "systemPromptOverride">,
+  patch: Pick<AgentRuntimeConfig, "mode" | "planEnabled" | "outputStyle" | "systemPromptOverride">,
 ): void {
   if (patch.mode !== undefined || patch.planEnabled !== undefined) {
     const previous = resolveExecutionState(this.config);
@@ -59,12 +61,6 @@ export function updateConfig(
     if (previous.planEnabled !== next.planEnabled)
       this.needsPlanModeExitReminder = !next.planEnabled;
   }
-  if (patch.language !== undefined) {
-    this.config.language = patch.language;
-    if (!this.activeTurn) {
-      rebuildContextPrefix(this);
-    }
-  }
   if ("outputStyle" in patch) {
     this.config.outputStyle = patch.outputStyle;
     if (!this.activeTurn) {
@@ -72,7 +68,7 @@ export function updateConfig(
     }
   }
   // 系统提示词覆盖（设置页配置档热切换）：无活跃 turn 时立即重建前缀；turn 中延迟，
-  // 下一 turn 的前缀重建自然带上新值——与 language/outputStyle 同一语义。
+  // 下一 turn 的前缀重建自然带上新值——与 outputStyle 同一语义。
   if ("systemPromptOverride" in patch) {
     this.config.systemPromptOverride = patch.systemPromptOverride;
     if (!this.activeTurn) {
@@ -146,9 +142,7 @@ export function getActiveTurnInfo(this: AgentRuntimeInternal): ActiveTurnInfo | 
 }
 
 export function getTools(this: AgentRuntimeInternal, model?: Model): ModelToolContract[] {
-  if (this.cachedTools === null) {
-    this.cachedTools = filterRuntimeVisibleTools.call(this, this.registry.toContracts());
-  }
+  this.cachedTools ??= filterRuntimeVisibleTools.call(this, this.registry.toContracts());
   return this.cachedTools
     .filter(
       (tool) =>
@@ -157,11 +151,10 @@ export function getTools(this: AgentRuntimeInternal, model?: Model): ModelToolCo
         resolveToolSearchMode(model, this.config.toolSearch?.mode) !== "off",
     )
     .filter((tool) => tool.name !== "WebSearch" || shouldExposeWebSearch.call(this, model))
-    .map((tool) =>
-      projectToolModelContract(tool, this.registry.get(tool.name), {
-        model,
-      }),
-    );
+    .filter(
+      (tool) => tool.name !== WAIT_FOR_MCP_SERVERS_TOOL_NAME || isMcpServerWaitOffered(this, model),
+    )
+    .map((tool) => projectToolModelContract(tool, this.registry.get(tool.name), { model }));
 }
 
 export function invalidateToolCache(this: AgentRuntimeInternal): void {
@@ -304,4 +297,5 @@ function shouldExposeWebSearch(this: AgentRuntimeInternal, model?: Model): boole
   if (!model) return true;
   return model.properties.supportsNativeWebSearch;
 }
+
 import { resolveExecutionState } from "@zcode/shared";

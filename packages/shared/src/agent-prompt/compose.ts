@@ -5,7 +5,9 @@
 import {
   AGENT_COMMUNICATION_PROMPTS,
   AGENT_CONTEXT_MANAGEMENT_PROMPTS,
+  AGENT_FINISHING_WORK_BODY,
   AGENT_HARD_TO_REVERSE_PROMPT,
+  AGENT_MEMORY_NOTES_BODY,
   AGENT_SECURITY_NOTICE,
   AGENT_SESSION_GUIDANCE_HEADING,
   agentSessionGuidanceSkillBullet,
@@ -52,6 +54,19 @@ export function defaultAgentSessionGuidanceLines(): string[] {
 /** Context Management 段正文。 */
 export function buildAgentContextManagementBody(): string {
   return [AGENT_CONTEXT_MANAGEMENT_PROMPTS.default, "", AGENT_CONTEXT_MANAGEMENT_PROMPTS.additional].join("\n");
+}
+
+/**
+ * 收尾段正文（上游 v4.0.0）。不参与 systemPromptOverride 覆盖，因此不进
+ * composeDefaultAgentPromptBody——设置页「载入内置提示词」只给出可覆盖的四段。
+ */
+export function buildAgentFinishingWorkBody(): string {
+  return AGENT_FINISHING_WORK_BODY;
+}
+
+/** 记忆、笔记与反馈段正文（上游 v4.0.0）；同收尾段，不参与覆盖。 */
+export function buildAgentMemoryNotesBody(): string {
+  return AGENT_MEMORY_NOTES_BODY;
 }
 
 /**

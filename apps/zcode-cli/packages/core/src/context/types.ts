@@ -34,7 +34,6 @@ export type ContextSource =
   | "env_info" // 环境信息 (cwd, platform, git repo boolean)
   | "session_context" // git snapshot context
   | "model" // 当前执行模型身份
-  | "skills" // 可用 skills
   | "tools" // 工具定义
   | "request_user_context" // request-level user context provider-visible 组合块
   | "memory" // 长期 memory read path
@@ -47,6 +46,8 @@ export type ContextSource =
   | "dynamic_behavior" // 动态行为边界
   | "session_guidance" // 当前可用内置能力指导
   | "context_management" // 长上下文管理提示
+  | "finishing_work" // 收尾：不在欠着工作时停下
+  | "memory_notes" // 记忆保存与笔记的取舍规则
   | "output_style" // 输出风格（fork 保留的动态 section 来源）
   | "system_context" // git 系统上下文附件（fork 中文文案路径）
   | "total_tokens" // 固定的 token 预算行
@@ -96,10 +97,7 @@ export interface InstructionAnnouncement {
   reason?: InstructionRefreshReason;
 }
 
-export type ContextMetaUserAttachmentSource =
-  | "skills_listing"
-  | "context_prefix"
-  | "session_context";
+export type ContextMetaUserAttachmentSource = "context_prefix" | "session_context";
 
 export interface ContextMetaUserAttachment {
   source: ContextMetaUserAttachmentSource;
@@ -145,10 +143,10 @@ export interface ContextBuilderConfig {
   projectContext?: ProjectContext;
   memoryRoot?: string;
   memoryIndexContent?: string;
+  /** 会话开始时的 skill 目录：只决定 system prompt 里的 skill 引导语；列表由 skills_listing 收集器渲染。 */
   skills?: SkillLoadOutcome;
   agentProfiles?: readonly AgentProfile[];
   embeddedSearchEnabled?: boolean;
-  skillMetadataBudget?: number;
   customSystemPrompt?: string;
   /**
    * 用户自定义的系统提示词覆盖（设置页配置档）。与 `customSystemPrompt` 的区别：
@@ -164,10 +162,11 @@ export interface ContextBuilderConfig {
    * 而不是像 `customSystemPrompt` 那样整段替换。与 `customSystemPrompt` 互斥。
    */
   workflowActor?: WorkflowActorContext;
-  language?: string;
   outputStyle?: OutputStylePromptConfig;
   compact?: AutoCompactPolicyConfig;
   guidanceToolNames?: readonly string[];
+  /** runtime 的 token 预算提醒开关；打开时 system 末尾带固定预算行。缺省关闭。 */
+  totalTokensReminder?: boolean;
 }
 
 /**

@@ -3,6 +3,7 @@
 // ============================================================
 
 import {
+  AGENT_ENV_CMD_SHELL_RULE,
   AGENT_ENVIRONMENT_HEADING,
   AGENT_ENV_INVOCATION_LINE,
   AGENT_ENV_LABELS,
@@ -14,7 +15,7 @@ import {
   agentEnvModelLine,
 } from "@zcode/shared";
 import type { ContextSection, EnvInfo } from "../types.js";
-import type { Model } from "@zcode/contracts";
+import { WINDOWS_CMD_SHELL_DISPLAY_NAME, type Model } from "@zcode/contracts";
 import { estimateTokens } from "../utils.js";
 import { buildDesktopContextContent } from "./desktop.js";
 
@@ -120,7 +121,17 @@ export function buildEnvironmentAnnouncement(
     !hasFullBlock ||
     previous.platform !== next.platform ||
     previous.osVersion !== next.osVersion;
-  if (full) return { content: buildEnvInfoContent(next), environment: { full, snapshot: next } };
+  if (full) {
+    // 修复原因：重发完整块（系统版本变化、compact 后没有完整块）时原来不看上一次的 shell，从 cmd.exe
+    // 换走的会话只看到新 Shell，历史里的 CMD 规则像仍然有效。离开 cmd.exe 时 Shell 行带上原值。
+    const leftCmd =
+      previous?.shell === WINDOWS_CMD_SHELL_DISPLAY_NAME &&
+      next.shell !== WINDOWS_CMD_SHELL_DISPLAY_NAME;
+    return {
+      content: buildEnvInfoContent(next, leftCmd ? previous.shell : undefined),
+      environment: { full, snapshot: next },
+    };
+  }
   const lines = ["# 环境更新"];
   if (previous.cwd !== next.cwd) {
     lines.push(` - ${AGENT_ENV_LABELS.workingDirectory}: ${next.cwd}（原为 ${previous.cwd}）`);
@@ -150,8 +161,7 @@ export function buildEnvironmentAnnouncement(
   }
   if (previous.shell !== next.shell) {
     // 旧 Windows 会话的 Shell 可能为空，没有可写的旧值。
-    const was = previous.shell ? `（原为 ${previous.shell}）` : "";
-    lines.push(` - ${AGENT_ENV_LABELS.shell}: ${next.shell}${was}`);
+    lines.push(shellLine(next.shell, previous.shell));
   }
   const parts = lines.length === 1 ? [] : [lines.join("\n")];
   // Desktop 段按写法比较：换了写法追加整段新写法，离开 Desktop 追加一句不再适用。
@@ -214,7 +224,7 @@ export function buildGitSystemContextSection(envInfo: EnvInfo): ContextSection |
   };
 }
 
-function buildEnvInfoContent(info: EnvironmentSnapshot): string {
+function buildEnvInfoContent(info: EnvironmentSnapshot, previousShell?: string): string {
   const directories = info.additionalWorkingDirectories;
   const lines: string[] = [
     AGENT_ENVIRONMENT_HEADING,
@@ -229,12 +239,26 @@ function buildEnvInfoContent(info: EnvironmentSnapshot): string {
       : []),
     ` - ${AGENT_ENV_LABELS.isGitRepository}: ${info.isGitRepository ? AGENT_ENV_LABELS.yes : AGENT_ENV_LABELS.no}`,
     ` - ${AGENT_ENV_LABELS.platform}: ${info.platform}`,
-    ` - ${AGENT_ENV_LABELS.shell}: ${info.shell}`,
+    shellLine(info.shell, previousShell),
     ` - ${AGENT_ENV_LABELS.osVersion}: ${info.osVersion}`,
     ` - ${AGENT_ENV_UNTRUSTED_NOTE}`,
   ];
   const desktop = desktopContextText(info);
   return desktop ? `${lines.join("\n")}\n\n${desktop}` : lines.join("\n");
+}
+
+/**
+ * Shell 行：括号里依次放「原为」旧值与 CMD 规则，两者都没有时不带括号。
+ * CMD 规则修复原因：Windows 上 Bash 工具实际由 cmd.exe 执行，但工具名与描述都说 bash，模型照 bash
+ * 写命令（上游冻结重放 36–42% 的下一步用了 cmd 不认的 Unix 命令）。Shell 为 cmd.exe 时带上这段，
+ * 完整块与换入 cmd.exe 的 update 都是；文案取 @zcode/shared 的中文译文。
+ */
+function shellLine(shell: string, previousShell?: string): string {
+  const notes = [
+    ...(previousShell ? [`原为 ${previousShell}`] : []),
+    ...(shell === WINDOWS_CMD_SHELL_DISPLAY_NAME ? [AGENT_ENV_CMD_SHELL_RULE] : []),
+  ];
+  return ` - ${AGENT_ENV_LABELS.shell}: ${shell}${notes.length > 0 ? `（${notes.join("；")}）` : ""}`;
 }
 
 function pathLines(paths: readonly string[]): string[] {

@@ -98,7 +98,8 @@ async function waitForOnlyComposerPickerOpen(picker: ComposerPicker, transition:
         return {
           expanded,
           listboxes: document.querySelectorAll('[role="listbox"]').length,
-          menus: document.querySelectorAll('[role="menu"]').length,
+          menus: document.querySelectorAll('[role="menu"], [data-testid="composer-model-panel"]')
+            .length,
         };
       }, COMPOSER_PICKER_TRIGGER_IDS);
       const state = latest as {
@@ -106,7 +107,7 @@ async function waitForOnlyComposerPickerOpen(picker: ComposerPicker, transition:
         listboxes: number;
         menus: number;
       };
-      const expectedListboxes = 0;
+      const expectedListboxes = picker === "model" ? 1 : 0;
       const expectedMenus = 1;
       return (
         state.expanded[picker] === "true" &&
@@ -139,7 +140,8 @@ async function waitForNoComposerPickerOpen(transition: string) {
             ]),
           ),
           listboxes: document.querySelectorAll('[role="listbox"]').length,
-          menus: document.querySelectorAll('[role="menu"]').length,
+          menus: document.querySelectorAll('[role="menu"], [data-testid="composer-model-panel"]')
+            .length,
         }),
         COMPOSER_PICKER_TRIGGER_IDS,
       );
@@ -162,6 +164,15 @@ async function waitForNoComposerPickerOpen(transition: string) {
 }
 
 async function closeComposerPicker() {
+  // 退出动画会在两次 WebDriver 调用之间卸载面板；同一次读取状态，避免 stale element。
+  const providerState = await browser.execute(
+    () =>
+      document
+        .querySelector('[data-testid="composer-provider-panel"]')
+        ?.getAttribute("data-state") ?? null,
+  );
+  if (providerState === "open") await browser.keys("Escape");
+  await $('[data-testid="composer-provider-panel"]').waitForExist({ reverse: true });
   await browser.keys("Escape");
   await waitForNoComposerPickerOpen("Escape");
 }
@@ -272,7 +283,9 @@ describe("v4 M5 门禁：composer 工具条与 slash 候选面板", () => {
 
   afterEach(async () => {
     // 某条交互断言失败时仍关闭其菜单，避免下一条点击被当成关闭旧弹层。
-    const open = await browser.execute(() => Boolean(document.querySelector('[role="menu"]')));
+    const open = await browser.execute(() =>
+      Boolean(document.querySelector('[role="menu"], [data-testid="composer-model-panel"]')),
+    );
     if (open) await closeComposerPicker();
   });
 
@@ -588,7 +601,9 @@ describe("v4 M5 门禁：composer 工具条与 slash 候选面板", () => {
     expect(triggerAppearance.background).not.toBe("rgba(0, 0, 0, 0)");
     expect(triggerAppearance.radius).toBeGreaterThan(0);
     expect(triggerAppearance.radius).toBeLessThan(14);
-    expect(await $('[role="menu"]').getAttribute("data-align")).toBe("center");
+    expect(await $('[data-testid="composer-model-panel"]').getAttribute("data-align")).toBe(
+      "center",
+    );
     const expandedTrigger = $(`[data-testid="${TID_CHAT_MODEL_SELECT_TRIGGER}"]`);
     expect(await expandedTrigger.getText()).toMatch(/Select model|选择模型/);
     const minimumWidth = await browser.execute(
@@ -600,9 +615,15 @@ describe("v4 M5 门禁：composer 工具条与 slash 候选面板", () => {
       return label.scrollWidth <= label.clientWidth;
     });
     expect(labelFits).toBe(true);
+    const search = $('[data-testid="composer-model-search"]');
+    await search.setValue("__no_matching_model__");
+    expect(await $$("[data-composer-model-list] [role=option]").length).toBe(0);
+    expect(await $("[data-composer-model-list] [role=status]").isDisplayed()).toBe(true);
+    await search.setValue(" ");
+    expect(await $$("[data-composer-model-list] [role=option]").length).toBeGreaterThan(0);
     const modelFonts = await browser.execute(() => {
       const row = document.querySelector<HTMLElement>(
-        '[data-composer-model-list] [role="menuitemradio"]',
+        '[data-composer-model-list] [role="option"]',
       )!;
       const name = row.querySelector<HTMLElement>("[title]")!;
       return {
@@ -612,14 +633,14 @@ describe("v4 M5 门禁：composer 工具条与 slash 候选面板", () => {
     });
     expect(modelFonts.name).toBe(modelFonts.row);
     expect(await $('[data-testid="composer-thought-endpoints"]').isExisting()).toBe(false);
-    expect(await $('[data-slot="dropdown-menu-label"]').getText()).toMatch(/Models|模型/);
+    expect(await $("[data-composer-model-heading]").getText()).toMatch(/Models|模型/);
     // 菜单内已无思考强度设置：不渲染滑杆、档位圆点或 Effort 快捷键。
     expect(await $('[data-testid="composer-thought-slider"]').isExisting()).toBe(false);
     expect(await $('[data-testid="composer-effort-shortcut"]').isExisting()).toBe(false);
     expect(await $$("[data-composer-thought-stop]").length).toBe(0);
     const menuLayout = await browser.execute(() => {
       const list = document.querySelector<HTMLElement>("[data-composer-model-list]")!;
-      const menu = list.closest('[role="menu"]')!;
+      const menu = list.closest('[data-testid="composer-model-panel"]')!;
       return {
         outerOverflow: getComputedStyle(menu).overflowY,
         listOverflow: getComputedStyle(list).overflowY,
@@ -689,18 +710,22 @@ describe("v4 M5 门禁：composer 工具条与 slash 候选面板", () => {
     const provider = $('[data-testid="composer-provider-trigger"]');
     expect(await provider.$('img, svg[aria-hidden="true"]').isExisting()).toBe(true);
     await provider.click();
-    const providerMenu = await $('[data-slot="dropdown-menu-sub-content"]');
+    const providerMenu = await $('[data-testid="composer-provider-panel"]');
     await providerMenu.waitForDisplayed();
     // 入场缩放期间外框坐标尚未稳定，等待菜单自身动画结束后再验证对齐。
     await browser.waitUntil(() =>
       browser.execute(() =>
-        Array.from(document.querySelectorAll('[role="menu"]')).every((menu) =>
+        Array.from(
+          document.querySelectorAll(
+            '[data-testid="composer-model-panel"], [data-testid="composer-provider-panel"]',
+          ),
+        ).every((menu) =>
           menu.getAnimations().every((animation) => animation.playState === "finished"),
         ),
       ),
     );
     const providerBounds = await browser.execute(() => {
-      const menu = document.querySelector<HTMLElement>('[data-slot="dropdown-menu-sub-content"]')!;
+      const menu = document.querySelector<HTMLElement>('[data-testid="composer-provider-panel"]')!;
       const rect = menu.getBoundingClientRect();
       return {
         inside: rect.left >= 0 && rect.right <= document.documentElement.clientWidth,
@@ -709,8 +734,9 @@ describe("v4 M5 门禁：composer 工具条与 slash 候选面板", () => {
         aligned:
           Math.abs(
             rect.top -
-              document.querySelector('[data-slot="dropdown-menu-content"]')!.getBoundingClientRect()
-                .top,
+              document
+                .querySelector('[data-testid="composer-model-panel"]')!
+                .getBoundingClientRect().top,
           ) <= 1,
         listOverflow: getComputedStyle(menu.querySelector("[data-composer-provider-list]")!)
           .overflowY,
@@ -724,7 +750,7 @@ describe("v4 M5 门禁：composer 工具条与 slash 候选面板", () => {
     expect(
       await browser.execute(() =>
         getComputedStyle(
-          document.querySelector('[data-slot="dropdown-menu-sub-content"]')!,
+          document.querySelector('[data-testid="composer-provider-panel"]')!,
         ).getPropertyValue("app-region"),
       ),
     ).toBe("no-drag");
@@ -733,9 +759,7 @@ describe("v4 M5 门禁：composer 工具条与 slash 候选面板", () => {
     await manage.waitForDisplayed();
     const badgeGaps = await browser.execute(() =>
       Array.from(
-        document.querySelectorAll<HTMLElement>(
-          '[role="menuitemradio"] [data-provider-access-badge]',
-        ),
+        document.querySelectorAll<HTMLElement>('[role="option"] [data-provider-access-badge]'),
       ).map((badge) => {
         const name = badge.previousElementSibling!;
         const range = document.createRange();
@@ -868,7 +892,7 @@ describe("v4 M5 门禁：composer 工具条与 slash 候选面板", () => {
     await switchV4Model(UPSTREAM_PROVIDER_ID, UPSTREAM_SECONDARY_MODEL, "max");
     await openComposerPicker("model");
     const trigger = await $('[data-testid="chat-model-select-trigger"]');
-    const menu = await $('[role="menu"]');
+    const menu = await $('[data-testid="composer-model-panel"]');
     // 鼠标留在菜单内会随浮层移动触发 Radix pointerleave 焦点规则；先移开指针隔离 resize。
     await browser.performActions([
       {
@@ -931,7 +955,7 @@ describe("v4 M5 门禁：composer 工具条与 slash 候选面板", () => {
         expect((await $('[data-testid="chat-model-select-trigger"]')).elementId).toBe(
           trigger.elementId,
         );
-        expect((await $('[role="menu"]')).elementId).toBe(menu.elementId);
+        expect((await $('[data-testid="composer-model-panel"]')).elementId).toBe(menu.elementId);
         expect(await getV4ModelConfig()).toEqual(expectedConfig);
       }
       await resizeToolbar("240px");
@@ -1033,9 +1057,7 @@ describe("v4 M5 门禁：composer 工具条与 slash 候选面板", () => {
         expect(
           await $('[data-testid="composer-thought-slider"]').getAttribute("aria-disabled"),
         ).toBe("true");
-        expect(
-          await $('[data-testid="composer-provider-trigger"]').getAttribute("aria-disabled"),
-        ).toBe("true");
+        expect(await $('[data-testid="composer-provider-trigger"]').isEnabled()).toBe(false);
         expect(
           await $('[data-testid^="chat-model-select-item-"]').getAttribute("aria-disabled"),
         ).toBe("true");

@@ -344,6 +344,7 @@ export function AnimatedSidePanePanel({
   onOpenDeveloperTools,
   onOpenFileManager,
   onNavigateFileManager,
+  onCodeViewerFocusRequestApplied,
   onOpenPluginMarket,
   onCreateTask,
   onOpenTerminalTab,
@@ -434,6 +435,7 @@ export function AnimatedSidePanePanel({
   onOpenDeveloperTools: () => void;
   onOpenFileManager: (target?: FileManagerTarget) => void;
   onNavigateFileManager: (tabId: string, source: CodeViewerSource) => void;
+  onCodeViewerFocusRequestApplied: (tabId: string, requestId: string) => void;
   onOpenPluginMarket?: () => void;
   onCreateTask?: (request?: CreateTaskRequest) => void;
   onOpenTerminalTab: () => void;
@@ -1300,6 +1302,14 @@ export function AnimatedSidePanePanel({
                             }
                             canOpenLocalFileManager={Boolean(isDesktop)}
                             onNavigate={(source) => onNavigateFileManager(tab.id, source)}
+                            // 文件链接定位只执行一次：已执行的请求记在 code-viewer tab 上，预览据此不再滚动。
+                            {...(tab.type === "code-viewer"
+                              ? {
+                                  appliedFocusRequestId: tab.appliedFocusRequestId,
+                                  onFocusRequestApplied: (requestId: string) =>
+                                    onCodeViewerFocusRequestApplied(tab.id, requestId),
+                                }
+                              : {})}
                             onClose={() => onCloseTab(tab.id)}
                             workspacePath={taskCwd ?? workspaceAbsPath}
                             onOpenBrowserUrl={onOpenBrowserUrl}
