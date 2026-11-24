@@ -5,6 +5,7 @@ import {
   deriveRelayV3SessionKey,
   encodeRelayV3Base64Url,
   generateRelayV3KeyPair,
+  normalizeRelayV3EndpointOrigin,
   openRelayV3Envelope,
   parseRelayV3Envelope,
   parseRelayV3HttpRequest,
@@ -134,6 +135,32 @@ describe("Relay V3 契约解析", () => {
     expect(parseRelayV3QrUrl("https://user:pass@relay.example.com/remote")).toBeNull();
     expect(parseRelayV3QrUrl("https://relay.example.com/remote#fragment")).toBeNull();
     expect(parseRelayV3QrUrl("file:///tmp/qr")).toBeNull();
+  });
+
+  it("服务器地址归一化：只接受带协议头的 http(s) origin（设计 §3.5）", () => {
+    // 去首尾空白与尾斜杠、协议与主机小写、去默认端口。
+    expect(normalizeRelayV3EndpointOrigin(" HTTPS://Relay.Example.com:443/ ")).toBe(
+      "https://relay.example.com",
+    );
+    expect(normalizeRelayV3EndpointOrigin("http://10.0.0.2:8080")).toBe("http://10.0.0.2:8080");
+    // 非默认端口保留。
+    expect(normalizeRelayV3EndpointOrigin("https://relay.example.com:8443/")).toBe(
+      "https://relay.example.com:8443",
+    );
+    // 缺协议头、非 http(s)、带凭据/路径/查询/片段或为空 → 拒绝。
+    for (const invalid of [
+      "relay.example.com",
+      "localhost:8080",
+      "ftp://relay.example.com",
+      "https://user:pass@relay.example.com",
+      "https://relay.example.com/v3",
+      "https://relay.example.com?x=1",
+      "https://relay.example.com#top",
+      "",
+      "https://",
+    ]) {
+      expect(normalizeRelayV3EndpointOrigin(invalid)).toBeNull();
+    }
   });
 });
 

@@ -72,6 +72,17 @@ export function resetRelayV3DeviceIdentity(configDir?: string): RelayV3StoredDev
   return { keyPair, deviceSid: null };
 }
 
+/**
+ * relay 服务器地址变更时丢弃已注册身份（设计 §3.5）：SID 只对签发它的 relay 有效。
+ * 尚未注册（身份文件不存在或没有 device_sid）时没有可丢弃的注册事实，返回 null 且不落盘。
+ */
+export function resetRelayV3RegisteredDeviceIdentity(
+  configDir?: string,
+): RelayV3StoredDeviceIdentity | null {
+  if (!readIdentityFile(relayV3IdentityFilePath(configDir))?.deviceSid) return null;
+  return resetRelayV3DeviceIdentity(configDir);
+}
+
 function readIdentityFile(file: string): IdentityFileShape | null {
   try {
     const parsed = JSON.parse(readFileSync(file, "utf-8")) as unknown;

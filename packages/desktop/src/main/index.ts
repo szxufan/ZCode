@@ -842,7 +842,6 @@ const relayV3DeviceManager = new RelayV3DeviceManager({
     }
   },
 });
-registerRelayV3DeviceIpc(relayV3DeviceManager);
 // Relay V3 控制端（P4，§6）：与被控端共用 relay 账号；bridge port 终结在控制端
 // renderer（等价手机浏览器），不启动本地 Host/Agent。
 const relayV3TerminalManager = new RelayV3TerminalManager({
@@ -872,6 +871,11 @@ const relayV3TerminalManager = new RelayV3TerminalManager({
       }
     }
   },
+});
+// 两个 manager 都就绪后才注册被控端 IPC：切换 relay 服务器地址后共用账号失效，
+// 控制端连接必须随之中断（设计 §3.5）。
+registerRelayV3DeviceIpc(relayV3DeviceManager, {
+  onEndpointChanged: () => relayV3TerminalManager.disconnect(),
 });
 registerRelayV3TerminalIpc(relayV3TerminalManager);
 void mainSettingService

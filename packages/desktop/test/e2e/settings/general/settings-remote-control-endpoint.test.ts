@@ -1,0 +1,84 @@
+import {
+  TID_SETTINGS_PAGE,
+  TID_SETTINGS_SECTION_NAV,
+  TID_TASK_SETTINGS_BUTTON,
+  testId,
+} from "@zcode/shared/test-ids";
+import { clearAppData, clickTestIdByDom, readSettings } from "#e2e/helpers/desktop-app";
+import { prepareV4ConversationE2E } from "#e2e/helpers/v4-conversation";
+
+// 设置 → 远程控制 → Relay 服务器地址（docs/relay-server/relay-v3-design.md §3.5）。
+// 未登录时保存地址不产生任何网络请求，因此无需 relay fixture：只验证回显、落盘与就地报错。
+// 已登录/运行中切换地址的善后（登出、重置设备身份、断开控制端）由
+// packages/desktop/test/relayV3DeviceManager.test.ts 覆盖。
+
+const ENDPOINT = "https://relay.e2e.example.com";
+const SEARCH_ID = "settings.remoteControl.server.address";
+
+const input = () => $('[data-testid="relay-v3-endpoint-input"]');
+const saveButton = () => $('[data-testid="relay-v3-endpoint-save"]');
+const inputError = () => $('[data-testid="relay-v3-endpoint-error"]');
+
+describe("设置 → 远程控制：Relay 服务器地址", () => {
+  before(async () => {
+    await prepareV4ConversationE2E({ skipProvider: true });
+    await clickTestIdByDom(TID_TASK_SETTINGS_BUTTON);
+    await $(`[data-testid="${TID_SETTINGS_PAGE}"]`).waitForDisplayed();
+    await clickTestIdByDom(testId(TID_SETTINGS_SECTION_NAV, "remoteControl"));
+    await input().waitForDisplayed({ timeout: 15000 });
+  });
+
+  after(async () => {
+    await browser.electron.restoreAllMocks();
+    await clearAppData();
+  });
+
+  it("RCE01：保存后回显归一化地址并落盘；未修改时保存不可点", async () => {
+    await input().setValue(`${ENDPOINT}/`);
+    await saveButton().click();
+    await browser.waitUntil(async () => (await input().getValue()) === ENDPOINT, {
+      timeout: 15000,
+      timeoutMsg: "保存后输入框未回显归一化（去尾斜杠）的服务器地址",
+    });
+    expect((await readSettings()).relayV3?.endpointOrigin).toBe(ENDPOINT);
+    expect(await saveButton().isEnabled()).toBe(false);
+  });
+
+  it("RCE02：非法地址就地报错且不落盘，修正输入后报错消失", async () => {
+    await input().setValue("relay.e2e.example.com");
+    await saveButton().click();
+    await inputError().waitForDisplayed({ timeout: 15000 });
+    expect(await inputError().getText()).toContain("http://");
+    expect((await readSettings()).relayV3?.endpointOrigin).toBe(ENDPOINT);
+
+    await input().setValue(ENDPOINT);
+    expect(await inputError().isExisting()).toBe(false);
+  });
+
+  it("RCE03：设置搜索可以定位到服务器地址行", async () => {
+    await clickTestIdByDom("settings-search-open");
+    await $('[data-testid="settings-search-input"]').setValue("relay");
+    await $(`[data-settings-search-result="${SEARCH_ID}"]`).click();
+    // 与 settings-navigation-search 的 expectLocated 同口径：先等搜索弹层收起，
+    // 再核对定位高亮——行本身一直可见，不能拿它可见当作定位已完成的信号。
+    await $('[data-testid="settings-search-dialog"]').waitForDisplayed({
+      reverse: true,
+      timeout: 15000,
+    });
+    const anchor = $(`[data-settings-search-id="${SEARCH_ID}"]`);
+    await anchor.waitForDisplayed({ timeout: 15000 });
+    expect(await anchor.getAttribute("data-settings-search-highlighted")).toBe("true");
+  });
+
+  it("RCE04：输入框内回车同样触发保存", async () => {
+    const next = "https://relay-enter.e2e.example.com";
+    await input().setValue(`${next}/`);
+    await input().click();
+    await browser.keys("Enter");
+    await browser.waitUntil(async () => (await input().getValue()) === next, {
+      timeout: 15000,
+      timeoutMsg: "回车后输入框未回显归一化的服务器地址",
+    });
+    expect((await readSettings()).relayV3?.endpointOrigin).toBe(next);
+  });
+});

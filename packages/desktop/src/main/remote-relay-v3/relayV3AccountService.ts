@@ -115,14 +115,13 @@ export class RelayV3AccountService {
     const session = this.session;
     this.session = null;
     this.clearStoredSession();
-    if (session) {
-      try {
-        await this.request("logout", undefined, session.access);
-      } catch {
-        // 登出尽力而为：家族撤销失败不阻塞本地清理（token 已丢弃）。
-      }
-    }
+    // 本地登出与 signed-out 通知必须同步完成：切换服务器地址时旧 relay 常已不可达，若通知
+    // 延后到远端撤销结束，迟到的 signed-out 会停掉切换后新建立的连接（设计 §3.5）。
     this.options.accountOptions?.onSessionChange?.("signed-out", null);
+    if (session) {
+      // 登出尽力而为：家族撤销失败不阻塞本地清理（token 已丢弃），调用方也不等待它。
+      void this.request("logout", undefined, session.access).catch(() => {});
+    }
     return { ok: true };
   }
 

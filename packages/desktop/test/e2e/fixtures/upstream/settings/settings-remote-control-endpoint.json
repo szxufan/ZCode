@@ -1,0 +1,6 @@
+{
+  "version": 1,
+  "caseName": "settings-remote-control-endpoint",
+  "spec": "./test/e2e/settings/general/settings-remote-control-endpoint.test.ts",
+  "fixtures": []
+}

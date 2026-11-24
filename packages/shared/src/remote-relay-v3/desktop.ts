@@ -80,6 +80,29 @@ export interface RelayV3StartTicketResult {
   ticket: string;
 }
 
+/** 服务器地址配置结果（设计 §3.5）：非法输入或 manager 已释放时失败；`changed=false` 表示归一化后与当前地址相同。 */
+export type RelayV3ConfigureEndpointResult =
+  | { ok: true; endpointOrigin: string; changed: boolean }
+  | { ok: false; reason: "invalid-origin" | "disposed" | "unavailable" };
+
+/**
+ * 把界面录入的 relay 服务器地址归一化为 origin（`URL.origin`：去尾斜杠、主机小写、
+ * 去默认端口）。必须带 http(s) 协议头且不含路径、查询、片段与凭据，否则返回 null；
+ * 产出的 origin 与 AppSettings.relayV3.endpointOrigin 的校验口径一致。
+ */
+export function normalizeRelayV3EndpointOrigin(value: string): string | null {
+  let url: URL;
+  try {
+    url = new URL(value.trim());
+  } catch {
+    return null;
+  }
+  if (url.protocol !== "http:" && url.protocol !== "https:") return null;
+  if (url.username || url.password) return null;
+  if (url.pathname !== "/" || url.search || url.hash) return null;
+  return url.origin;
+}
+
 // ---------------------------------------------------------------------------
 // 控制端（P4，§6）：桌面作为 terminal 连接其他电脑的状态投影与 IPC 契约。
 // ---------------------------------------------------------------------------

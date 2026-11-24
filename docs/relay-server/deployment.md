@@ -36,7 +36,7 @@ RELAY_STATIC_DIR=/path/to/dist relay 起服务
 ```
 
 - 反向代理应直接缓存静态资源（relay 侧已带 `Cache-Control: public, max-age=300`）。
-- 桌面端 AppSettings「远程控制」填 relay origin；二维码 base 即该 origin（`?sid&mid&name&app_version` 路由提示，§5.3）。
+- 桌面端「设置 → 远程控制 → Relay 服务器地址」填 relay origin（如 `https://relay.example.com`，带协议头、不带路径），保存即生效；已登录时保存新地址会退出账号并停止远控，需重新登录（设计 §3.5）。二维码 base 即该 origin（`?sid&mid&name&app_version` 路由提示，§5.3）。
 - 自定义 origin：`RELAY_STATIC_DIR` 部署在其他域名时，在 AppSettings.relayV3.staticPageBaseUrl 指向该域名。
 
 ## 4. relay-admin（账号与设备运维）

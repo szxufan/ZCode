@@ -144,6 +144,9 @@ export function createDesktopPlatform(options: {
       window.zcode.relayV3StartAuthorized?.(ticket) ??
       Promise.resolve({ accepted: false, reason: "relay v3 bridge unavailable" }),
     relayV3Stop: () => window.zcode.relayV3Stop?.() ?? Promise.resolve(),
+    relayV3ConfigureEndpoint: (rawOrigin) =>
+      window.zcode.relayV3ConfigureEndpoint?.(rawOrigin) ??
+      Promise.resolve({ ok: false as const, reason: "unavailable" as const }),
     // Relay V3 控制端（P4）：桥缺失时按能力缺席处理。
     relayV3TerminalList: () =>
       window.zcode.relayV3TerminalList?.() ?? Promise.resolve({ ok: false, message: "unavailable" }),

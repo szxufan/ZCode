@@ -8470,6 +8470,13 @@ const zhCN: Record<string, string> = {
   "settings.computerUse.title": "电脑控制",
   "settings.remoteControl.title": "远程控制",
   "settings.remoteControl.unsupported": "当前环境不支持自托管远程控制。",
+  "settings.remoteControl.server.address": "Relay 服务器地址",
+  "settings.remoteControl.server.hint":
+    "自托管 relay 的地址，以 http:// 或 https:// 开头，不含路径。",
+  "settings.remoteControl.server.invalid": "地址无效：需以 http:// 或 https:// 开头，且不含路径。",
+  "settings.remoteControl.server.saveFailed": "服务器地址保存失败，请重试。",
+  "settings.remoteControl.server.signedOutHint":
+    "保存不同的地址会退出当前 Relay 账号并停止远程控制，需要重新登录。",
   "settings.remoteControl.account.title": "Relay 账号",
   "settings.remoteControl.account.phone": "手机号",
   "settings.remoteControl.account.code": "验证码",

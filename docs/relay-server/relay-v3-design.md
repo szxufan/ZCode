@@ -113,6 +113,38 @@ sequenceDiagram
     R-->>C: 新 {access, refresh}（旧 refresh 失效，重放撤销家族）
 ```
 
+### 3.5 桌面端服务器地址（relay origin）
+
+桌面端不内置任何 relay 地址：未配置时账号登录请求失败、被控端不可启动（`no-endpoint`）。地址的唯一录入口是设置界面，不再要求手改 `setting.json`。
+
+- **入口**：设置 → 远程控制 → 「Relay 服务器地址」，位于设置节首行。显式「保存」（或输入框回车）生效，未保存的输入只是 renderer 本地草稿；该行纳入设置搜索（定位 id `settings.remoteControl.server.address`）。
+- **格式**：带协议头的 http(s) origin（`https://relay.example.com`、`http://10.0.0.2:8080`），不含路径、查询、片段与凭据。main 用 `normalizeRelayV3EndpointOrigin` 归一化为 `URL.origin`（去尾斜杠、主机小写、去默认端口）；缺协议头或其他非法输入返回 `invalid-origin`，界面就地提示且不落盘。
+- **所有权与写路径**：运行期 `AppSettings.relayV3.endpointOrigin` 的唯一写入口是 main `relayV3DeviceManager.configureEndpoint`（IPC `RelayV3ConfigureEndpoint`）；renderer 只提交原始输入，并经 `status.relayOrigin` 读取事实。`staticPageBaseUrl` 不在界面暴露，仍只经 AppSettings 配置（部署期确定，§5.4）。
+- **凭据归属**：账号会话（access/refresh）与设备身份（SID/公钥）只对签发它们的 relay 有效。保存一个与当前地址不同的值等同「停止远控 + 登出」：被控端 transport 与 bridge 释放、启用意图清除、控制端连接断开、已注册设备身份丢弃；之后需在新地址重新登录并手动启动。
+- **登出语义**：`RelayV3AccountService.logout` 的本地会话清空与 `signed-out` 通知同步完成，远端 refresh 家族撤销在后台尽力而为、调用方不等待。原因：旧 relay 不可达时远端撤销要等 15s 超时，若本地登出随之延后，迟到的 `signed-out` 会停掉切换后新建立的连接。
+- **事件顺序**（不可颠倒：新地址若先落盘，旧 refresh token 会在下一次刷新或启动恢复时被发给新服务器）：
+
+```mermaid
+sequenceDiagram
+    participant UI as 设置节（renderer）
+    participant M as relayV3DeviceManager（main）
+    participant R as 旧 relay
+    participant S as AppSettings.relayV3
+    participant T as 控制端 manager
+    UI->>M: configureEndpoint(raw)
+    M->>M: 归一化；等于当前地址则 no-op 返回
+    M->>M: stop()：停 transport、释放 bridge、清除启用意图
+    M->>M: logout()：本地会话清空并通知 signed-out
+    M->>R: POST /v3/auth/logout（后台尽力而为，地址取自尚未改写的配置）
+    M->>M: 丢弃已注册设备身份（SID 与密钥对）
+    M->>S: patch endpointOrigin
+    M-->>UI: 广播状态（relayOrigin = 新地址）
+    M->>T: disconnect()
+```
+
+- **幂等与并发**：归一化后等于当前地址为 no-op（不登出、不写盘）。启动流程在注册等待期间被打断（stop/登出/切换地址）时不再拉起 transport（返回 `stopped`）：其后迟到的注册成功不保留（relay 侧补偿删除，旧 relay 签发的 SID 不得写入已重置的设备身份），迟到的注册失败也不改写状态。
+- **验收**：manager 集成测试 `packages/desktop/test/relayV3DeviceManager.test.ts`（登出请求命中旧地址且早于落盘、设备身份重置、非法地址与 no-op 无副作用）；桌面 E2E `settings/general/settings-remote-control-endpoint.test.ts`（保存后回显与落盘、非法地址就地报错不落盘）。
+
 ## 4. 端到端加密
 
 ### 4.1 信任模型

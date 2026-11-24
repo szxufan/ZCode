@@ -176,6 +176,10 @@ declare global {
       relayV3StartAuthorized?(ticket: string): Promise<{ accepted: boolean; reason?: string }>;
       /** Relay V3 远控（device）：停止远控 */
       relayV3Stop?(): Promise<void>;
+      /** Relay V3 远控（device）：保存 relay 服务器地址（切换即停止远控并登出） */
+      relayV3ConfigureEndpoint?(
+        rawOrigin: string,
+      ): Promise<import("@zcode/shared/remote-relay-v3/desktop.js").RelayV3ConfigureEndpointResult>;
       /** Relay V3 控制端（P4）：列同账号可控制设备 */
       relayV3TerminalList?(): Promise<{
         ok: boolean;
