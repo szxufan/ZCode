@@ -313,6 +313,12 @@ export const SETTINGS_SEARCH_ITEMS = [
     description: "settings.browser.htmlClickOpensBrowserDescription",
     visibility: "desktop",
   },
+  {
+    id: "settings.remoteControl.server.address",
+    section: "remoteControl",
+    description: "settings.remoteControl.server.hint",
+    visibility: "desktop",
+  },
 ] as const satisfies readonly {
   id: string;
   section: SettingsSectionId;

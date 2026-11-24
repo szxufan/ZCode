@@ -13,10 +13,18 @@ import type { RelayV3DeviceManager } from "./relayV3DeviceManager.js";
 import type { RelayV3TerminalManager } from "./relayV3TerminalManager.js";
 
 // Relay V3 device IPC 注册（P1）。renderer 可达面只有状态查询、账号操作、票据启动、
-// 停止与 workspace 同步；票据不进 renderer 可写共享协议（V2 启动调用边界语义）。
+// 停止、服务器地址配置与 workspace 同步；票据不进 renderer 可写共享协议（V2 启动调用边界语义）。
 // terminal（P4 控制端）处理器在 manager 存在时注册（未登录 relay 账号时不可用）。
 
-export function registerRelayV3DeviceIpc(manager: RelayV3DeviceManager): void {
+export interface RelayV3DeviceIpcHooks {
+  /** 服务器地址切换成功后调用：共用账号已失效，控制端连接必须一并断开（设计 §3.5）。 */
+  onEndpointChanged: () => Promise<void>;
+}
+
+export function registerRelayV3DeviceIpc(
+  manager: RelayV3DeviceManager,
+  hooks: RelayV3DeviceIpcHooks,
+): void {
   ipcMain.handle(PlatformChannels.RelayV3GetStatus, () => manager.getStatus());
 
   ipcMain.on(PlatformChannels.RelayV3SyncWorkspaces, (event, value) => {
@@ -78,6 +86,18 @@ export function registerRelayV3DeviceIpc(manager: RelayV3DeviceManager): void {
   });
 
   ipcMain.handle(PlatformChannels.RelayV3Stop, () => manager.stop());
+
+  ipcMain.handle(
+    PlatformChannels.RelayV3ConfigureEndpoint,
+    async (_event, value: { endpointOrigin?: unknown }) => {
+      if (typeof value?.endpointOrigin !== "string") {
+        return { ok: false, reason: "invalid-origin" } as const;
+      }
+      const result = await manager.configureEndpoint(value.endpointOrigin);
+      if (result.ok && result.changed) await hooks.onEndpointChanged();
+      return result;
+    },
+  );
 }
 
 export function registerRelayV3TerminalIpc(manager: RelayV3TerminalManager): void {

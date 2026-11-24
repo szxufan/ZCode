@@ -1,0 +1,14 @@
+{
+  "version": 1,
+  "caseName": "settings-remote-control-endpoint",
+  "spec": "./test/e2e/settings/general/settings-remote-control-endpoint.test.ts",
+  "providerFixtures": [
+    "./test/e2e/fixtures/upstream/common.json",
+    "./test/e2e/fixtures/upstream/settings/settings-remote-control-endpoint.json"
+  ],
+  "fileFixtures": [],
+  "providerRequestPolicy": "none",
+  "noProviderRequests": true,
+  "providerRequestReason": "验证远程控制设置里 Relay 服务器地址的保存、回显与校验，不发送模型请求。",
+  "requests": []
+}

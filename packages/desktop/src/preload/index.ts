@@ -449,6 +449,11 @@ contextBridge.exposeInMainWorld("zcode", {
     ipcRenderer.invoke(PlatformChannels.RelayV3StartAuthorized, { ticket }),
   /** Relay V3 远控（device）：停止远控 */
   relayV3Stop: () => ipcRenderer.invoke(PlatformChannels.RelayV3Stop),
+  /** Relay V3 远控（device）：保存 relay 服务器地址（切换即停止远控并登出） */
+  relayV3ConfigureEndpoint: (
+    endpointOrigin: string,
+  ): Promise<import("@zcode/shared/remote-relay-v3/desktop.js").RelayV3ConfigureEndpointResult> =>
+    ipcRenderer.invoke(PlatformChannels.RelayV3ConfigureEndpoint, { endpointOrigin }),
   /** Relay V3 控制端（P4）：列同账号可控制设备 */
   relayV3TerminalList: (): Promise<{
     ok: boolean;

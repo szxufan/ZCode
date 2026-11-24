@@ -299,6 +299,8 @@ export const PlatformChannels = {
   RelayV3StartAuthorized: "zcode:relay-v3-start-authorized",
   /** Relay V3 远控（device）：Renderer → Main 停止远控并清除启用意图 */
   RelayV3Stop: "zcode:relay-v3-stop",
+  /** Relay V3 远控（device）：Renderer → Main 保存 relay 服务器地址（切换即停止远控并登出，设计 §3.5） */
+  RelayV3ConfigureEndpoint: "zcode:relay-v3-configure-endpoint",
   /** Relay V3 控制端（P4）：Renderer → Main 列同账号可控制设备 */
   RelayV3TerminalList: "zcode:relay-v3-terminal-list",
   /** Relay V3 控制端：Renderer → Main 连接目标设备（terminal 角色） */
@@ -1058,6 +1060,10 @@ export interface PlatformChannelMap {
   [PlatformChannels.RelayV3Stop]: {
     request: void;
     response: void;
+  };
+  [PlatformChannels.RelayV3ConfigureEndpoint]: {
+    request: { endpointOrigin: string };
+    response: import("./remote-relay-v3/desktop.js").RelayV3ConfigureEndpointResult;
   };
   [PlatformChannels.SyncAppSettings]: {
     request: Partial<AppSettings>;

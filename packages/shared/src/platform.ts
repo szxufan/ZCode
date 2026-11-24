@@ -12,6 +12,7 @@ import type {
 import type { PluginSandboxPlatformPort } from "./mcp-apps/contract.js";
 import type {
   RelayV3AccountActionResult,
+  RelayV3ConfigureEndpointResult,
   RelayV3DesktopStatus,
   RelayV3StartTicketResult,
   RelayV3TerminalStatus,
@@ -978,6 +979,12 @@ export interface IPlatformService {
 
   /** 停止远控并清除启用意图。 */
   relayV3Stop?(): Promise<void>;
+
+  /**
+   * 保存 relay 服务器地址（设计 §3.5）。地址由 main 归一化与校验；保存不同的地址等同
+   * 停止远控并登出，需在新地址重新登录。
+   */
+  relayV3ConfigureEndpoint?(rawOrigin: string): Promise<RelayV3ConfigureEndpointResult>;
 
   // ----- Relay V3 控制端（P4，§6：桌面作为 terminal 连接其他电脑） -----
 

@@ -9,6 +9,7 @@ import {
   decodeRelayV3BridgePortMessage,
   encodeRelayV3Base64Url,
   encodeRelayV3BridgePortMessage,
+  normalizeRelayV3EndpointOrigin,
   parseRelayV3AppPayload,
   parseRelayV3RpcFrame,
   parseRelayV3RpcFrameAck,
@@ -17,6 +18,7 @@ import {
   RelayV3AcknowledgedRpc,
   RelayV3ConnectionError,
   RelayV3HttpClient,
+  type RelayV3ConfigureEndpointResult,
   type RelayV3DesktopPhase,
   type RelayV3DesktopStatus,
   type RelayV3KeyPair,
@@ -28,10 +30,12 @@ import {
 import {
   loadOrGenerateRelayV3DeviceIdentity,
   persistRelayV3DeviceSid,
+  resetRelayV3RegisteredDeviceIdentity,
   resetRelayV3DeviceIdentity,
 } from "./relayV3DeviceIdentity.js";
 import { RelayV3AccountService, type RelayV3AccountEvent } from "./relayV3AccountService.js";
 import { RelayV3DeviceTransport } from "./relayV3DeviceTransport.js";
+import { findRelayV3Workspace, flattenRelayV3Workspaces } from "./relayV3Workspaces.js";
 
 // Relay V3 device manager（P1）：桌面被控端运行态的唯一 owner。
 // 职责（V2 webRemoteControlManager 语义在 V3 的重建，见
@@ -199,7 +203,7 @@ export class RelayV3DeviceManager {
     if (this.phase !== "active" && this.phase !== "waiting") return;
     this.sendToTerminal({
       zcode_type: "workspace-list-updated",
-      workspaces: this.flattenWorkspaces(),
+      workspaces: flattenRelayV3Workspaces(this.workspacesByWindowId),
     });
   }
 
@@ -295,11 +299,19 @@ export class RelayV3DeviceManager {
     this.starting = true;
     this.reregisteredSinceStart = false;
     this.setPhase("starting");
+    let registered = false;
     try {
-      await this.ensureRegisteredDevice();
+      await this.ensureRegisteredDevice(() => !this.starting);
+      registered = true;
+      // 注册等待期间被 stop/登出/切换服务器地址打断（stopTransportOnly 已复位 starting）：
+      // 启动意图作废，不再拉起 transport，否则"停止"之后远控仍会晚到上线。
+      if (!this.starting) return { accepted: false, reason: "stopped" };
       this.launchTransport();
       return { accepted: true };
     } catch (error) {
+      // 同一次打断若落在注册等待中、且注册随后失败（如登出后取不到 access），这次启动同样
+      // 已作废：不改写 phase，否则"停止/切换地址"之后界面会停在这条迟到的失败上。
+      if (!registered && !this.starting) return { accepted: false, reason: "stopped" };
       this.starting = false;
       const message = error instanceof Error ? error.message : String(error);
       this.options.logger.error("relay-v3 start failed", { message });
@@ -323,6 +335,35 @@ export class RelayV3DeviceManager {
     this.setPhase("idle");
   }
 
+  /**
+   * 切换 relay 服务器地址（设置界面的唯一写入口，设计 §3.5）。
+   * 顺序即安全边界：账号凭据与设备身份只对签发它们的 relay 有效，必须先停远控、对旧地址
+   * 登出并丢弃设备身份，再持久化新地址——反过来会让旧 refresh token 在下一次刷新或
+   * 启动恢复时被发给新服务器。
+   */
+  async configureEndpoint(rawOrigin: string): Promise<RelayV3ConfigureEndpointResult> {
+    if (this.disposed) return { ok: false, reason: "disposed" };
+    const endpointOrigin = normalizeRelayV3EndpointOrigin(rawOrigin);
+    if (!endpointOrigin) return { ok: false, reason: "invalid-origin" };
+    const current = this.options.getRelayConfig().endpointOrigin;
+    // 手改 setting.json 可能写入未归一化的等价地址（大小写、默认端口）：同一服务器不算切换。
+    if (
+      endpointOrigin === (current ? (normalizeRelayV3EndpointOrigin(current) ?? current) : null)
+    ) {
+      return { ok: true, endpointOrigin, changed: false };
+    }
+    await this.stop();
+    await this.logout();
+    const identity = resetRelayV3RegisteredDeviceIdentity(this.options.configDir);
+    if (identity) this.identity = identity;
+    await this.options.settings.patch({
+      relayV3: { ...(await this.currentRelaySettings()), endpointOrigin },
+    });
+    this.setPhase("idle");
+    this.options.logger.info("relay-v3 endpoint changed");
+    return { ok: true, endpointOrigin, changed: true };
+  }
+
   dispose(): void {
     this.disposed = true;
     this.stopTransportOnly();
@@ -339,20 +380,21 @@ export class RelayV3DeviceManager {
     return this.options.resolveDeviceMid();
   }
 
-  private async ensureRegisteredDevice(): Promise<void> {
+  private async ensureRegisteredDevice(isAborted?: () => boolean): Promise<void> {
     if (!this.identity) {
       this.identity = loadOrGenerateRelayV3DeviceIdentity(this.options.configDir);
     }
     if (this.identity.deviceSid) return;
-    await this.registerDevice(this.identity.keyPair);
+    await this.registerDevice(this.identity.keyPair, isAborted);
   }
 
-  private async registerDevice(keyPair: RelayV3KeyPair): Promise<void> {
+  private async registerDevice(keyPair: RelayV3KeyPair, isAborted?: () => boolean): Promise<void> {
     const baseUrl = this.options.getRelayConfig().endpointOrigin;
     if (!baseUrl) throw new Error("relay endpoint not configured");
     const accessToken = await this.account.getAccessToken();
     if (!accessToken) throw new Error("relay account not signed in");
     const client = new RelayV3HttpClient({ baseUrl, fetch: this.options.fetchImpl });
+    if (isAborted?.()) throw new Error("relay-v3 registration aborted");
     const device = await client.request(
       "register",
       { bearer: accessToken },
@@ -361,21 +403,36 @@ export class RelayV3DeviceManager {
         public_key: encodeRelayV3Base64Url(keyPair.publicKey),
       },
     );
+    // 注册等待期间启动被打断（stop/登出/切换服务器地址）：这次注册结果不得保留。切换地址后
+    // 旧 relay 签发的 SID 对新地址无效，写进刚重置的设备身份会让下次启动先吃一次 AUTH_FAILED。
+    if (isAborted?.()) {
+      await this.compensateDeleteDevice(client, accessToken, device.device_sid);
+      throw new Error("relay-v3 registration aborted");
+    }
     try {
       persistRelayV3DeviceSid(device.device_sid, this.options.configDir);
     } catch (error) {
       // 注册成功但本地保存失败：尽力删除新 SID 后不可重试终止（V2 03）。
-      try {
-        await client.request("delete", { bearer: accessToken }, { device_sid: device.device_sid });
-      } catch (deleteError) {
-        this.options.logger.warn("relay-v3 compensate delete failed", { deleteError });
-      }
+      await this.compensateDeleteDevice(client, accessToken, device.device_sid);
       throw error;
     }
     this.identity = { keyPair, deviceSid: device.device_sid };
     this.options.logger.info("relay-v3 device registered", {
       kid: relayV3KeyId(keyPair.publicKey),
     });
+  }
+
+  /** 注册结果不再需要时在 relay 侧补偿删除（尽力而为，失败只记日志）。 */
+  private async compensateDeleteDevice(
+    client: RelayV3HttpClient,
+    accessToken: string,
+    deviceSid: string,
+  ): Promise<void> {
+    try {
+      await client.request("delete", { bearer: accessToken }, { device_sid: deviceSid });
+    } catch (deleteError) {
+      this.options.logger.warn("relay-v3 compensate delete failed", { deleteError });
+    }
   }
 
   private launchTransport(): void {
@@ -541,7 +598,7 @@ export class RelayV3DeviceManager {
       case "workspace-list-request":
         this.sendToTerminal({
           zcode_type: "workspace-list-response",
-          workspaces: this.flattenWorkspaces(),
+          workspaces: flattenRelayV3Workspaces(this.workspacesByWindowId),
         });
         return;
       case "workspace-bridge-open":
@@ -564,40 +621,12 @@ export class RelayV3DeviceManager {
     this.sendToTerminal({
       zcode_type: "bootstrap-response",
       desktop_app_version: this.options.appVersion,
-      workspaces: this.flattenWorkspaces(),
+      workspaces: flattenRelayV3Workspaces(this.workspacesByWindowId),
     });
   }
 
-  private flattenWorkspaces() {
-    const seen = new Set<string>();
-    const workspaces: {
-      workspace_key: string;
-      path: string;
-      connection: "local" | "remote" | "offline";
-      bridgeable: boolean;
-      identity?: string;
-      name?: string;
-      remote_session_id?: string;
-    }[] = [];
-    for (const entries of this.workspacesByWindowId.values()) {
-      for (const entry of entries) {
-        if (seen.has(entry.workspaceKey)) continue;
-        seen.add(entry.workspaceKey);
-        workspaces.push({
-          workspace_key: entry.workspaceKey,
-          path: entry.workspacePath,
-          connection: entry.remoteSessionId ? "remote" : "local",
-          bridgeable: entry.bridgeable,
-          ...(entry.workspaceIdentity ? { identity: entry.workspaceIdentity } : {}),
-          ...(entry.remoteSessionId ? { remote_session_id: entry.remoteSessionId } : {}),
-        });
-      }
-    }
-    return workspaces;
-  }
-
   private handleBridgeOpen(payload: RelayV3WorkspaceBridgeOpen): void {
-    const match = this.findWorkspace(payload.workspace_key);
+    const match = findRelayV3Workspace(this.workspacesByWindowId, payload.workspace_key);
     if (!match) {
       this.sendToTerminal({
         zcode_type: "workspace-bridge-error",
@@ -728,17 +757,6 @@ export class RelayV3DeviceManager {
       bridge_generation: bridge.generation,
       terminal_owner_id: terminalOwnerId,
     });
-  }
-
-  private findWorkspace(
-    workspaceKey: string,
-  ): { windowId: number; entry: RelayV3WorkspaceSyncEntry } | null {
-    for (const [windowId, entries] of this.workspacesByWindowId) {
-      for (const entry of entries) {
-        if (entry.workspaceKey === workspaceKey) return { windowId, entry };
-      }
-    }
-    return null;
   }
 
   private disposeBridge(bridgeSessionId: string, reason: string): void {

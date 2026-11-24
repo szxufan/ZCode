@@ -8956,6 +8956,15 @@ const enUS: Record<string, string> = {
   "settings.remoteControl.title": "Remote Control",
   "settings.remoteControl.unsupported":
     "Self-hosted remote control is not available in this environment.",
+  "settings.remoteControl.server.address": "Relay server address",
+  "settings.remoteControl.server.hint":
+    "Address of your self-hosted relay, starting with http:// or https:// and without a path.",
+  "settings.remoteControl.server.invalid":
+    "Invalid address: it must start with http:// or https:// and contain no path.",
+  "settings.remoteControl.server.saveFailed":
+    "Failed to save the server address. Please try again.",
+  "settings.remoteControl.server.signedOutHint":
+    "Saving a different address signs you out of the Relay account and stops remote control. You will need to sign in again.",
   "settings.remoteControl.account.title": "Relay account",
   "settings.remoteControl.account.phone": "Phone number",
   "settings.remoteControl.account.code": "Verification code",

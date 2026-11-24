@@ -1,4 +1,4 @@
-import { mkdtempSync, rmSync } from "node:fs";
+import { existsSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -14,6 +14,7 @@ import {
   openRelayV3Envelope,
   parseRelayV3AppPayload,
   parseRelayV3RpcFrame,
+  RELAY_V3_HTTP,
   relayV3EnvelopeAad,
   sealRelayV3Envelope,
   type RelayV3DesktopStatus,
@@ -395,4 +396,232 @@ describe("Relay V3 device manager（P1，fake relay 集成）", () => {
     expect(envelope.code).toBe(0);
     return envelope.data.access;
   }
+});
+
+// 设计 §3.5：服务器地址是账号凭据与设备身份的归属边界，切换顺序即安全边界。
+// 用例按顺序共享同一 manager：未登录配置 → 登录并上线 → 切换 → 切换后 no-op。
+describe("Relay V3 device manager：切换服务器地址（设计 §3.5）", () => {
+  const NEW_ORIGIN = "https://relay-new.example.com";
+  let relay: Awaited<ReturnType<typeof createFakeRelayV3>>;
+  let configDir: string;
+  let manager: RelayV3DeviceManager;
+  let relayV3Settings: Record<string, unknown> | undefined;
+  /** 网络请求与设置写入的先后顺序，entry 形如 `fetch:<url>` / `patch:<endpointOrigin>`。 */
+  const timeline: string[] = [];
+  const fetchEntries = () => timeline.filter((entry) => entry.startsWith("fetch:"));
+  /**
+   * 挂起 register 请求的闸门，用来构造"注册等待期间被打断"：放行后 reject 为真则模拟注册失败，
+   * 否则照常打到 fake relay（模拟迟到的注册成功）。
+   */
+  let registerHold: { promise: Promise<void>; reject: boolean } | null = null;
+
+  beforeAll(async () => {
+    relay = await createFakeRelayV3({ accounts: [PHONE] });
+    configDir = mkdtempSync(join(tmpdir(), "relay-v3-endpoint-"));
+    manager = new RelayV3DeviceManager({
+      logger: { debug: () => {}, info: () => {}, warn: () => {}, error: () => {} },
+      appVersion: "3.22.0-test",
+      getRelayConfig: () => ({
+        endpointOrigin: (relayV3Settings?.endpointOrigin as string | undefined) ?? null,
+        staticPageBaseUrl: null,
+      }),
+      settings: {
+        read: () => Promise.resolve({ relayV3: relayV3Settings } as never),
+        patch: async (patch) => {
+          // 与 settingService.update 的语义一致：顶层字段整体替换，relayV3 子对象不做深合并
+          //（stop() 正是靠整块替换去掉 lastEnabled）。
+          relayV3Settings = patch.relayV3;
+          timeline.push(`patch:${String(patch.relayV3?.endpointOrigin ?? "")}`);
+        },
+      },
+      configDir,
+      fetchImpl: async (input, init) => {
+        const url = String(input);
+        timeline.push(`fetch:${url}`);
+        const hold = url === `${relay.httpUrl}${RELAY_V3_HTTP.register.path}` ? registerHold : null;
+        if (hold) {
+          registerHold = null;
+          await hold.promise;
+          if (hold.reject) throw new Error("register aborted by test");
+        }
+        return fetch(input, init);
+      },
+      hostname: "test-host",
+      resolveDeviceMid: () => "mid_test_123",
+      attachHostPort: () => {},
+      detachHostPort: () => {},
+    });
+  });
+
+  afterAll(async () => {
+    manager.dispose();
+    await relay.close();
+    rmSync(configDir, { recursive: true, force: true });
+  });
+
+  it("未登录时配置地址：只落盘，不发请求、不创建设备身份", async () => {
+    // 首尾空白与尾斜杠在 main 归一化。
+    const result = await manager.configureEndpoint(` ${relay.httpUrl}/ `);
+    expect(result).toEqual({ ok: true, endpointOrigin: relay.httpUrl, changed: true });
+    expect(fetchEntries()).toEqual([]);
+    expect(relayV3Settings).toEqual({ endpointOrigin: relay.httpUrl });
+    expect(manager.getStatus()).toMatchObject({
+      phase: "idle",
+      account: null,
+      deviceSid: null,
+      relayOrigin: relay.httpUrl,
+    });
+    expect(existsSync(join(configDir, "relay-v3-device.json"))).toBe(false);
+  });
+
+  it("已登录并上线时：非法地址被拒绝，等价地址 no-op，均无副作用", async () => {
+    expect((await manager.sendSmsCode(PHONE)).ok).toBe(true);
+    expect((await manager.loginWithCode(PHONE, relay.smsCode(PHONE)!)).ok).toBe(true);
+    manager.syncWorkspaces(1, [
+      { workspaceKey: "/w/proj", workspacePath: "/w/proj", bridgeable: true },
+    ]);
+    const ticket = manager.authorizeStart(1, { workspacePath: "/w/proj" });
+    expect((await manager.startAuthorized(ticket)).accepted).toBe(true);
+    await waitFor(
+      () => (manager.getStatus().phase === "waiting" ? true : null),
+      10_000,
+      "device waiting",
+    );
+    timeline.length = 0;
+
+    for (const invalid of [
+      "relay.example.com",
+      "ftp://relay.example.com",
+      "https://user:pass@relay.example.com",
+      `${relay.httpUrl}/v3`,
+      `${relay.httpUrl}?x=1`,
+      "",
+    ]) {
+      expect(await manager.configureEndpoint(invalid)).toEqual({
+        ok: false,
+        reason: "invalid-origin",
+      });
+    }
+    // 归一化后与当前地址相同：不登出、不写盘，已上线的连接不受影响。
+    expect(await manager.configureEndpoint(`${relay.httpUrl}/`)).toEqual({
+      ok: true,
+      endpointOrigin: relay.httpUrl,
+      changed: false,
+    });
+    expect(timeline).toEqual([]);
+    expect(manager.getStatus()).toMatchObject({
+      phase: "waiting",
+      account: { phoneMasked: expect.any(String) },
+      relayOrigin: relay.httpUrl,
+    });
+  }, 30_000);
+
+  it("切换地址：先对旧地址登出、重置设备身份，再落盘新地址", async () => {
+    timeline.length = 0;
+    expect(manager.getStatus().deviceSid).toBeTruthy();
+
+    const result = await manager.configureEndpoint(`${NEW_ORIGIN}/`);
+    expect(result).toEqual({ ok: true, endpointOrigin: NEW_ORIGIN, changed: true });
+
+    // 登出请求必须命中旧地址，且早于新地址落盘（反序会把旧凭据发给新服务器）。
+    const logoutIndex = timeline.indexOf(`fetch:${relay.httpUrl}${RELAY_V3_HTTP.logout.path}`);
+    expect(logoutIndex).toBeGreaterThanOrEqual(0);
+    expect(timeline.indexOf(`patch:${NEW_ORIGIN}`)).toBeGreaterThan(logoutIndex);
+    // 切换后未登录、未启动：不向新地址发任何请求。
+    expect(fetchEntries().filter((entry) => entry.startsWith(`fetch:${NEW_ORIGIN}`))).toEqual([]);
+
+    expect(manager.getStatus()).toMatchObject({
+      phase: "idle",
+      account: null,
+      deviceSid: null,
+      qrUrl: null,
+      relayOrigin: NEW_ORIGIN,
+    });
+    // 启用意图随切换清除，只保留新地址。
+    expect(relayV3Settings).toEqual({ endpointOrigin: NEW_ORIGIN });
+    // 旧 SID 只对旧 relay 有效：身份文件不得再携带它。
+    const identity = JSON.parse(readFileSync(join(configDir, "relay-v3-device.json"), "utf-8")) as {
+      deviceSid?: string;
+    };
+    expect(identity.deviceSid).toBeUndefined();
+  }, 30_000);
+
+  it("切换后重复保存同一地址：no-op", async () => {
+    timeline.length = 0;
+    expect(await manager.configureEndpoint(NEW_ORIGIN)).toEqual({
+      ok: true,
+      endpointOrigin: NEW_ORIGIN,
+      changed: false,
+    });
+    expect(timeline).toEqual([]);
+  });
+
+  /** 发起一次启动并把它的注册请求挂起；等请求真正发出才返回，保证打断落在注册等待期间。 */
+  async function startWithHeldRegister(reject: boolean): Promise<{
+    start: Promise<{ accepted: boolean; reason?: string }>;
+    release: () => void;
+  }> {
+    let release = () => {};
+    registerHold = {
+      promise: new Promise<void>((resolve) => {
+        release = resolve;
+      }),
+      reject,
+    };
+    const start = manager.startAuthorized(manager.authorizeStart(1, { workspacePath: "/w/proj" }));
+    await waitFor(() => (registerHold === null ? true : null), 5_000, "register request");
+    return { start, release };
+  }
+
+  async function listRelayDevices(): Promise<{ device_sid: string; public_key: string }[]> {
+    const access = await manager.getAccountService().getAccessToken();
+    const response = await fetch(`${relay.httpUrl}${RELAY_V3_HTTP.list.path}`, {
+      headers: { authorization: `Bearer ${access}` },
+    });
+    const envelope = (await response.json()) as {
+      code: number;
+      data: { device_sid: string; public_key: string }[];
+    };
+    expect(envelope.code).toBe(0);
+    return envelope.data;
+  }
+
+  it("注册等待期间被停止、注册随后成功：结果不保留，并在 relay 侧补偿删除", async () => {
+    // 切回 fake relay 并重新登录；设备身份已在切换时重置，下次启动会重新注册。
+    expect(await manager.configureEndpoint(relay.httpUrl)).toEqual({
+      ok: true,
+      endpointOrigin: relay.httpUrl,
+      changed: true,
+    });
+    expect((await manager.sendSmsCode(PHONE)).ok).toBe(true);
+    expect((await manager.loginWithCode(PHONE, relay.smsCode(PHONE)!)).ok).toBe(true);
+    const identity = JSON.parse(readFileSync(join(configDir, "relay-v3-device.json"), "utf-8")) as {
+      publicKey: string;
+    };
+    timeline.length = 0;
+
+    const { start, release } = await startWithHeldRegister(false);
+    // 注册仍在等待时用户明确停止；随后注册成功也不该把这次作废的注册留下来。
+    await manager.stop();
+    release();
+
+    expect(await start).toEqual({ accepted: false, reason: "stopped" });
+    expect(manager.getStatus()).toMatchObject({ phase: "idle", deviceSid: null });
+    expect(timeline).toContain(`fetch:${relay.httpUrl}${RELAY_V3_HTTP.delete.path}`);
+    expect(
+      (await listRelayDevices()).some((device) => device.public_key === identity.publicKey),
+    ).toBe(false);
+  }, 30_000);
+
+  it("注册等待期间被停止、注册随后失败：启动作废，不改写 phase", async () => {
+    // 上一条用例没有保留注册结果，设备仍未注册，可以再次构造注册等待。
+    const { start, release } = await startWithHeldRegister(true);
+    expect(manager.getStatus().phase).toBe("starting");
+
+    await manager.stop();
+    release();
+
+    expect(await start).toEqual({ accepted: false, reason: "stopped" });
+    expect(manager.getStatus()).toMatchObject({ phase: "idle", deviceSid: null });
+  }, 30_000);
 });

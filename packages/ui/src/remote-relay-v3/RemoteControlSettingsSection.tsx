@@ -5,13 +5,14 @@ import { Input } from "@/components/ui/input.js";
 import { Button } from "@/components/ui/button.js";
 import { usePlatform } from "@/hooks/usePlatform.js";
 import { useZCodeIntl } from "@/i18n/IntlProvider.js";
+import { SettingsGroupCard, SettingsRow } from "@/settings/SettingsPageParts.js";
 import { useRelayV3RemoteControl } from "./useRelayV3RemoteControl.js";
 import { useRelayV3Terminal } from "./useRelayV3Terminal.js";
 import { logger } from "@/logger.js";
 
-// Relay V3 远程控制设置节（device 侧，P1）：relay 账号登录（手机号+验证码）、
-// 启动/停止远控、扫码连接二维码与 relay endpoint 配置。凭据与私钥不在本层出现。
-// 文案与状态语义：docs/relay-server/relay-v3-design.md §3.1/§9 P1。
+// Relay V3 远程控制设置节（device 侧，P1）：relay 服务器地址、relay 账号登录（手机号+验证码）、
+// 启动/停止远控与扫码连接二维码。凭据与私钥不在本层出现。
+// 文案与状态语义：docs/relay-server/relay-v3-design.md §3.1/§3.5/§9 P1。
 
 interface RemoteControlSettingsSectionProps {
   workspacePath: string | null;
@@ -23,13 +24,55 @@ export function RemoteControlSettingsSection({
   workspaceIdentity,
 }: RemoteControlSettingsSectionProps) {
   const { intl } = useZCodeIntl();
-  const { supported, status, sendCode, login, logout, start, stop, cooldownRemainingMs } =
-    useRelayV3RemoteControl();
+  const {
+    supported,
+    endpointSupported,
+    status,
+    sendCode,
+    login,
+    logout,
+    start,
+    stop,
+    configureEndpoint,
+    cooldownRemainingMs,
+  } = useRelayV3RemoteControl();
   const [phone, setPhone] = useState("");
   const [code, setCode] = useState("");
   const [busy, setBusy] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
   const [qrDataUrl, setQrDataUrl] = useState<string | null>(null);
+  const [endpointError, setEndpointError] = useState<string | null>(null);
+  // 服务器地址草稿绑定开始编辑时的事实值（status.relayOrigin）：事实变化（保存成功、其他窗口
+  // 改写）后草稿自动失效并回显新地址，因此不需要 effect 回写，输入期间也不会被状态推送覆盖。
+  const relayOrigin = status?.relayOrigin ?? "";
+  const [endpointEdit, setEndpointEdit] = useState<{ origin: string; text: string } | null>(null);
+  const endpointDraft = endpointEdit?.origin === relayOrigin ? endpointEdit.text : relayOrigin;
+  const endpointDirty = endpointDraft.trim() !== relayOrigin;
+
+  const handleSaveEndpoint = useCallback(async () => {
+    setBusy(true);
+    setEndpointError(null);
+    try {
+      const result = await configureEndpoint(endpointDraft);
+      if (result.ok) {
+        setEndpointEdit(null);
+      } else {
+        setEndpointError(
+          intl.formatMessage({
+            id:
+              result.reason === "invalid-origin"
+                ? "settings.remoteControl.server.invalid"
+                : "settings.remoteControl.server.saveFailed",
+          }),
+        );
+      }
+    } catch (error) {
+      logger.warn("relay-v3 endpoint save failed", { error });
+      setEndpointError(intl.formatMessage({ id: "settings.remoteControl.server.saveFailed" }));
+    } finally {
+      setBusy(false);
+    }
+  }, [configureEndpoint, endpointDraft, intl]);
 
   useEffect(() => {
     const url = status?.qrUrl ?? null;
@@ -133,6 +176,73 @@ export function RemoteControlSettingsSection({
 
   return (
     <div className="flex flex-col gap-5" data-testid="relay-v3-settings-section">
+      {endpointSupported ? (
+        <SettingsGroupCard>
+          <SettingsRow
+            searchId="settings.remoteControl.server.address"
+            label={intl.formatMessage({ id: "settings.remoteControl.server.address" })}
+            description={intl.formatMessage({ id: "settings.remoteControl.server.hint" })}
+            control={
+              <Button
+                type="button"
+                size="lg"
+                disabled={busy || !endpointDirty}
+                onClick={() => void handleSaveEndpoint()}
+                data-testid="relay-v3-endpoint-save"
+              >
+                {intl.formatMessage({ id: "common.save" })}
+              </Button>
+            }
+            detail={
+              <>
+                <Input
+                  size="lg"
+                  value={endpointDraft}
+                  placeholder="https://relay.example.com"
+                  inputMode="url"
+                  spellCheck={false}
+                  aria-label={intl.formatMessage({ id: "settings.remoteControl.server.address" })}
+                  aria-invalid={endpointError ? true : undefined}
+                  disabled={busy}
+                  onChange={(event) => {
+                    setEndpointEdit({ origin: relayOrigin, text: event.currentTarget.value });
+                    setEndpointError(null);
+                  }}
+                  onKeyDown={(event) => {
+                    // 中文输入法里确认上屏的那次回车 key 也是 "Enter"，不能当成保存。
+                    if (
+                      event.key === "Enter" &&
+                      !event.nativeEvent.isComposing &&
+                      endpointDirty &&
+                      !busy
+                    ) {
+                      void handleSaveEndpoint();
+                    }
+                  }}
+                  className="max-w-[520px] font-mono"
+                  data-testid="relay-v3-endpoint-input"
+                />
+                {signedIn ? (
+                  <p
+                    className="mt-2 text-ui-sm text-foreground-subtle"
+                    data-testid="relay-v3-endpoint-signed-out-hint"
+                  >
+                    {intl.formatMessage({ id: "settings.remoteControl.server.signedOutHint" })}
+                  </p>
+                ) : null}
+                {endpointError ? (
+                  <p
+                    className="mt-2 text-ui-sm text-destructive"
+                    data-testid="relay-v3-endpoint-error"
+                  >
+                    {endpointError}
+                  </p>
+                ) : null}
+              </>
+            }
+          />
+        </SettingsGroupCard>
+      ) : null}
       <section className="flex flex-col gap-3">
         <h3 className="text-ui-lg font-semibold text-foreground">
           {intl.formatMessage({ id: "settings.remoteControl.account.title" })}
