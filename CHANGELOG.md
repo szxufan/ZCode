@@ -1,5 +1,34 @@
 # Changelog
 
+## [4.0.1](https://github.com/szxufan/ZCode/compare/v3.25.1...v4.0.1) (2026-11-24)
+
+### Features
+
+* **relay:** relay-v3 安全加固 —— 批准前指纹预览、refresh 家族隔离与数据面防护 ([11a7774](https://github.com/szxufan/ZCode/commit/11a77744bb14975ed23301ebdb730edf5cc7b7f1))
+  * device-auth：新增只读 POST /v3/device-auth/preview（Bearer，与 approve
+  * refresh 家族：access JWT 携带 fam；登出只撤销当前家族（旧无 fam token
+  * 信封 AAD 方向绑定（发送方角色域分隔），防密文反射/重放；spec §4.4 同步。
+  * 数据面：chunk 组装 offset 连续性/越界拒绝、整流 CRC 增量计算（不再按
+  * 限流与回收：relay token 30/分钟/IP、密码登录 10/分钟/IP（未知账号也计
+  * 修复 bug：并发 HTTP 计数在 503 拒绝分支泄漏（根因：释放监听注册在超限
+  * static 路径穿越改用 relative 判定（防同前缀兄弟目录绕过）；SPA 回退仅
+
+* **ui:** 辅助对话关闭改为 detach，支持从历史列表重开 ([a5c6099](https://github.com/szxufan/ZCode/commit/a5c6099322c21f677280236559b002b00e8ee919))
+  * 关闭 tab：原先 closeSession；现在 stop + 退订，不进 close lifecycle
+  * 历史重开：原先无入口；现在启动页列出最近 20 条，点击即重开，草稿与选区引用不恢复
+  * session/list：新增 parentSessionId / sessionKind 过滤（与 sessionIds 互斥）。
+  * 最近关闭：辅助对话 tab 进入最近关闭列表
+
+
+### Chores
+
+* sync ZCode source v4.0.0 ([a4b4445](https://github.com/szxufan/ZCode/commit/a4b4445141eb7d3b3e99eada9292775383bfc44e))
+
+
+### Documentation
+
+* onemind 文档调研与可借鉴点分析 ([cd12770](https://github.com/szxufan/ZCode/commit/cd127709faee9963970a52b2060d099e29890b34))
+
 ## [3.25.1](https://github.com/szxufan/ZCode/compare/v3.25.0...v3.25.1) (2026-11-14)
 
 ### Bug Fixes
