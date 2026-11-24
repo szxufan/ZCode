@@ -324,7 +324,10 @@ export interface ListSessionsInput {
   workspaceID?: WorkspaceId | null;
   directory?: string;
   path?: string;
+  /** 仅根会话（`parent_id is null`）。 */
   roots?: boolean;
+  /** 按直接父会话过滤；用于列出辅助对话、subagent 等附属 child。 */
+  parentID?: SessionId;
   taskTypes?: SessionTaskType[];
   limit?: number;
 }

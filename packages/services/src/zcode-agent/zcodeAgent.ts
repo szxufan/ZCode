@@ -92,6 +92,7 @@ import type {
   ZCodeUserInputResponse,
   ZCodeSessionEvent,
   ZCodeSessionInfo,
+  ZCodeSessionKind,
   ZCodeSessionMode,
   ZCodeSessionPersistence,
   ZCodeSessionSendResult,
@@ -293,6 +294,10 @@ export interface ZCodeAgentCreateSessionParams extends ZCodeAgentWorkspaceTarget
 
 export interface ZCodeAgentListSessionsParams extends ZCodeAgentWorkspaceTarget {
   sessionIds?: string[];
+  /** 按直接父会话过滤持久 child；与 `sessionIds` 互斥。 */
+  parentSessionId?: string;
+  /** 按 `task_type` 过滤；用于列出辅助对话等附属 child。 */
+  sessionKind?: ZCodeSessionKind;
   runtimePolicy?: ZCodeAgentRuntimePolicy;
   limit?: number;
 }

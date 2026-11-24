@@ -108,6 +108,30 @@ export function requestSelectionSideChatOpen(
   return true;
 }
 
+const stopHandlers = new Map<string, () => void>();
+
+/**
+ * 关闭辅助对话 tab 只 detach runtime，但运行中的 turn 应停止，避免用户看不到的 child 继续消耗 token。
+ * 已挂载的 SelectionSideChatPane 把 stop 能力按 childSessionId 注册到这里，close 路径按 id 路由；
+ * pane 未挂载（child 已被 resident pool 回收）时返回 false，关闭照常进行。
+ */
+export function registerSelectionSideChatStop(
+  childSessionId: string,
+  stop: () => void,
+): () => void {
+  stopHandlers.set(childSessionId, stop);
+  return () => {
+    if (stopHandlers.get(childSessionId) === stop) stopHandlers.delete(childSessionId);
+  };
+}
+
+export function requestSelectionSideChatStop(childSessionId: string): boolean {
+  const stop = stopHandlers.get(childSessionId);
+  if (!stop) return false;
+  stop();
+  return true;
+}
+
 function emitChange(): void {
   for (const listener of listeners) listener();
 }

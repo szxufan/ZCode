@@ -122,7 +122,10 @@ import { useWhiteboardStore } from "@/store/whiteboardStore.js";
 import { useModelTrajectoryOpenBridge } from "@/hooks/useModelTrajectoryOpenBridge.js";
 import { useServices } from "@/hooks/useServices.js";
 import { useIsOfficeMode } from "@/hooks/useInterfaceMode.js";
-import { clearSelectionSideChat } from "@/lib/selectionSideChatRuntime.js";
+import {
+  clearSelectionSideChat,
+  requestSelectionSideChatStop,
+} from "@/lib/selectionSideChatRuntime.js";
 import { clearConversationSelectionReferenceScope } from "@/lib/conversationSelectionReference.js";
 import { confirmAllUnsavedSessions, hasUnsavedEdits } from "@/preview-pane/index.js";
 import {
@@ -1710,6 +1713,22 @@ export function useAppPanels(options: {
     ],
   );
 
+  /**
+   * 用户关闭辅助对话 tab 只 detach：stop 运行中 turn 后退订，不 close runtime。
+   * child 留在 resident pool，hasSubscribers 清零后按 idle TTL/LRU 回收；持久 child 保留，
+   * 可从启动页「历史辅助对话」重开。不能用 closeSession 代替——那会杀掉其他客户端
+   * 正在订阅的同一 child。
+   */
+  const detachSelectionSideChat = useCallback(
+    (tab: Extract<WorkspaceSidePaneTab, { type: "selection-side-chat" }>) => {
+      requestSelectionSideChatStop(tab.childSessionId);
+      clearSelectionSideChat(tab.childSessionId);
+      clearConversationSelectionReferenceScope(tab.childSessionId, tab.workspaceKey);
+    },
+    [],
+  );
+
+  /** 父任务归档/永久删除时释放 runtime；持久数据仍保留，归档后可从历史列表重开。 */
   const closeSelectionSideChatRuntime = useCallback(
     (
       tab: Extract<WorkspaceSidePaneTab, { type: "selection-side-chat" }>,
@@ -1937,9 +1956,9 @@ export function useAppPanels(options: {
   );
 
   const rememberClosedSidePaneTabs = useCallback((tabs: WorkspaceSidePaneTab[]) => {
+    // 辅助对话关闭只 detach runtime，持久 child 仍在，可从最近关闭以同一 childSessionId 重开。
     const restorableTabs = tabs.filter(
-      (tab) =>
-        tab.type !== "selection-side-chat" && tab.type !== "browser-use" && tab.type !== "new-tab",
+      (tab) => tab.type !== "browser-use" && tab.type !== "new-tab",
     );
     if (restorableTabs.length === 0) {
       return;
@@ -2014,7 +2033,7 @@ export function useAppPanels(options: {
       const scope = currentSidePaneScope();
       if (!(await closeBrowserTabsWithAuthority(closingTabs))) return;
       for (const tab of closingTabs) {
-        if (tab.type === "selection-side-chat") closeSelectionSideChatRuntime(tab);
+        if (tab.type === "selection-side-chat") detachSelectionSideChat(tab);
         if (tab.type === "terminal") sidePaneTerminalSessionRegistry.release(tab.id);
       }
       rememberClosedSidePaneTabs(closingTabs);
@@ -2049,7 +2068,7 @@ export function useAppPanels(options: {
     },
     [
       closeBrowserTabsWithAuthority,
-      closeSelectionSideChatRuntime,
+      detachSelectionSideChat,
       commitSidePaneState,
       currentSidePaneScope,
       rememberClosedSidePaneTabs,

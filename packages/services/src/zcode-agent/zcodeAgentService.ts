@@ -4626,6 +4626,8 @@ export function createZCodeAgentService(
           workspace: buildWorkspaceRef(params),
           limit: params.limit,
           ...(params.sessionIds ? { sessionIds: params.sessionIds } : {}),
+          ...(params.parentSessionId ? { parentSessionId: params.parentSessionId } : {}),
+          ...(params.sessionKind ? { sessionKind: params.sessionKind } : {}),
         },
         zcodeSessionListResultSchema,
       );

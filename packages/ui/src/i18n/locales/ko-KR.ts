@@ -1764,6 +1764,7 @@ const koKR: Record<string, string> = {
   "sidePane.subagent": "하위 에이전트",
   "sidePane.subagentDirectory": "하위 에이전트",
   "sidePane.selectionChat": "사이드 대화",
+  "sidePane.selectionChatHistory": "사이드 대화 기록",
   "sidePane.sites": "사이트",
   "sidePane.workflowRun": "워크플로 실행",
   "sidePane.workflowDirectory": "워크플로 실행",

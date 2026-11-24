@@ -1797,6 +1797,7 @@ const ruRU: Record<string, string> = {
   "sidePane.subagent": "Субагент",
   "sidePane.subagentDirectory": "Субагенты",
   "sidePane.selectionChat": "Побочный диалог",
+  "sidePane.selectionChatHistory": "История побочных диалогов",
   "sidePane.sites": "Сайты",
   "sidePane.workflowRun": "Запуск рабочего процесса",
   "sidePane.workflowDirectory": "Запуски рабочих процессов",
