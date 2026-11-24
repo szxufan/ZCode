@@ -1715,10 +1715,7 @@ const WorkspaceShellLayoutContent = memo(function WorkspaceShellLayoutComponent(
       showWindowControls={usesInlineWindowControls}
       // 工作区保活与侧栏动画会保留 DOM；独立 guest 浮层必须同步服从当前页面的展示状态。
       isVisible={
-        isWorkspaceVisible &&
-        workspaceMainView === "chat" &&
-        isSidePaneOpen &&
-        isSidePaneVisible
+        isWorkspaceVisible && workspaceMainView === "chat" && isSidePaneOpen && isSidePaneVisible
       }
       onCloseSidePane={handleToggleSidePane}
       toggleSidePaneShortcutLabel={toggleSidePaneShortcutLabel}
@@ -1762,9 +1759,7 @@ const WorkspaceShellLayoutContent = memo(function WorkspaceShellLayoutComponent(
       gitState={gitState}
       activeGitSourceId={activeGitSourceId}
       panelRef={sidePanePanelRef}
-      panelElementRef={
-        sidePanePanelElementRef
-      }
+      panelElementRef={sidePanePanelElementRef}
       browserNavigationRequest={browserNavigationRequest}
       browserRestoreUrls={browserRestoreUrls}
       screenshotSurfaceRequest={screenshotSurfaceRequest}
@@ -1795,6 +1790,7 @@ const WorkspaceShellLayoutContent = memo(function WorkspaceShellLayoutComponent(
       onOpenTerminalTab={handleOpenTerminalTab}
       onOpenReviewTab={handleToggleGit}
       onOpenSelectionSideConversation={handleOpenSelectionSideConversationLauncher}
+      onOpenSelectionSideChat={handleOpenSelectionSideChat}
       onRevealGitFileInTree={handleRevealGitFileInTree}
       onOpenBrowserUrl={handleOpenBrowserUrl}
       onOpenCodeViewer={handleOpenCodeViewer}
@@ -2344,7 +2340,6 @@ const WorkspaceShellLayoutContent = memo(function WorkspaceShellLayoutComponent(
             onGoForward={handleTaskNavForward}
           />
         </ScopedErrorBoundary>
-
       </div>
     </SavedWorkflowHubProvider>
   );

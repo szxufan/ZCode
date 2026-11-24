@@ -2035,6 +2035,7 @@ const zhCN: Record<string, string> = {
   "sidePane.subagent": "子智能体",
   "sidePane.subagentDirectory": "子智能体目录",
   "sidePane.selectionChat": "辅助对话",
+  "sidePane.selectionChatHistory": "历史辅助对话",
   "sidePane.sites": "部署",
   "sidePane.workflowRun": "工作流实例",
   "sidePane.workflowDirectory": "工作流目录",

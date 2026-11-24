@@ -2080,9 +2080,19 @@ export const zcodeSessionListParamsSchema = z
   .object({
     workspace: zcodeWorkspaceRefSchema.optional(),
     sessionIds: z.array(nonEmptyString).min(1).max(64).optional(),
+    /**
+     * 按 `parent_id` 过滤持久会话；用于查询辅助对话等附属 child。
+     * 与 `sessionIds` 互斥：显式 ID 查询只读身份，不做目录归属校验。
+     */
+    parentSessionId: nonEmptyString.optional(),
+    /** 按 `task_type` 过滤；与 `parentSessionId` 组合可精确列出某类 child。 */
+    sessionKind: zcodeSessionKindSchema.optional(),
     limit: z.number().int().positive().optional(),
   })
-  .strict();
+  .strict()
+  .refine((params) => !(params.sessionIds && params.parentSessionId), {
+    message: "sessionIds and parentSessionId are mutually exclusive",
+  });
 export type ZCodeSessionListParams = z.infer<typeof zcodeSessionListParamsSchema>;
 
 export const zcodeSessionSubagentsParamsSchema = z
@@ -2811,7 +2821,6 @@ export const zcodeWorkspaceUpdateAgentPromptPreferencesResultSchema = z
 export type ZCodeWorkspaceUpdateAgentPromptPreferencesResult = z.infer<
   typeof zcodeWorkspaceUpdateAgentPromptPreferencesResultSchema
 >;
-
 
 export const zcodeWorkspaceUpdateOffPeakToolPolicyParamsSchema = z
   .object({

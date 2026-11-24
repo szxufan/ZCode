@@ -1863,9 +1863,18 @@ export async function listSessions(context: ZCodeProtocolAgentServerContext, raw
     ? await Promise.all(params.sessionIds.map((id) => store?.getSession(id as SessionId) ?? null))
     : store
       ? await store.listSessions({
-          directory: params.workspace?.workspacePath,
+          // 辅助对话等附属 child 不在 TASK_LIST_SESSION_TYPES 中；按 parent 查询时
+          // 必须显式给出 taskTypes（调用方按 sessionKind 传），否则查不到。
+          ...(params.parentSessionId
+            ? {
+                // parentID 本身就是精确范围，不能再按 directory 过滤：辅助对话与父任务共用 cwd，
+                // 父任务运行在受管 worktree 时 child.directory 是 worktree 路径而非 workspacePath。
+                // workspace 归属由下方 resolvePersistedDirectorySession 统一校验（含 worktree 关系）。
+                parentID: params.parentSessionId as SessionId,
+              }
+            : { directory: params.workspace?.workspacePath }),
+          taskTypes: params.sessionKind ? [params.sessionKind] : [...TASK_LIST_SESSION_TYPES],
           limit: params.limit ?? 50,
-          taskTypes: [...TASK_LIST_SESSION_TYPES],
         })
       : [];
   const scoped = await Promise.all(
@@ -1900,7 +1909,9 @@ export async function listSessions(context: ZCodeProtocolAgentServerContext, raw
     }),
     ...(directorySessionId ? { directorySessionId } : {}),
   }));
-  if (params.sessionIds) return { sessions };
+  // 显式 ID 查询或 parent 查询只返回持久化事实；不混入 live registry 补充行，
+  // 否则会把同 workspace 的其他根会话也带进来。
+  if (params.sessionIds || params.parentSessionId) return { sessions };
   for (const record of context.sessions.values()) {
     if (record.persistence === "deferred") continue;
     if (!isTaskListSessionType(record.taskType)) continue;

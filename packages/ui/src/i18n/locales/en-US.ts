@@ -2217,6 +2217,7 @@ const enUS: Record<string, string> = {
   "sidePane.subagent": "Subagent",
   "sidePane.subagentDirectory": "Subagents",
   "sidePane.selectionChat": "Side conversation",
+  "sidePane.selectionChatHistory": "Side conversation history",
   "sidePane.sites": "Sites",
   "sidePane.workflowRun": "Workflow run",
   "sidePane.workflowDirectory": "Workflow runs",

@@ -63,8 +63,8 @@ Esc 只停止主对话；重新展开面板确认辅助对话仍持续输出。�
 | child 基准          | 由父 session 最新稳定落盘边界派生；父 turn 正在生成时保留已提交 user input，排除未完成 assistant/tool 增量                                                                                                                                                                                                        |
 | 框选历史行          | 只影响引用内容，不改变 child 的 fork 基准                                                                                                                                                                                                                                                                         |
 | 生命周期            | 主任务推进、切换任务、长时间未使用均不自动过期；不实现 TTL/数量回收和过期卡                                                                                                                                                                                                                                       |
-| 关闭                | 关闭 tab、关闭其他/全部、父任务删除/归档、窗口退出均关闭 live runtime 并移除 tab                                                                                                                                                                                                                                  |
-| 重启                | 不恢复 tab、草稿或 parent-child UI 绑定；隐藏 child 历史可继续留在 SQLite                                                                                                                                                                                                                                         |
+| 关闭                | 用户关闭 tab、关闭其他/全部仅 detach：退订并 stop 运行中 turn，child runtime 留在 resident pool 由 idle/LRU 回收；父任务归档/永久删除仍 close child runtime（数据保留，重开走冷恢复）                                                                                                                             |
+| 重启                | 不恢复 tab、草稿或 parent-child UI 绑定；历史 child 仍可按 `parentSessionId` 从 SQLite 查询并在父任务 Side Pane 重开                                                                                                                                                                                              |
 | 缺失 child          | `proto.sessionNotFound` 直接移除 tab；本次框选动作可重新创建一次，不显示失效页                                                                                                                                                                                                                                    |
 | blocked             | 主 session composer 被 Permission/AskUserQuestion/ExitPlanMode 隐藏时不显示浮层；副屏 blocked 时仍允许“添加到当前任务”，副屏动作禁用                                                                                                                                                                              |
 | 能力限制            | 副屏正常发送、compact、工具和权限交互；协议与 UI 同时禁止 goal、edit/retry、fork                                                                                                                                                                                                                                  |
@@ -110,18 +110,23 @@ Side Pane 启动页 / 顶部 + 菜单 / 主 composer `/side`、`/btw`
 主任务推进 / 切换任务 / 长时间未使用
     ---> 不改变 child 生命周期
 
-关闭 tab / 父任务删除归档 / sessionNotFound / 应用退出
+用户关闭 tab（X / Ctrl+W / 关闭其他/全部）
+    ---> stop 运行中 turn + 退订 ---> 移除 tab
+    （child runtime 留在 resident pool；持久 child 可从启动页「历史辅助对话」重开）
+
+父任务归档/永久删除 / sessionNotFound / 应用退出
     ---> 关闭 live runtime ---> 移除 tab
 ```
 
-| State / fact                       | Authority                            | Renderer state                                 | Persistence                    |
-| ---------------------------------- | ------------------------------------ | ---------------------------------------------- | ------------------------------ |
-| child conversation 与工具/权限状态 | CLI runtime/session store            | V4 projection                                  | SQLite hidden child            |
-| 当前窗口 parent → children/active  | renderer Side Pane registry          | tab 按 child 唯一，`activeTabId` 决定划词目标  | 不持久化                       |
-| composer 草稿与待发送引用          | 对应 composer                        | session/tab scoped state                       | 不持久化                       |
-| 已发送引用 chip                    | CLI session user message             | `# userselect:` 文本数组                       | 随 user message 持久化         |
-| workspace 隔离                     | session workspace ref                | `workspaceIdentity?.trim() \|\| workspacePath` | tab key 与 command route       |
-| live 列表可见性                    | CLI sessions-index/task-index filter | task list cache                                | root query 排除 parented child |
+| State / fact                       | Authority                                        | Renderer state                                 | Persistence                    |
+| ---------------------------------- | ------------------------------------------------ | ---------------------------------------------- | ------------------------------ |
+| child conversation 与工具/权限状态 | CLI runtime/session store                        | V4 projection                                  | SQLite hidden child            |
+| 当前窗口 parent → children/active  | renderer Side Pane registry                      | tab 按 child 唯一，`activeTabId` 决定划词目标  | 不持久化                       |
+| composer 草稿与待发送引用          | 对应 composer                                    | session/tab scoped state                       | 不持久化                       |
+| 已发送引用 chip                    | CLI session user message                         | `# userselect:` 文本数组                       | 随 user message 持久化         |
+| workspace 隔离                     | session workspace ref                            | `workspaceIdentity?.trim() \|\| workspacePath` | tab key 与 command route       |
+| live 列表可见性                    | CLI sessions-index/task-index filter             | task list cache                                | root query 排除 parented child |
+| 历史辅助对话列表                   | CLI sessionStore 按 `parentID` + `taskType` 查询 | Side Pane 启动页「历史辅助对话」section        | SQLite 持久 child              |
 
 ## Start 同模型推荐
 
@@ -346,7 +351,8 @@ theme/locale、remote transport 不叉乘。SSC37–SSC42 合并在
 - `sendGoalCommand`、`resumeGoal`、`editUserQuery`、`retryTurn`、`forkAssistant` 对该 kind
   返回 `guard.selectionSideChatRestrictedCommand`。
 - live sessions-index、task-index、项目/对话/分组/置顶/归档列表过滤该 kind；直接订阅 child
-  conversation topic 仍正常工作。
+  conversation topic 仍正常工作。历史重开通过 `session/list` 的 `parentSessionId` + `sessionKind`
+  过滤直接查 sessionStore，不依赖 sessions-index。
 
 ## 首轮 reminder E2E 回归（SSC33）
 
@@ -393,7 +399,23 @@ pnpm --filter @zcode/desktop test:e2e -- --spec './test/e2e/conversation-session
 - 切换主任务只隐藏不关闭；切回父任务恢复原 live session、草稿和引用。
 - Side Pane 是否显示 tab strip 必须以当前任务过滤后的可见 tab 集为准。workspace registry 即使仍保存
   其他任务的隐藏 tab，当前任务可见集合为空时也显示“打开标签页”启动页，不能渲染空 tab shell。
-- 所有关闭路径调用 child `deleteSession`/close lifecycle；不进入最近关闭。
+- 用户关闭 tab 仅 detach（退订 + stop 运行中 turn），不调用 `closeSession`；child runtime 留在
+  resident pool，由 `hasSubscribers` / idle TTL / LRU 回收。父任务归档/永久删除与 `sessionNotFound`
+  才 close child runtime（归档保留持久数据，重开走冷恢复）。关闭的辅助对话进入最近关闭，也可从
+  启动页「历史辅助对话」按 `parentSessionId` 查询重开。
+- 「历史辅助对话」section 位于启动页内置应用与 UI 插件之间，与「辅助对话」创建入口同一门控：仅
+  desktop Electron/desktop Web、存在 active parent session 且非移动端视口时出现（移动端视口不查询、
+  不渲染）。按 `session/list` 的 `parentSessionId` + `sessionKind` 过滤查询，按更新时间倒序展示，
+  点击复用 `handleOpenSelectionSideChat` 以同一 `childSessionId` 重开（tab id 幂等，已打开则激活）。
+  每次启动页被激活都重新查询，保证刚新建或关闭的辅助对话立即出现；切换父任务或工作区时旧结果立即
+  失效，不把上一个父任务的 child 渲染到新父任务下。无历史 child 时隐藏整个 section。重开不恢复
+  composer 草稿与选区引用。
+- 历史查询只以 `parentSessionId` 为范围，不附加 `directory` 过滤：辅助对话与父任务共用 cwd，父任务
+  运行在受管 worktree 时 child 的 `directory` 是 worktree 路径而不是 workspacePath，按目录过滤会把
+  这类 child 全部漏掉。workspace 归属仍由 `resolvePersistedDirectorySession` 统一校验（本地按
+  worktree 关系、远程按精确路径），同一父任务换成无关 workspace 查询返回空。
+- 历史行统一显示本地化「辅助对话」+ 更新时间：child 的持久标题是创建时写死的内部占位，不随首条
+  输入更新，也不本地化，不能直接作为行标题。列表最多展示最近 20 条，暂无「查看更多」。
 - 不存在用户可见的 expired 状态；临时网络断连沿用既有重连 UI，不创建替代 runtime。
 
 ## Remote and delivery boundaries
@@ -416,40 +438,45 @@ relay / desktop main 仅鉴权、attachment 调度与 rpc-frame 透传
 
 ## Accepted cases and pruning
 
-| ID    | Setup / action                                                      | Expected evidence                                                                                               | Status                                                                                            |
-| ----- | ------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------- | -------- |
-| SSC01 | 普通单行文字首次框选并打开副屏                                      | 新 hidden child + active tab + pending chip，不自动发送                                                         | accepted                                                                                          |
-| SSC02 | 当前激活辅助 tab 已输入问题后再次框选                               | 复用 active child，保留草稿并追加引用                                                                           | accepted                                                                                          |
-| SSC03 | 重复框选完全相同来源与文本                                          | 激活原 tab，无重复 chip                                                                                         | accepted                                                                                          |
-| SSC04 | 主会话普通生成中框选                                                | 允许创建；复制稳定输入边界，排除流式输出，发送沿 queue/guide                                                    | accepted                                                                                          |
-| SSC05 | 主会话 Permission/AskUser/ExitPlanMode                              | 整个框选浮层不显示，解除后恢复                                                                                  | accepted                                                                                          |
-| SSC06 | 副屏自身 blocked                                                    | 主任务动作可用；副屏动作禁用，处理后恢复                                                                        | accepted                                                                                          |
-| SSC07 | child sessionNotFound                                               | 无过期页；移除旧 tab，本次动作创建新 child                                                                      | accepted                                                                                          |
-| SSC08 | 手动关闭/关闭其他/全部                                              | runtime 关闭、tab 移除、不进最近关闭                                                                            | accepted                                                                                          |
-| SSC09 | 应用重启                                                            | 不恢复 tab；再次框选创建新 child                                                                                | accepted                                                                                          |
-| SSC10 | 切换主任务再切回                                                    | 按父任务隐藏/恢复，不串 session、workspace 或草稿                                                               | accepted                                                                                          |
-| SSC11 | 跨行、超限、控件文字、手机端                                        | 不创建 session；超限给出本地化提示                                                                              | accepted                                                                                          |
-| SSC12 | 远程同路径不同 identity                                             | 精确绑定 shared host，不串远端、不启动独立 runtime                                                              | accepted                                                                                          |
-| SSC13 | 副屏多轮工具与权限请求                                              | 正常执行并阻塞交互，但不进入任务列表                                                                            | accepted                                                                                          |
-| SSC14 | 添加到当前任务并连续框选                                            | 主 composer 保留草稿、累加 chips；新块只持久化 `{ text }`，旧块可读                                             | accepted                                                                                          |
-| SSC15 | 主任务进入后续真实用户轮次                                          | 原副屏仍可继续输入，不自动过期或重建                                                                            | accepted                                                                                          |
-| SSC16 | 副屏尝试 goal/edit/retry/fork                                       | UI 无入口，协议直接调用被统一 guard 拒绝                                                                        | accepted                                                                                          |
-| SSC17 | completed/streaming assistant 正文框选                              | 两个动作均出现；引用冻结为动作时文本，contentType=assistant                                                     | accepted                                                                                          |
-| SSC18 | 启动页或顶部 `+` 点击“辅助对话”                                     | 两处入口语义一致；每次创建并激活新的空 composer                                                                 | accepted                                                                                          |
-| SSC19 | child 继承父历史后首次打开或冷恢复                                  | provider 保留历史；所有 UI timeline/search/page/count 均为空，含父历史的时间线标记                              | accepted                                                                                          |
-| SSC20 | 父任务 running/blocked 时点击固定入口                               | 入口仍可用；无 active task 与手机端不出现                                                                       | accepted                                                                                          |
-| SSC21 | 框选浮层显示中英文动作                                              | 约 32px 高、12px 字号；中文统一“辅助对话”术语                                                                   | accepted                                                                                          |
-| SSC22 | 父任务有辅助对话后 fork 到 child                                    | child 展开侧栏显示启动页；切回父任务恢复同一 tab/child/草稿                                                     | accepted                                                                                          |
-| SSC23 | Goal 父任务为 active、paused 或 complete                            | 三类状态均创建 child；保留 provider 正文，不继承 Goal 运行态或 identity                                         | accepted                                                                                          |
-| SSC24 | 同一 assistant row 内从普通 Markdown 跨选到带操作工具栏的表格单元格 | 浮层正常出现；夹在 Range DOM 中的 `select-none` 工具栏按钮不把选区误判为控件选区                                | accepted                                                                                          |
-| SSC25 | 同一父任务连续点击固定辅助对话入口                                  | 创建两个不同 childSessionId 的 tab，标题按辅助对话 1/2 展示                                                     | accepted                                                                                          |
-| SSC26 | 同一父任务有多个辅助 tab，激活其中一个后主时间线划词                | 引用只进入 active child，保留其草稿；兄弟 tab 不新增引用                                                        | accepted                                                                                          |
-| SSC27 | 同一父任务存在辅助 tab，但当前激活浏览器/代码等非辅助 tab           | 主时间线划词创建新的辅助 child 并激活，不猜测最近使用 tab                                                       | accepted                                                                                          |
-| SSC28 | 主 composer 输入裸 `/side` 或 `/btw` 并从 `/` 面板选中              | 两个命令独立展示且行为等价：新建并激活空辅助 tab；输入中的命令 token 被移除，不发送消息；命令不写入 CLI catalog | accepted                                                                                          |
-| SSC29 | 草稿态（未创建 session）或辅助对话自身 composer 打开 `/` 面板       | 面板不包含 `/side`、`/btw`；CLI 返回的命令列表不受影响                                                          | accepted                                                                                          |
-| SSC30 | desktop 主会话 idle，主 composer 输入 `/side 你好` 或 `/btw 你好`   | 直接提交文字参数                                                                                                | 创建并激活新的 child；child 首条 user input 为 `你好` 并立即发送；父 timeline 不出现 `/side 你好` | accepted |
-| SSC31 | desktop 主会话 running（可有既有 active turn/queue）                | 提交 `/btw 继续查一下`                                                                                          | child 首条消息 startNow；父 active turn 继续，父 queue/guide 与 workspace 不变                    | accepted |
-| SSC32 | 主 composer 带附件、代码评论、网页/PPTX 元素或划词引用              | 提交 `/side 你好`                                                                                               | 不消费 App 命令，不创建 child；沿主会话原有输入路径发送                                           | accepted |
+| ID    | Setup / action                                                       | Expected evidence                                                                                               | Status                                                                                            |
+| ----- | -------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------- | -------- |
+| SSC01 | 普通单行文字首次框选并打开副屏                                       | 新 hidden child + active tab + pending chip，不自动发送                                                         | accepted                                                                                          |
+| SSC02 | 当前激活辅助 tab 已输入问题后再次框选                                | 复用 active child，保留草稿并追加引用                                                                           | accepted                                                                                          |
+| SSC03 | 重复框选完全相同来源与文本                                           | 激活原 tab，无重复 chip                                                                                         | accepted                                                                                          |
+| SSC04 | 主会话普通生成中框选                                                 | 允许创建；复制稳定输入边界，排除流式输出，发送沿 queue/guide                                                    | accepted                                                                                          |
+| SSC05 | 主会话 Permission/AskUser/ExitPlanMode                               | 整个框选浮层不显示，解除后恢复                                                                                  | accepted                                                                                          |
+| SSC06 | 副屏自身 blocked                                                     | 主任务动作可用；副屏动作禁用，处理后恢复                                                                        | accepted                                                                                          |
+| SSC07 | child sessionNotFound                                                | 无过期页；移除旧 tab，本次动作创建新 child                                                                      | accepted                                                                                          |
+| SSC08 | 手动关闭/关闭其他/全部                                               | detach：stop 运行中 turn、移除 tab、进最近关闭；child 留在 pool，历史列表可见                                   | accepted                                                                                          |
+| SSC09 | 应用重启                                                             | 不恢复 tab；历史列表仍可查到 child，点击重开冷恢复；固定入口仍新建 child                                        | accepted                                                                                          |
+| SSC10 | 切换主任务再切回                                                     | 按父任务隐藏/恢复，不串 session、workspace 或草稿                                                               | accepted                                                                                          |
+| SSC11 | 跨行、超限、控件文字、手机端                                         | 不创建 session；超限给出本地化提示                                                                              | accepted                                                                                          |
+| SSC12 | 远程同路径不同 identity                                              | 精确绑定 shared host，不串远端、不启动独立 runtime                                                              | accepted                                                                                          |
+| SSC13 | 副屏多轮工具与权限请求                                               | 正常执行并阻塞交互，但不进入任务列表                                                                            | accepted                                                                                          |
+| SSC14 | 添加到当前任务并连续框选                                             | 主 composer 保留草稿、累加 chips；新块只持久化 `{ text }`，旧块可读                                             | accepted                                                                                          |
+| SSC15 | 主任务进入后续真实用户轮次                                           | 原副屏仍可继续输入，不自动过期或重建                                                                            | accepted                                                                                          |
+| SSC16 | 副屏尝试 goal/edit/retry/fork                                        | UI 无入口，协议直接调用被统一 guard 拒绝                                                                        | accepted                                                                                          |
+| SSC17 | completed/streaming assistant 正文框选                               | 两个动作均出现；引用冻结为动作时文本，contentType=assistant                                                     | accepted                                                                                          |
+| SSC18 | 启动页或顶部 `+` 点击“辅助对话”                                      | 两处入口语义一致；每次创建并激活新的空 composer                                                                 | accepted                                                                                          |
+| SSC19 | child 继承父历史后首次打开或冷恢复                                   | provider 保留历史；所有 UI timeline/search/page/count 均为空，含父历史的时间线标记                              | accepted                                                                                          |
+| SSC20 | 父任务 running/blocked 时点击固定入口                                | 入口仍可用；无 active task 与手机端不出现                                                                       | accepted                                                                                          |
+| SSC21 | 框选浮层显示中英文动作                                               | 约 32px 高、12px 字号；中文统一“辅助对话”术语                                                                   | accepted                                                                                          |
+| SSC22 | 父任务有辅助对话后 fork 到 child                                     | child 展开侧栏显示启动页；切回父任务恢复同一 tab/child/草稿                                                     | accepted                                                                                          |
+| SSC23 | Goal 父任务为 active、paused 或 complete                             | 三类状态均创建 child；保留 provider 正文，不继承 Goal 运行态或 identity                                         | accepted                                                                                          |
+| SSC24 | 同一 assistant row 内从普通 Markdown 跨选到带操作工具栏的表格单元格  | 浮层正常出现；夹在 Range DOM 中的 `select-none` 工具栏按钮不把选区误判为控件选区                                | accepted                                                                                          |
+| SSC25 | 同一父任务连续点击固定辅助对话入口                                   | 创建两个不同 childSessionId 的 tab，标题按辅助对话 1/2 展示                                                     | accepted                                                                                          |
+| SSC26 | 同一父任务有多个辅助 tab，激活其中一个后主时间线划词                 | 引用只进入 active child，保留其草稿；兄弟 tab 不新增引用                                                        | accepted                                                                                          |
+| SSC27 | 同一父任务存在辅助 tab，但当前激活浏览器/代码等非辅助 tab            | 主时间线划词创建新的辅助 child 并激活，不猜测最近使用 tab                                                       | accepted                                                                                          |
+| SSC28 | 主 composer 输入裸 `/side` 或 `/btw` 并从 `/` 面板选中               | 两个命令独立展示且行为等价：新建并激活空辅助 tab；输入中的命令 token 被移除，不发送消息；命令不写入 CLI catalog | accepted                                                                                          |
+| SSC29 | 草稿态（未创建 session）或辅助对话自身 composer 打开 `/` 面板        | 面板不包含 `/side`、`/btw`；CLI 返回的命令列表不受影响                                                          | accepted                                                                                          |
+| SSC30 | desktop 主会话 idle，主 composer 输入 `/side 你好` 或 `/btw 你好`    | 直接提交文字参数                                                                                                | 创建并激活新的 child；child 首条 user input 为 `你好` 并立即发送；父 timeline 不出现 `/side 你好` | accepted |
+| SSC31 | desktop 主会话 running（可有既有 active turn/queue）                 | 提交 `/btw 继续查一下`                                                                                          | child 首条消息 startNow；父 active turn 继续，父 queue/guide 与 workspace 不变                    | accepted |
+| SSC32 | 主 composer 带附件、代码评论、网页/PPTX 元素或划词引用               | 提交 `/side 你好`                                                                                               | 不消费 App 命令，不创建 child；沿主会话原有输入路径发送                                           | accepted |
+| SSC43 | 关闭辅助对话后从启动页「历史辅助对话」点击重开                       | 同一 `childSessionId`；正文可见；tab id 幂等不重复创建；草稿/选区引用不恢复                                     | proposed                                                                                          |
+| SSC44 | 辅助对话运行中关闭 tab                                               | 当前 turn 被 stop；重开后不续跑；child runtime 可在 pool 命中                                                   | proposed                                                                                          |
+| SSC45 | 父任务永久删除 / 归档                                                | 永久删除：child 从历史列表消失；归档：close runtime 但保留数据，取消归档后仍可从历史列表重开                    | proposed                                                                                          |
+| SSC46 | 父任务运行在受管 worktree（辅助对话的 `directory` 是 worktree 路径） | 历史列表仍列出该父任务的辅助对话；同一父任务换成无关 workspace 查询返回空                                       | proposed                                                                                          |
+| SSC47 | 面板保持可见时新建或关闭辅助对话，随后再次进入启动页；移动端视口     | 历史列表包含最新变化；移动端视口不渲染该 section、不发起查询                                                    | proposed                                                                                          |
 
 剪枝：手机只验证入口缺失，不把 selection UI 与 replayable 物理恢复做笛卡尔积；theme/locale 通过
 组件和视觉代表覆盖；普通生成、queue/guide 只验证既有路由未回归；tool family 用代表性只读工具、
@@ -465,6 +492,14 @@ blocked 类型、theme/locale 做笛卡尔积。SSC28/29 只验证 App 层注入
 `/side` 与多开数量、locale 的组合由 i18n 关键词单测覆盖，不做 E2E 叉乘。SSC30/31 只保留
 文字参数、desktop continuous、本地 workspace 的 idle/running 两个代表状态；SSC32 由 focused
 composer/parser tests 覆盖，不与每类结构化上下文做笛卡尔积。
+
+SSC43–47 目前只有单元层证据，UI 行为未跑 E2E，保持 `proposed`：store 层的 `parentID` 过滤与
+worktree cwd 场景由 `apps/zcode-cli/packages/adapters/tests/session-store-parent-filter.test.ts` 覆盖；
+handler 层的 kind 过滤、不读 live registry、worktree 任务按源仓库 workspace 列出且无关 workspace
+返回空、`sessionIds` 与 `parentSessionId` 互斥，由
+`apps/zcode-cli/packages/bootstrap/tests/selection-side-chat-history-query.test.ts` 覆盖。启动页重开、
+关闭时 stop、父任务归档/永久删除后的列表变化、移动端视口门控与启动页激活刷新，需要在
+`conversation-session-selection-side-chat.test.ts` 补桌面 continuous 用例后才能转正。
 
 ## E2E handoff
 

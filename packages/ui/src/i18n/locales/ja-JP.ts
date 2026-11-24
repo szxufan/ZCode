@@ -1820,6 +1820,7 @@ const jaJP: Record<string, string> = {
   "sidePane.subagent": "サブエージェント",
   "sidePane.subagentDirectory": "サブエージェント",
   "sidePane.selectionChat": "サイド会話",
+  "sidePane.selectionChatHistory": "サイド会話の履歴",
   "sidePane.sites": "サイト",
   "sidePane.workflowRun": "ワークフローの実行",
   "sidePane.workflowDirectory": "ワークフローの実行履歴",

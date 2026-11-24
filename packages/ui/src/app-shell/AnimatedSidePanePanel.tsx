@@ -15,7 +15,11 @@ import {
   type DragStartEvent,
 } from "@dnd-kit/core";
 import { horizontalListSortingStrategy, SortableContext } from "@dnd-kit/sortable";
-import type { BrowserViewScreenshotSurfacePreparePayload, GitChangeSourceId } from "@zcode/shared";
+import type {
+  BrowserViewScreenshotSurfacePreparePayload,
+  GitChangeSourceId,
+  ZCodeSessionInfo,
+} from "@zcode/shared";
 import { FileManagerPane } from "@/WorkspaceFileTree.js";
 import type { FileManagerTarget } from "@/lib/workspaceSidePane.js";
 import { useZCodeSessionStore } from "@/store/zcodeSessionStore.js";
@@ -106,6 +110,7 @@ import {
   type OpenScopedWorkflowArtifactSideTabRequest,
   type OpenScopedWorkflowRunSideTabRequest,
   type OpenBackgroundBashSideTabRequest,
+  type OpenSelectionSideChatRequest,
   type WorkspaceSidePaneState,
 } from "@/lib/workspaceSidePane.js";
 import { inferMediaPreview, type CodeViewerSource } from "@/lib/codeViewer.js";
@@ -302,6 +307,81 @@ function useWindowResizeSettling(enabled: boolean) {
   return isResizeSettling;
 }
 
+const SIDE_CHAT_HISTORY_LIMIT = 20;
+
+/**
+ * 按父任务列出持久化的辅助对话 child，供启动页「历史辅助对话」重开。
+ * 直接查 sessionStore（`session/list` 的 parentSessionId + sessionKind 过滤），不走 sessions-index：
+ * 辅助对话 kind 被 sessions-index/task-index 过滤，且需要跨客户端、跨重启可见。
+ *
+ * 查询结果按查询身份（workspace + remote + parent）打标签：身份一变旧结果立即失效，
+ * 不会把上一个父任务的 child 渲染到新父任务下；同一身份内 `enabled` 翻转只决定是否重新查询，
+ * 保留上一份结果，避免每次进入启动页都先空后满。
+ */
+function useSideChatHistory(params: {
+  services: IServiceAccessor;
+  /** 当前父任务；草稿态、无 active task 或移动端视口时为 null，不查询。 */
+  parentSessionId: string | null;
+  workspacePath: string;
+  workspaceIdentity?: string;
+  remoteSessionId?: string;
+  /** 启动页被激活时才查询；每次进入启动页都拿到最新列表，新建/关闭 tab 不依赖额外通知。 */
+  enabled: boolean;
+}): { items: ZCodeSessionInfo[] } {
+  const { services, parentSessionId, workspacePath, workspaceIdentity, remoteSessionId, enabled } =
+    params;
+  const historyKey = JSON.stringify([
+    workspacePath,
+    workspaceIdentity ?? "",
+    remoteSessionId ?? "",
+    parentSessionId ?? "",
+  ]);
+  const [state, setState] = useState<{ key: string; items: ZCodeSessionInfo[] }>({
+    key: "",
+    items: [],
+  });
+  // 渲染期丢弃身份不匹配的旧结果；重新查询期间同一身份的上一份结果继续显示。
+  const items = state.key === historyKey ? state.items : [];
+
+  useEffect(() => {
+    if (!enabled || !parentSessionId) return;
+    let cancelled = false;
+    void services.zcodeAgentService
+      .listSessions({
+        workspacePath,
+        ...(workspaceIdentity ? { workspaceIdentity } : {}),
+        ...(remoteSessionId ? { remoteSessionId } : {}),
+        parentSessionId,
+        sessionKind: "selection_side_chat",
+        limit: SIDE_CHAT_HISTORY_LIMIT,
+      })
+      .then((sessions) => {
+        if (!cancelled) setState({ key: historyKey, items: sessions });
+      })
+      .catch((error) => {
+        if (cancelled) return;
+        setState({ key: historyKey, items: [] });
+        logger.warn("[App] 读取辅助对话历史失败", {
+          parentSessionId,
+          error: error instanceof Error ? error.message : String(error),
+        });
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    enabled,
+    historyKey,
+    parentSessionId,
+    remoteSessionId,
+    services,
+    workspaceIdentity,
+    workspacePath,
+  ]);
+
+  return { items };
+}
+
 export function AnimatedSidePanePanel({
   services,
   isDesktop,
@@ -350,6 +430,7 @@ export function AnimatedSidePanePanel({
   onOpenTerminalTab,
   onOpenReviewTab,
   onOpenSelectionSideConversation,
+  onOpenSelectionSideChat,
   onRevealGitFileInTree,
   onOpenBrowserUrl,
   onOpenCodeViewer,
@@ -441,6 +522,8 @@ export function AnimatedSidePanePanel({
   onOpenTerminalTab: () => void;
   onOpenReviewTab: () => void;
   onOpenSelectionSideConversation: () => void;
+  /** 重开历史辅助对话：以同一 childSessionId 复用/创建 tab，订阅冷恢复。 */
+  onOpenSelectionSideChat: (request: OpenSelectionSideChatRequest) => void;
   onRevealGitFileInTree?: (path: string) => void;
   onOpenBrowserUrl: (url: string) => void;
   onOpenCodeViewer: (source: CodeViewerSource) => void;
@@ -468,12 +551,20 @@ export function AnimatedSidePanePanel({
     remoteSessionId: workspaceRemoteSessionId ?? undefined,
     sessionId: activeTaskId,
   });
+  const isMobileTextInputViewport = useIsMobileTextInputViewport();
+  // 与「辅助对话」创建入口同一门控：存在 active task 且非移动端视口。
+  const canOpenSelectionSideConversation = shouldOfferSelectionSideConversation({
+    activeTaskId,
+    isMobileTextInputViewport,
+  });
+  // 历史重开与创建入口同门控。单独派生已收窄的父会话 id 供门控与 onOpen 共用：
+  // activeTaskId 本身是 string | null，派生布尔门控不会替它收窄类型。
+  const selectionSideChatParentId = canOpenSelectionSideConversation ? activeTaskId : null;
   const pluginUiWorkspaceKey =
     pluginUiTarget.workspaceIdentity?.trim() || pluginUiTarget.workspacePath;
   const { intl, locale } = useZCodeIntl();
   const isOfficeMode = useIsOfficeMode();
   const developerToolsEnabled = useDeveloperToolsVisibility();
-  const isMobileTextInputViewport = useIsMobileTextInputViewport();
   const isDragCollapsible = !isVisible;
   const isResizeDisabled = !isVisible;
   const workspaceKey = workspaceIdentity?.trim() || workspaceAbsPath;
@@ -527,6 +618,19 @@ export function AnimatedSidePanePanel({
     }
   }, [visibleTabs]);
   const hasVisibleTabs = visibleTabs.length > 0;
+  // 启动页的两种呈现：被激活的 new-tab 标签，或完整视图下没有任何可见标签。
+  const startupPageActive =
+    visibleTabs.some((tab) => tab.id === visibleActiveTabId && tab.type === "new-tab") ||
+    Boolean(fullView && !hasVisibleTabs);
+  // 每次进入启动页都重新查询，保证刚新建或关闭的辅助对话立即出现在历史列表里。
+  const sideChatHistory = useSideChatHistory({
+    services,
+    parentSessionId: selectionSideChatParentId,
+    workspacePath: workspaceAbsPath,
+    ...(workspaceIdentity ? { workspaceIdentity } : {}),
+    ...(workspaceRemoteSessionId ? { remoteSessionId: workspaceRemoteSessionId } : {}),
+    enabled: isVisible && startupPageActive,
+  });
   const tabsScrollViewportRef = useRef<HTMLDivElement | null>(null);
   const tabsScrollContentRef = useRef<HTMLDivElement | null>(null);
   const shouldMountContent = shouldMountSidePaneContent(isVisible, tabs);
@@ -544,10 +648,6 @@ export function AnimatedSidePanePanel({
   const isWindowResizeSettling = useWindowResizeSettling(hasRenderedSidePane);
   const panelLayout = resolveAnimatedSidePanePanelLayout();
   const hasReviewTab = visibleTabs.some((tab) => tab.type === "git");
-  const canOpenSelectionSideConversation = shouldOfferSelectionSideConversation({
-    activeTaskId,
-    isMobileTextInputViewport,
-  });
   // Sites 面板是官方插件 zcode-site 的 UI surface；远程 workspace 不开放本地插件入口。
   const canOpenSites =
     canOpenSelectionSideConversation &&
@@ -839,6 +939,41 @@ export function AnimatedSidePanePanel({
               />
             ))}
           </div>
+          {/* 历史辅助对话：与创建入口同门控（selectionSideChatParentId 已收窄），点击以同一 childSessionId 重开；无历史时隐藏。 */}
+          {selectionSideChatParentId && sideChatHistory.items.length > 0 ? (
+            <>
+              <div aria-hidden="true" className="my-4 h-px w-24 self-center bg-border" />
+              <section className="min-w-0" data-testid="side-pane-selection-chat-history">
+                <h2 className="pb-2 pl-2 text-ui-lg font-semibold text-foreground">
+                  {intl.formatMessage({ id: "sidePane.selectionChatHistory" })}
+                </h2>
+                <div className="grid min-w-0 grid-cols-1 gap-x-8 gap-y-1 @min-[36rem]/launcher:grid-cols-2">
+                  {sideChatHistory.items.map((item) => (
+                    <SidePaneLauncherRow
+                      key={item.sessionId}
+                      itemId={`selection-side-chat-history:${item.sessionId}`}
+                      icon={MessageSquareTextIcon}
+                      // child 的持久标题是创建时写死的内部占位，不会随首条输入更新；
+                      // 历史行统一用本地化名称，靠更新时间区分。
+                      label={intl.formatMessage({ id: "sidePane.selectionChat" })}
+                      description={formatTaskRelativeTime(item.updatedAt, intl)}
+                      onOpen={() =>
+                        onOpenSelectionSideChat({
+                          workspacePath: workspaceAbsPath,
+                          ...(workspaceIdentity ? { workspaceIdentity } : {}),
+                          ...(workspaceRemoteSessionId
+                            ? { remoteSessionId: workspaceRemoteSessionId }
+                            : {}),
+                          parentSessionId: selectionSideChatParentId,
+                          childSessionId: item.sessionId,
+                        })
+                      }
+                    />
+                  ))}
+                </div>
+              </section>
+            </>
+          ) : null}
           {/* 草稿已有真实预热 session；按正式 task 判断会隐藏整个插件入口。 */}
           {pluginUiTarget.sessionId ? (
             <>
