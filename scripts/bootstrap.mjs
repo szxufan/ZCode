@@ -214,7 +214,7 @@ runGit(["submodule", "update", "--init", "--recursive", "apps/zcode-cli"]);
 
 const clearedPatchedDependencies = await clearHoistedPatchedDependencyTargets({
   rootDir,
-  packageJsonPath: resolve(rootDir, "package.json"),
+  workspaceYamlPath: resolve(rootDir, "pnpm-workspace.yaml"),
 });
 if (clearedPatchedDependencies.length > 0) {
   console.log(

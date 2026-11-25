@@ -25,8 +25,8 @@ push tag v3.16.2
                 -> 生成 SHA256SUMS.txt -> softprops/action-gh-release@v2 创建 Release
 ```
 
-- `verify` 不重复运行受影响单测：单测沿用本地 pre-push 门禁（`docs/testing/pre-push-hook.md`），发版流水线只做静态检查兜底。
-- `build` 的 `pnpm bundle:desktop` 自包含：内部执行 `prepare:runtime-assets`（agent bundle、官方插件 runtime、native-search 仓库内置离线归档）与桌面生产构建，不依赖额外前置 build。Node/pnpm 版本锁定为 `mise.toml` / `packageManager` 的值（Node 24.14.0、pnpm 10.33.2）。
+- `verify` 不重复运行受影响单测：单测沿用本地 pre-push 门禁（`docs/testing/pre-push-hook.md`），发版流水线只做静态检查兜底。`verify` 的依赖安装与 `build` 一样最多重试 5 次，覆盖 pnpm#12880 的偶发链接竞态（上游已修复，重试仍作兜底）。
+- `build` 的 `pnpm bundle:desktop` 自包含：内部执行 `prepare:runtime-assets`（agent bundle、官方插件 runtime、native-search 仓库内置离线归档）与桌面生产构建，不依赖额外前置 build。Node/pnpm 版本锁定为 `mise.toml` / `packageManager` 的值（Node 24.14.0、pnpm 11.29.0）。
 - `ZCODE_ENV=production` 在 workflow 顶层 env 显式声明：`ZCODE_ENV` 未设置时桌面打包默认解析为 test 后端（`packages/desktop/scripts/desktop-product-identity.mjs`），漏设会把测试后端安装包发出去。
 - `release` 校验 tag 版本与根 `package.json` 一致后才创建 Release，防止手动打错 tag。Release 说明取 `CHANGELOG.md` 中该版本的段落；段落缺失（历史补 tag、CHANGELOG 未生成）时回退为默认说明，不阻塞发版。
 
@@ -51,9 +51,9 @@ push tag v3.16.2
 
 ## 已知边界
 
-- **fork 仓库（无 `origin/staging` 分支）推送远端尚不存在的 ref 时会被 pre-push 门禁拦截**：受影响单测对这类 ref 走 `firstPushBase`（`scripts/affected-unit-tests/scope.mjs`），硬性要求 `origin/staging` 做集成分支基线，内部仓库有、fork 没有。受支持的做法是推送时显式指定基线（scope 解析优先读取该变量）：`ZCODE_AFFECTED_TEST_BASE=<基线 sha> git push ...`。注意脚本会先校验"推送目标 == 当前 HEAD"：tag 必须打在 HEAD 上该变量才生效；给历史提交补 tag 时门禁无法通过，只能在该提交已随分支推送通过门禁的前提下 `git push --no-verify`。分支推送不受影响（自动用远端分支 sha 作基线）。
+- **首次推送新 ref（如全新 tag）没有 remote SHA 时**，pre-push 的受影响测试基线按 `origin/staging` → `origin/main` → `upstream/main` 顺序取第一个存在者，并与 HEAD 求 merge-base（`scripts/engineering-tests/scope.mjs`）。本 fork 无 `origin/staging`，自动回退到 `origin/main`，不要求额外环境变量；需要显式覆盖时可设 `ZCODE_AFFECTED_TEST_BASE=<基线 sha>`。推送目标剥离 tag 后必须等于当前 HEAD；给历史提交补 tag 只能在该提交已随分支推送通过门禁的前提下 `git push --no-verify`。
 - **Linux 发版仅构建 deb**：GitHub hosted ubuntu 上 electron-builder 在 rpm/pacman 目标阶段无任何报错输出地静默退出（bundle 步骤会转储日志尾部，fpm 工具链根因待查；内部 GitLab runner 预装 rpmbuild 等专用环境，故 rpm/pacman/AppImage 六平台只在内部链路构建）。GitHub 链路通过 `bundle.mjs --targets deb` 把 linux target 收敛到 deb。
 - Release 直接发布为 latest（非 draft）。需要人工确认时，在 release job 的 `softprops/action-gh-release` 步骤加 `draft: true`。
 - 未配置 electron-builder 的 GitHub publish provider，因此不产出 `latest.yml` 自动更新清单；客户端自动更新对接 GitHub Releases 属于后续产品决策，不在本流水线范围。
-- 构建矩阵平台清单维护在 workflow `plan` job 中（当前为 `windows-x64` / `macos-arm64` / `linux-x64`，linux 仅 `--targets deb`）。新增平台（如 macos-x64、linux-arm64）时同步扩展该矩阵与 `platforms` 输入选项，`bundle:desktop` 的目标用位置参数（`win x64`）或 `--os`/`--arch`（`win`/`mac`/`linux` + `x64`/`arm64`）指定；`--win`/`--mac` 等 flag 是 bundle 脚本内部传给 electron-builder 的形式，不是它的 CLI 参数。另注意 pnpm 10 会把 `--` 分隔符原样透传给脚本（脚本自行跳过），调用链上不要重复叠加 `--`。
+- 构建矩阵平台清单维护在 workflow `plan` job 中（当前为 `windows-x64` / `macos-arm64` / `linux-x64`，linux 仅 `--targets deb`）。新增平台（如 macos-x64、linux-arm64）时同步扩展该矩阵与 `platforms` 输入选项，`bundle:desktop` 的目标用位置参数（`win x64`）或 `--os`/`--arch`（`win`/`mac`/`linux` + `x64`/`arm64`）指定；`--win`/`--mac` 等 flag 是 bundle 脚本内部传给 electron-builder 的形式，不是它的 CLI 参数。另注意 pnpm 会把 `--` 分隔符原样透传给脚本（脚本自行跳过），调用链上不要重复叠加 `--`。
 - GitHub hosted runner 上构建不设置 `ELECTRON_MIRROR`（那是 mise 提供的国内镜像），Electron 与 electron-builder 资源默认走官方源，bundle 脚本自带的镜像回退与重试逻辑保持不变。

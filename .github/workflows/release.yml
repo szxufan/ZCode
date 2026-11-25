@@ -96,8 +96,19 @@ jobs:
         with:
           node-version: 24.14.0
           cache: pnpm
+      # pnpm#12880：nodeLinker=hoisted 链接收尾时 rename _tmp_ 目录间歇性 ENOENT。
+      # 上游已在 2026-08 修复（issue 关闭，报告者 2026-09 确认），但安装仍需保留重试兜底：
+      # v4.0.2 发版时 verify 曾连续两次命中（ubuntu-26.04 20261116.202），第三次才通过。
       - name: Install dependencies
-        run: pnpm install --frozen-lockfile
+        run: |
+          for attempt in 1 2 3 4 5; do
+            if pnpm install --frozen-lockfile; then
+              exit 0
+            fi
+            echo "::warning::install attempt ${attempt}/5 failed (known pnpm#12880 hoisted-linker flake), retrying in 20s"
+            sleep 20
+          done
+          exit 1
         env:
           HUSKY: 0
       - run: pnpm lint
@@ -130,17 +141,18 @@ jobs:
             ~\AppData\Local\electron-builder\Cache
           key: electron-${{ runner.os }}-${{ hashFiles('**/pnpm-lock.yaml') }}
           restore-keys: electron-${{ runner.os }}-
-      # pnpm#12880：nodeLinker=hoisted 在 Windows runner 上链接收尾时 rename _tmp_ 目录
-      # 间歇性 ENOENT（v3.25.0 两次发版分别挂在 @arms/rum-electron 下 vite/tsup 的
-      # esbuild 链接，错误路径随机；hoisted 布局与通过的 v3.24.0 完全一致，排除 lockfile）。
-      # 上游 pnpm 11.24 仍未修复，CI 侧重试是当前唯一缓解手段。
+      # pnpm#12880：nodeLinker=hoisted 链接收尾时 rename _tmp_ 目录间歇性 ENOENT
+      #（v3.25.0 两次发版分别挂在 @arms/rum-electron 下 vite/tsup 的 esbuild 链接，
+      # 错误路径随机；hoisted 布局与通过的 v3.24.0 完全一致，排除 lockfile）。
+      # 上游已在 2026-08 修复（issue 关闭，报告者 2026-09 确认）；重试仍保留作兜底，
+      # 与 verify 的安装步骤保持一致。
       - name: Install dependencies
         run: |
           for attempt in 1 2 3 4 5; do
             if pnpm install --frozen-lockfile; then
               exit 0
             fi
-            echo "::warning::install attempt ${attempt}/5 failed (known pnpm#12880 Windows flake), retrying in 20s"
+            echo "::warning::install attempt ${attempt}/5 failed (known pnpm#12880 hoisted-linker flake), retrying in 20s"
             sleep 20
           done
           exit 1

@@ -20,17 +20,16 @@ test("解析 scoped 与普通 patched dependency key", () => {
 test("bootstrap install 前只清理 hoisted patched dependency 目标", async () => {
   const rootDir = await mkdtemp(join(tmpdir(), "zcode-bootstrap-patch-"));
   try {
-    const packageJsonPath = join(rootDir, "package.json");
+    const workspaceYamlPath = join(rootDir, "pnpm-workspace.yaml");
+    // pnpm 11 起补丁声明只从 workspace 根配置读取，不再读 package.json 的 pnpm 字段。
     await writeFile(
-      packageJsonPath,
-      JSON.stringify({
-        pnpm: {
-          patchedDependencies: {
-            "@arms/rum-electron@0.0.3": "patches/arms.patch",
-            "vitest@4.1.7": "patches/vitest.patch",
-          },
-        },
-      }),
+      workspaceYamlPath,
+      [
+        "patchedDependencies:",
+        "  '@arms/rum-electron@0.0.3': patches/arms.patch",
+        "  vitest@4.1.7: patches/vitest.patch",
+        "",
+      ].join("\n"),
     );
     await mkdir(join(rootDir, "node_modules/@arms/rum-electron"), {
       recursive: true,
@@ -40,7 +39,7 @@ test("bootstrap install 前只清理 hoisted patched dependency 目标", async (
 
     const removed = await clearHoistedPatchedDependencyTargets({
       rootDir,
-      packageJsonPath,
+      workspaceYamlPath,
     });
 
     assert.deepEqual(removed.sort(), ["@arms/rum-electron", "vitest"]);
