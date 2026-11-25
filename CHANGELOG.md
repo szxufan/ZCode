@@ -1,5 +1,18 @@
 # Changelog
 
+## [4.0.2](https://github.com/szxufan/ZCode/compare/v4.0.1...v4.0.2) (2026-11-25)
+
+### Features
+
+* **relay:** 远程控制设置新增 Relay 服务器地址，不再需要手改配置文件 ([eca6bce](https://github.com/szxufan/ZCode/commit/eca6bcef2ff0b6110c0c6e6b41d59a7a0d0c3196))
+  * 入口：设置 → 远程控制 → 「Relay 服务器地址」，保存或回车生效，并纳入设置搜索
+  * 格式：须为带 http(s) 协议头的 origin；原先只能手改 setting.json 且无校验；现在由 main 归一化（去尾斜杠、主机小写、去默认端口），非法输入就地报错不落盘
+  * 切换地址：保存不同的地址等同停止远控并登出，需在新地址重新登录并手动启动；保存相同地址为 no-op
+  * 切换顺序：先对旧地址登出、丢弃已注册设备身份，再写入新地址，避免旧凭据被发给新服务器
+  * 登出：原先等待远端撤销返回（旧 relay 不可达时最长 15s）；现在本地立即生效，远端撤销后台尽力而为
+  * 启动被打断：注册等待期间停止/登出/切换地址后不再拉起连接，迟到的注册结果不保留（relay 侧补偿删除）、迟到的失败不改写状态
+  * 规则、所有权与事件顺序见 docs/relay-server/relay-v3-design.md §3.5
+
 ## [4.0.1](https://github.com/szxufan/ZCode/compare/v3.25.1...v4.0.1) (2026-11-24)
 
 ### Features
