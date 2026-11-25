@@ -2,7 +2,6 @@ import { readFileSync } from "node:fs";
 
 import { addUser, deleteUser, listDevices, listUsersView, setPassword } from "./operations.js";
 import { openRelayDatabase } from "../db.js";
-import { loadRelayConfig, RelayConfigError } from "../config.js";
 
 // relay-admin CLI（§8）：list-users | add-user --phone [--password-stdin] |
 // delete-user --phone | set-password --phone --password-stdin | list-devices --phone。
@@ -42,17 +41,14 @@ function readPasswordFromStdin(): string {
 
 async function main(): Promise<void> {
   const { command, flags } = parseArgs(process.argv.slice(2));
+  // 只读 --db / RELAY_DB_PATH：admin 运维不应被主进程的 JWT、端口等必填项牵连。
+  // 原先经 loadRelayConfig 取 dbPath，未设 RELAY_JWT_SECRET 时会误报"缺少数据库路径"，
+  // 与文档承诺的「--db 缺省取 RELAY_DB_PATH」不符。
   let dbPath = typeof flags.get("db") === "string" ? (flags.get("db") as string) : "";
+  if (!dbPath) dbPath = process.env.RELAY_DB_PATH?.trim() ?? "";
   if (!dbPath) {
-    try {
-      dbPath = loadRelayConfig().dbPath;
-    } catch (error) {
-      if (error instanceof RelayConfigError) {
-        console.error(`缺少数据库路径：请设置 --db 或 RELAY_DB_PATH（${error.message}）`);
-        process.exit(1);
-      }
-      throw error;
-    }
+    console.error("缺少数据库路径：请设置 --db 或 RELAY_DB_PATH");
+    process.exit(1);
   }
   const db = openRelayDatabase(dbPath);
   const phone = typeof flags.get("phone") === "string" ? (flags.get("phone") as string) : "";

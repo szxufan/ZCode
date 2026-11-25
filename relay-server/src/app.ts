@@ -11,7 +11,11 @@ import { registerDeviceAuthRoutes } from "./routes/deviceAuth.js";
 import { registerDeviceRoutes } from "./routes/devices.js";
 import { registerStaticRoutes } from "./routes/static.js";
 import { RELAY_LIMITS } from "./limits.js";
-import { RecordingSmsTransport, type RelaySmsTransport } from "./smsProvider.js";
+import {
+  RecordingSmsTransport,
+  AliyunSmsTransport,
+  type RelaySmsTransport,
+} from "./smsProvider.js";
 import { attachRelayWebSocket } from "./ws/relayWs.js";
 
 export interface RelayAppDeps {
@@ -43,6 +47,9 @@ export function buildRelayApp(deps: RelayAppDeps): RelayApp {
       const recording = new RecordingSmsTransport();
       smsTransport = recording;
       testSmsOutbox = recording.outbox;
+    } else if (config.sms.provider === "aliyun" && config.sms.aliyun) {
+      // 完整配置必须接真实通道；此前遗漏此分支导致所有阿里云发送都落入必失败占位实现。
+      smsTransport = new AliyunSmsTransport(config.sms.aliyun);
     } else {
       // provider 为 none 或 aliyun 但未配置时，发送路径直接 503；
       // 此 transport 永不应被调用，保留兜底以防配置竞态。

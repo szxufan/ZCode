@@ -55,8 +55,8 @@ export class RelayV3HttpClient {
 
   /**
    * 执行一次 V3 HTTP 操作。成功返回解析后的 data；
-   * 业务 code 非零抛 `RelayV3BusinessError`；网络失败/超时/HTTP 401/5xx/非法正文
-   * 抛 `RelayV3ConnectionError`（retryable 标注网络与 5xx）。
+   * 业务 code 非零（含 4xx/5xx 信封）抛 `RelayV3BusinessError`；网络失败/超时/
+   * HTTP 401/无业务信封的 4xx/5xx/非法正文抛 `RelayV3ConnectionError`。
    */
   async request<K extends RelayV3HttpOperation>(
     operation: K,
@@ -64,6 +64,7 @@ export class RelayV3HttpClient {
     body?: RelayV3HttpRequest<K>,
   ): Promise<RelayV3ResponseData<K>> {
     const spec = RELAY_V3_HTTP[operation];
+    const requestBody = normalizeRequestPhone(body);
     const url = `${this.options.baseUrl}${spec.path}`;
     if (requestOptions.signal?.aborted) {
       throw new RelayV3ConnectionError("relay-unavailable", false);
@@ -74,20 +75,21 @@ export class RelayV3HttpClient {
     let timeout: ReturnType<typeof setTimeout> | undefined;
     let cancelledByDeadline = false;
     try {
-      if (requestOptions.signal) requestOptions.signal.addEventListener("abort", cancel, { once: true });
+      if (requestOptions.signal)
+        requestOptions.signal.addEventListener("abort", cancel, { once: true });
       timeout = setTimeout(() => {
         cancelledByDeadline = true;
         controller.abort();
       }, this.timeoutMs);
       const headers: Record<string, string> = { "content-type": "application/json" };
       if (requestOptions.bearer) headers.authorization = `Bearer ${requestOptions.bearer}`;
-      const hasBody = spec.method !== "GET" && body !== undefined;
+      const hasBody = spec.method !== "GET" && requestBody !== undefined;
       let response: Response;
       try {
         response = await this.fetchImpl(url, {
           method: spec.method,
           headers,
-          ...(hasBody ? { body: JSON.stringify(body satisfies Json) } : {}),
+          ...(hasBody ? { body: JSON.stringify(requestBody satisfies Json) } : {}),
           signal: controller.signal,
         });
       } catch (error) {
@@ -115,18 +117,15 @@ export class RelayV3HttpClient {
       if (response.status === 401) {
         throw new RelayV3ConnectionError("auth-required", false);
       }
-      if (response.status >= 500) {
-        throw new RelayV3ConnectionError("relay-unavailable", true);
-      }
+      const envelope = parseEnvelope(text);
       if (response.status >= 400) {
-        // HTTP 4xx 可能带业务信封也可能没有；有则透传业务码，无则按不可用分类。
-        const envelope = parseEnvelope(text);
+        // 5xx 也可能携带明确业务错误（如短信发送失败）；有信封则透传业务码，
+        // 无信封时才按连接故障分类，避免把运营商问题误报为 relay-unavailable。
         if (envelope && typeof envelope.code === "number" && envelope.code !== 0) {
           throw new RelayV3BusinessError(envelope.code, envelope.msg ?? "", response.status);
         }
-        throw new RelayV3ConnectionError("relay-unavailable", false);
+        throw new RelayV3ConnectionError("relay-unavailable", response.status >= 500);
       }
-      const envelope = parseEnvelope(text);
       if (!envelope) {
         throw new RelayV3ConnectionError("relay-unavailable", true);
       }
@@ -146,13 +145,27 @@ export class RelayV3HttpClient {
   }
 }
 
+function normalizeRequestPhone<T>(body: T): T {
+  if (typeof body !== "object" || body === null || !("phone" in body)) return body;
+  const phone = body.phone;
+  if (typeof phone !== "string") return body;
+  const trimmed = phone.trim();
+  // 两端共用唯一归一化点；发送验证码与登录必须使用同一个 E.164 账号键。
+  const normalized = /^1\d{10}$/.test(trimmed) ? `+86${trimmed}` : trimmed;
+  return normalized === phone ? body : ({ ...body, phone: normalized } as T);
+}
+
 function parseEnvelope(text: string): { code: number; msg?: string; data?: unknown } | null {
   try {
     const value: unknown = JSON.parse(text);
     if (typeof value !== "object" || value === null) return null;
     const record = value as Record<string, unknown>;
     if (typeof record.code !== "number") return null;
-    return { code: record.code, msg: typeof record.msg === "string" ? record.msg : undefined, data: record.data };
+    return {
+      code: record.code,
+      msg: typeof record.msg === "string" ? record.msg : undefined,
+      data: record.data,
+    };
   } catch {
     return null;
   }

@@ -81,14 +81,14 @@ OpenBitFun（`C:\Users\xufan\Trae\OpenBitFun`）证明了替代形态可行：re
 
 ### 3.1 账号模型
 
-- 账号 = 手机号（E.164，唯一）。首次验证码登录成功即建号（与 OpenBitFun 一致）；可后置设置密码作为短信不可用时的登录方式（`relay-admin set-password` 或登录后设置）。
+- 账号 = 手机号（E.164，唯一）。首次验证码登录成功即建号（与 OpenBitFun 一致）；可后置设置密码作为短信不可用时的登录方式（`relay-admin set-password` 或登录后设置）。桌面与手机 Web 的共享 HTTP 客户端接受恰好 11 位且以 1 开头的大陆裸手机号，在发送验证码和验证码登录请求前统一归一化为 `+86` 前缀；服务端存储与协议仍只使用 E.164。
 - `RELAY_LOCAL_REGISTRATION=open|closed`：closed 时新手机号不可自注册，仅 `relay-admin add-user --phone <number>` 预建账号。
 - 账号与桌面模型供应商账号（Z.AI/BigModel OAuth）**完全无关**。桌面远控弹窗新增 relay 登录区（手机号+验证码表单），不触碰 OAuth credential；`auth-required` 语义改为"远控等待 relay 账号登录"，复用现有 manager 状态机。
 - 无 GUI 设备（R4 起的 source-server daemon）不走短信登录，经 §5.5 设备授权由同账号已认证设备批准接入。
 
 ### 3.2 短信验证码
 
-- 发送通道：Aliyun Dysmsapi，凭据来自 `RELAY_SMS_*` 环境变量。未配置时验证码接口返回 503（密码登录仍可用）——与 OpenBitFun 行为一致。
+- 发送通道：Aliyun Dysmsapi，凭据来自 `RELAY_SMS_*` 环境变量。完整配置必须实例化真实 `AliyunSmsTransport`；未配置时验证码接口返回 503（密码登录仍可用）——与 OpenBitFun 行为一致。运营商或网络发送失败返回 502 与 `sms send failed`，共享客户端保留该业务错误，不得误报为 `relay-unavailable`；服务端记录不含手机号、验证码、凭据和请求 URL 的失败类别日志。
 - 开发/测试通道：`RELAY_SMS_PROVIDER=test` 且非生产构建时，验证码不真正外发，仅返回给测试接缝；生产构建禁用 test provider，验证码不写日志。
 - 验证码 6 位数字、5 分钟有效、单次使用；存储为加盐哈希。发送限流：每 IP 每分钟 5 条、60 秒重发冷却、每手机号每天 10 条。校验限流：每 IP 每分钟 10 次，连续失败按账号指数锁定（5 次失败锁 5 分钟起步）。
 
@@ -360,7 +360,7 @@ sequenceDiagram
 | 设备数 / 活跃凭据 | 64 / 256 每账号，数据库原子准入 |
 | 密文单条 | 4 MiB 上限（含信封），超限 413 |
 
-部署（P3）：Dockerfile 多阶段构建 + docker-compose + 反向代理样例（Caddy）；仅暴露 TLS 入口；`RELAY_PORT`/`RELAY_DB_PATH`/`RELAY_STATIC_DIR`/`RELAY_SMS_*`/`RELAY_LOCAL_REGISTRATION`/`RELAY_JWT_SECRET`/`RELAY_TRUST_PROXY` 为配置面。`RELAY_TRUST_PROXY` 用于在反向代理后恢复真实客户端 IP（Fastify `trustProxy`，建议填反代所在 CIDR 或 `true` 且保证反代是唯一入口）；未配置时按直连地址限流。`RELAY_SMS_PROVIDER` 允许 `aliyun`/`test`/`none`，`none` 时验证码接口返回 503、密码登录仍可用，生产构建仍禁用 `test`。`relay-admin` CLI：`list-users`、`add-user --phone --password-stdin`、`delete-user --phone`、`set-password --phone --password-stdin`、`list-devices --phone`。
+部署（P3）：Dockerfile 多阶段构建 + docker-compose + 反向代理样例（Caddy）；仅暴露 TLS 入口；`RELAY_PORT`/`RELAY_DB_PATH`/`RELAY_STATIC_DIR`/`RELAY_SMS_*`/`RELAY_LOCAL_REGISTRATION`/`RELAY_JWT_SECRET`/`RELAY_TRUST_PROXY` 为配置面。进程完成监听后必须向 stdout 输出一条含端口号的启动成功日志，启动失败向 stderr 输出错误并非零退出，以便容器运维区分运行中与静默退出；日志不得包含密钥、token 或请求 URL，Fastify 全量请求日志保持关闭。`RELAY_TRUST_PROXY` 用于在反向代理后恢复真实客户端 IP（Fastify `trustProxy`，建议填反代所在 CIDR 或 `true` 且保证反代是唯一入口）；未配置时按直连地址限流。`RELAY_SMS_PROVIDER` 允许 `aliyun`/`test`/`none`，`none` 时验证码接口返回 503、密码登录仍可用，生产构建仍禁用 `test`。`relay-admin` CLI：`list-users`、`add-user --phone --password-stdin`、`delete-user --phone`、`set-password --phone --password-stdin`、`list-devices --phone`。
 
 ## 9. 实施里程碑
 

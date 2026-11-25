@@ -63,7 +63,9 @@ describe("Relay V3 HTTP 客户端", () => {
   });
 
   it("业务 code 非零 → RelayV3BusinessError（HTTP 200 与 4xx 均透传）", async () => {
-    const client = createClient(async () => jsonResponse(200, { code: 7, msg: "rate limited", data: null }));
+    const client = createClient(async () =>
+      jsonResponse(200, { code: 7, msg: "rate limited", data: null }),
+    );
     await expect(client.request("smsCode", {}, { phone: "+8613800138000" })).rejects.toBeInstanceOf(
       RelayV3BusinessError,
     );
@@ -73,14 +75,54 @@ describe("Relay V3 HTTP 客户端", () => {
     });
   });
 
+  it("5xx 带业务信封时保留短信错误，不冒充 relay-unavailable", async () => {
+    const client = createClient(async () =>
+      jsonResponse(502, { code: 8, msg: "sms send failed", data: null }),
+    );
+    await expect(client.request("smsCode", {}, { phone: "+8613800138000" })).rejects.toMatchObject({
+      name: "RelayV3BusinessError",
+      code: 8,
+      msg: "sms send failed",
+      httpStatus: 502,
+    });
+  });
+
+  it("大陆裸手机号在发送验证码和登录前统一归一化", async () => {
+    const bodies: unknown[] = [];
+    const client = createClient(async (_url, init) => {
+      bodies.push(JSON.parse(String(init?.body)));
+      return jsonResponse(200, { code: 1, msg: "stop", data: null });
+    });
+
+    await expect(client.request("smsCode", {}, { phone: "13800138000" })).rejects.toBeInstanceOf(
+      RelayV3BusinessError,
+    );
+    await expect(
+      client.request("login", {}, { phone: "13800138000", code: "123456" }),
+    ).rejects.toBeInstanceOf(RelayV3BusinessError);
+    await expect(client.request("smsCode", {}, { phone: "+8613800138000" })).rejects.toBeInstanceOf(
+      RelayV3BusinessError,
+    );
+
+    expect(bodies).toEqual([
+      { phone: "+8613800138000" },
+      { phone: "+8613800138000", code: "123456" },
+      { phone: "+8613800138000" },
+    ]);
+  });
+
   it("HTTP 401 → auth-required（不可重试）；5xx → relay-unavailable（可重试）", async () => {
     const unauthorized = createClient(async () => new Response("no auth", { status: 401 }));
-    await expect(unauthorized.request("relayToken", { bearer: "stale" }, { role: "device" })).rejects.toMatchObject({
+    await expect(
+      unauthorized.request("relayToken", { bearer: "stale" }, { role: "device" }),
+    ).rejects.toMatchObject({
       reason: "auth-required",
       retryable: false,
     });
     const serverError = createClient(async () => new Response("boom", { status: 502 }));
-    await expect(serverError.request("relayToken", { bearer: "ok" }, { role: "device" })).rejects.toMatchObject({
+    await expect(
+      serverError.request("relayToken", { bearer: "ok" }, { role: "device" }),
+    ).rejects.toMatchObject({
       reason: "relay-unavailable",
       retryable: true,
     });
@@ -90,14 +132,16 @@ describe("Relay V3 HTTP 客户端", () => {
     const networkError = createClient(async () => {
       throw new TypeError("fetch failed");
     });
-    await expect(networkError.request("relayToken", { bearer: "ok" }, { role: "device" })).rejects.toMatchObject({
+    await expect(
+      networkError.request("relayToken", { bearer: "ok" }, { role: "device" }),
+    ).rejects.toMatchObject({
       reason: "relay-unavailable",
       retryable: true,
     });
     const html = createClient(async () => new Response("<html>gateway</html>", { status: 200 }));
-    await expect(html.request("relayToken", { bearer: "ok" }, { role: "device" })).rejects.toBeInstanceOf(
-      RelayV3ConnectionError,
-    );
+    await expect(
+      html.request("relayToken", { bearer: "ok" }, { role: "device" }),
+    ).rejects.toBeInstanceOf(RelayV3ConnectionError);
   });
 
   it("15s 期限覆盖正文读取：慢正文超时 → 可重试错误", async () => {
@@ -117,7 +161,9 @@ describe("Relay V3 HTTP 客户端", () => {
         ),
       30,
     );
-    await expect(client.request("relayToken", { bearer: "ok" }, { role: "device" })).rejects.toMatchObject({
+    await expect(
+      client.request("relayToken", { bearer: "ok" }, { role: "device" }),
+    ).rejects.toMatchObject({
       reason: "relay-unavailable",
       retryable: true,
     });

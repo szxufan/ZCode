@@ -10,6 +10,14 @@ export interface RelaySmsTransport {
   send(phone: string, code: string): Promise<void>;
 }
 
+/** 仅携带可安全记录的错误类别；路由不得记录原始响应、手机号或验证码。 */
+export class AliyunSmsProviderError extends Error {
+  constructor(readonly reason: string) {
+    super(`aliyun sms send failed: ${reason}`);
+    this.name = "AliyunSmsProviderError";
+  }
+}
+
 /** 测试接缝：记录最近发送的验证码，供一致性矩阵与真实 relay 测试取用。 */
 export class RecordingSmsTransport {
   readonly outbox = new Map<string, string>();
@@ -78,7 +86,10 @@ export class AliyunSmsTransport implements RelaySmsTransport {
     });
     const body = (await response.json().catch(() => null)) as { Code?: string } | null;
     if (!response.ok || !body || body.Code !== "OK") {
-      throw new Error(`aliyun sms send failed: ${body?.Code ?? response.status}`);
+      const code = body?.Code;
+      const reason =
+        code && /^[A-Za-z0-9_.-]{1,128}$/.test(code) ? code : `http-${response.status}`;
+      throw new AliyunSmsProviderError(reason);
     }
   }
 }

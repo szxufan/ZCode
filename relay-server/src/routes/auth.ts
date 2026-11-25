@@ -23,7 +23,7 @@ import {
 import type { RelayRuntime } from "../runtime.js";
 import { smsSendAdmitted } from "../runtime.js";
 import { checkSmsCode, storeSmsCode } from "../smsCodes.js";
-import type { RelaySmsTransport } from "../smsProvider.js";
+import { AliyunSmsProviderError, type RelaySmsTransport } from "../smsProvider.js";
 
 // §3 账号与登录。首次验证码登录成功即建号；closed 时仅预建账号可登录；
 // 密码登录兜底短信不可用场景。锁定与限流常量见 limits.ts。
@@ -78,7 +78,15 @@ export function registerAuthRoutes(
       const code = storeSmsCode(db, { phone: parsed.phone, requestIp: ip }, runtime.now);
       try {
         await smsTransport.send(parsed.phone, code);
-      } catch {
+      } catch (error) {
+        // 只记录 provider Code / 错误类型，避免手机号、验证码、凭据和请求 URL 进入日志。
+        const reason =
+          error instanceof AliyunSmsProviderError
+            ? error.reason
+            : error instanceof Error
+              ? error.name
+              : "unknown";
+        console.warn("relay sms send failed", { reason });
         return reply.status(502).send({ code: CODES.SMS_UNAVAILABLE, msg: "sms send failed" });
       }
       smsSendAdmitted(runtime, parsed.phone, "consume");
