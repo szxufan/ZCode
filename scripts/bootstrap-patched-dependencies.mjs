@@ -1,5 +1,6 @@
 import { access, readFile, rm } from "node:fs/promises";
 import { join } from "node:path";
+import { parse as parseYaml } from "yaml";
 
 export function resolvePatchedDependencyPackageName(key) {
   const value = key.trim();
@@ -19,9 +20,9 @@ async function pathExists(path) {
   );
 }
 
-export async function clearHoistedPatchedDependencyTargets({ rootDir, packageJsonPath }) {
-  const packageJson = JSON.parse(await readFile(packageJsonPath, "utf8"));
-  const patchedDependencies = packageJson.pnpm?.patchedDependencies ?? {};
+export async function clearHoistedPatchedDependencyTargets({ rootDir, workspaceYamlPath }) {
+  const workspace = parseYaml(await readFile(workspaceYamlPath, "utf8"));
+  const patchedDependencies = workspace?.patchedDependencies ?? {};
   const packageNames = Object.keys(patchedDependencies).map(resolvePatchedDependencyPackageName);
   const removed = [];
   for (const packageName of packageNames) {

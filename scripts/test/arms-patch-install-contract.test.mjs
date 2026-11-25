@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
+import { parse as parseYaml } from "yaml";
 
 const repositoryRoot = new URL("../../", import.meta.url);
 
@@ -39,8 +40,8 @@ function assertCoherentHunkOffsets(patch) {
 }
 
 test("ARMS patch 固定 0.0.3 且目标 blob 与安装产物一致", async () => {
-  const [rootManifest, desktopManifest, npmrc, patch, installedEntry] = await Promise.all([
-    readJson("package.json"),
+  const [workspaceManifest, desktopManifest, npmrc, patch, installedEntry] = await Promise.all([
+    readFile(new URL("pnpm-workspace.yaml", repositoryRoot), "utf8").then(parseYaml),
     readJson("packages/desktop/package.json"),
     readFile(new URL(".npmrc", repositoryRoot), "utf8"),
     readFile(new URL("patches/@arms__rum-electron@0.0.3.patch", repositoryRoot), "utf8"),
@@ -53,14 +54,16 @@ test("ARMS patch 固定 0.0.3 且目标 blob 与安装产物一致", async () =>
   assert.equal(armsSpecifier, "^0.0.3");
   const armsVersion = "0.0.3";
   assert.equal(
-    rootManifest.pnpm?.patchedDependencies?.[`@arms/rum-electron@${armsVersion}`],
+    workspaceManifest.patchedDependencies?.[`@arms/rum-electron@${armsVersion}`],
     `patches/@arms__rum-electron@${armsVersion}.patch`,
   );
-  assert.equal(rootManifest.pnpm?.patchedDependencies?.["@arms/rum-electron@0.0.7"], undefined);
+  assert.equal(workspaceManifest.patchedDependencies?.["@arms/rum-electron@0.0.7"], undefined);
 
   // Bugfix：旧 patch 分次追加 hunk 后仍保留旧目标 hash，pnpm hoisted 第二次安装会误判并重复打补丁。
   const patchIndex = patch.match(/^index ([0-9a-f]{40})\.\.([0-9a-f]{40}) 100644$/mu);
   assert.ok(patchIndex, "patch 必须保留完整的 source/target blob hash");
   assertCoherentHunkOffsets(patch);
-  assert.equal(gitBlobHash(installedEntry), patchIndex[2]);
+  // 补丁目标 hash 按 LF 计算；Windows 安装产物可能是 CRLF，先归一化再比较内容是否一致。
+  const installedEntryLf = Buffer.from(installedEntry.toString("utf8").replace(/\r\n/g, "\n"));
+  assert.equal(gitBlobHash(installedEntryLf), patchIndex[2]);
 });

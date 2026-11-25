@@ -275,7 +275,7 @@ sequenceDiagram
 
 **待补（一期未完成）**：交互主链路的 E2E（进入编辑、保存、冲突确认、关窗确认）尚未落地，需新增 preview inline edit spec 并同步 `conversation-session` 的 case catalog / coverage matrix（可复用 `conversation-session-assistant-preview-cards.test.ts` 的驱动方式）。在 E2E 补齐前，验收场景 1/2/3/9/14/15 只能靠手工验证。
 
-提交前 `pnpm typecheck`、`pnpm lint`、`pnpm architecture:check --changed`。注意 lockfile 必须用 `packageManager` 钉定的 pnpm 版本重生成（`npx pnpm@10.33.2 install --lockfile-only`）：用更低版本的本地 pnpm 会把 `patch_hash` 写成短 base32 格式，CI 的 `--frozen-lockfile` 会报 `ERR_PNPM_LOCKFILE_CONFIG_MISMATCH`。
+提交前 `pnpm typecheck`、`pnpm lint`、`pnpm architecture:check --changed`。注意 lockfile 必须用 `packageManager` 钉定的 pnpm 版本重生成（`npx pnpm@11.29.0 install --lockfile-only`）：用更低版本的本地 pnpm 会把 `patch_hash` 写成短 base32 格式，CI 的 `--frozen-lockfile` 会报 `ERR_PNPM_LOCKFILE_CONFIG_MISMATCH`。
 
 ## 分期与后续
 
