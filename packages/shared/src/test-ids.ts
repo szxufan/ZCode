@@ -566,6 +566,18 @@ export const TID_MODEL_PROVIDER_MODEL_INPUT = "model-provider-model-input";
 export const TID_MODEL_PROVIDER_MODEL_DELETE_BUTTON = "model-provider-model-delete-button";
 /** 模型供应商添加模型按钮 */
 export const TID_MODEL_PROVIDER_ADD_MODEL_BUTTON = "model-provider-add-model-button";
+/** 模型供应商拉取模型按钮 */
+export const TID_MODEL_PROVIDER_PULL_MODELS_BUTTON = "model-provider-pull-models-button";
+/** 模型拉取预览弹窗 */
+export const TID_MODEL_DISCOVERY_DIALOG = "model-discovery-dialog";
+/** 模型拉取预览弹窗搜索输入框 */
+export const TID_MODEL_DISCOVERY_SEARCH_INPUT = "model-discovery-search-input";
+/** 模型拉取预览弹窗全选筛选结果复选框 */
+export const TID_MODEL_DISCOVERY_SELECT_ALL = "model-discovery-select-all";
+/** 模型拉取预览弹窗模型行复选框（动态后缀为模型 ID） */
+export const TID_MODEL_DISCOVERY_MODEL_CHECKBOX = "model-discovery-model-checkbox";
+/** 模型拉取预览弹窗确认导入按钮 */
+export const TID_MODEL_DISCOVERY_CONFIRM_BUTTON = "model-discovery-confirm-button";
 
 // Chat Toolbar
 /** 聊天工具栏模型选择按钮 */

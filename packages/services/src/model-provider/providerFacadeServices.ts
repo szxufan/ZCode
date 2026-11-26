@@ -15,10 +15,17 @@ import {
   type ProviderSettingsView,
   type ResolveModelConfigInput,
   type SavePersonalModelDraftInput,
+  type ImportDiscoveredProviderModelsInput,
+  type ImportDiscoveredProviderModelsResult,
+  type ProviderModelDiscoveryCandidate,
+  type ProviderModelDiscoveryResult,
+  isApiKeyAccess,
+  resolveProviderConnectionFingerprint,
 } from "@zcode/provider";
 import { createServiceDescriptor } from "../descriptors.js";
 import type { ModelConnectivityResult } from "@zcode/shared";
 import { createServiceLogger } from "../logger/serviceLogger.js";
+import type { ProviderModelDiscoveryClient } from "./openAIModelDiscoveryClient.js";
 
 export type {
   ProviderSettingsProviderView,
@@ -68,6 +75,12 @@ export interface IProviderSettingsService {
   testModelConnectivity(
     input: ProviderSettingsConnectivityRequest,
   ): Promise<ModelConnectivityResult>;
+  /** 第一阶段：请求 /models 并返回候选预览；不写入 Personal Config、不刷新 Registry。 */
+  discoverProviderModels(providerId: ProviderId): Promise<ProviderModelDiscoveryResult>;
+  /** 第二阶段：只导入选中的新模型；连接指纹不一致或成员已过期时拒绝写入。 */
+  importDiscoveredProviderModels(
+    input: ImportDiscoveredProviderModelsInput,
+  ): Promise<ImportDiscoveredProviderModelsResult>;
 }
 
 export const IProviderSettingsService = createServiceDescriptor<IProviderSettingsService>(
@@ -110,6 +123,7 @@ export function createProviderSettingsService(
   facade: ProviderSettingsFacade,
   ensureReady: () => Promise<void> = async () => {},
   testConnectivity?: ProviderSettingsConnectivityTester,
+  discoverModels?: ProviderModelDiscoveryClient,
 ): IProviderSettingsService {
   return {
     onDidChange: toEvent((listener) => facade.onDidChange(listener)),
@@ -205,6 +219,42 @@ export function createProviderSettingsService(
         providerId: input.providerId,
         modelId: input.modelId,
       });
+    },
+    discoverProviderModels: async (providerId) => {
+      await ensureReady();
+      if (!discoverModels) {
+        throw new Error("当前 Environment 未装配模型拉取能力");
+      }
+      // 拉取前等待同 Provider 已完成的写入，确保读到最新连接信息和成员名单。
+      await facade.waitForProviderOperations(providerId);
+      const view = facade.getView();
+      const provider = view.providers.find((item) => item.providerId === providerId);
+      if (!provider) throw new Error(`Provider 不存在: ${providerId}`);
+      if (!isApiKeyAccess(provider.effectiveConfig.access)) {
+        throw new Error("模型拉取仅支持 API Key 供应商");
+      }
+      if (provider.effectiveConfig.api?.type !== "openai-chat-completions") {
+        throw new Error("模型拉取仅支持 OpenAI Chat Completions 供应商");
+      }
+      const raw = await discoverModels({
+        providerConfig: provider.effectiveConfig,
+      });
+      const existingIds = new Set(provider.models.map((model) => model.modelId));
+      const candidates: ProviderModelDiscoveryCandidate[] = raw.candidates.map((candidate) => ({
+        modelId: candidate.modelId,
+        config: candidate.config,
+        existing: existingIds.has(candidate.modelId),
+        chatCapable: candidate.chatCapable,
+      }));
+      return Object.freeze({
+        connectionFingerprint: resolveProviderConnectionFingerprint(provider.effectiveConfig),
+        candidates: Object.freeze(candidates),
+        invalidCount: raw.invalidCount,
+      });
+    },
+    importDiscoveredProviderModels: async (input) => {
+      await ensureReady();
+      return facade.importDiscoveredModels(input);
     },
   };
 }

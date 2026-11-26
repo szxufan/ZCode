@@ -98,6 +98,12 @@ export interface ProviderSettingsMutationTarget {
     enabled: boolean,
     membership?: ProviderModelMembership,
   ): Promise<unknown>;
+  /** 批量导入选中的新模型；同一 Repository update 内完成成员、顺序和 Exact Rules。 */
+  importPersonalModels(
+    providerId: ProviderId,
+    models: readonly { readonly modelId: ModelId; readonly config: ModelConfig }[],
+    membership?: ProviderModelMembership,
+  ): Promise<unknown>;
   refresh(reason: string): Promise<ProviderRegistryServiceSnapshot>;
   /** 主动重读上游事实后再刷新 Registry。 */
   refreshSources?(reason: string): Promise<ProviderRegistryServiceSnapshot>;
@@ -144,6 +150,36 @@ export interface SavePersonalModelDraftInput {
   readonly personalConfig: ModelConfigObject;
   readonly useRecommendedConfig?: boolean;
   readonly basedOnRevision: number;
+}
+
+/** 一次性候选预览条目；`existing` 由 Host 投影，UI 不修改 config。 */
+export interface ProviderModelDiscoveryCandidate {
+  readonly modelId: ModelId;
+  readonly config: ModelConfigObject;
+  readonly existing: boolean;
+  readonly chatCapable: boolean;
+}
+
+export interface ProviderModelDiscoveryResult {
+  /** 连接事实指纹（baseUrl + apiKey）；导入时用于拒绝「连接已变化仍用旧候选」的迟到请求。 */
+  readonly connectionFingerprint: string;
+  readonly candidates: readonly ProviderModelDiscoveryCandidate[];
+  readonly invalidCount: number;
+}
+
+export interface ImportDiscoveredProviderModelsInput {
+  readonly providerId: ProviderId;
+  readonly connectionFingerprint: string;
+  readonly models: readonly {
+    readonly modelId: ModelId;
+    readonly config: ModelConfigObject;
+  }[];
+}
+
+export interface ImportDiscoveredProviderModelsResult {
+  readonly view: ProviderSettingsView;
+  readonly addedModelIds: readonly ModelId[];
+  readonly skippedModelIds: readonly ModelId[];
 }
 
 export interface ProviderSettingsProviderView extends Pick<
@@ -429,6 +465,60 @@ export class ProviderSettingsFacade {
     );
   }
 
+  /**
+   * 模型拉取第二阶段：只导入选中的新模型。
+   * 连接指纹不一致（拉取后 baseUrl/Key 被改）或 Provider 已删除时拒绝写入；
+   * 已有模型不被覆盖，远端消失模型不删除。全局 registry revision 不做比较：
+   * 无关供应商的后台刷新会抬高 revision，但不影响本 Provider 的导入安全性；
+   * 成员新鲜度由写入时快照 + membership.personalRevision 断言保证。
+   */
+  importDiscoveredModels(
+    input: ImportDiscoveredProviderModelsInput,
+  ): Promise<ImportDiscoveredProviderModelsResult> {
+    return this.#mutateProviderWithResult(
+      input.providerId,
+      "import-discovered-models",
+      async (target): Promise<{ added: ModelId[]; skipped: ModelId[] }> => {
+        const snapshot = requireSnapshot(this.#source);
+        const resolvedProvider = snapshot.resolution.resolvedProviders.find(
+          (item) => item.providerId === input.providerId,
+        );
+        if (!resolvedProvider) throw new Error(`Provider 不存在: ${input.providerId}`);
+        const currentFingerprint = resolveProviderConnectionFingerprint(
+          resolvedProvider.config.toJSON(),
+        );
+        if (currentFingerprint !== input.connectionFingerprint) {
+          throw new Error("Provider 连接信息已变化，请重新拉取模型后再导入");
+        }
+        const existing = new Set(resolvedProvider.models.map((model) => model.modelId));
+        const newModels = input.models.filter((model) => !existing.has(model.modelId));
+        const skipped = input.models
+          .filter((model) => existing.has(model.modelId))
+          .map((model) => model.modelId);
+        if (newModels.length === 0) {
+          return { added: [], skipped: [...skipped] };
+        }
+        const parsed = newModels.map((model) => ({
+          modelId: model.modelId,
+          config: parseModelConfig(model.config),
+        }));
+        await target.importPersonalModels(
+          input.providerId,
+          parsed,
+          this.#modelMembership(input.providerId, snapshot),
+        );
+        return {
+          added: parsed.map((model) => model.modelId),
+          skipped: [...skipped],
+        };
+      },
+    ).then(({ result, view }) => ({
+      view,
+      addedModelIds: Object.freeze(result.added),
+      skippedModelIds: Object.freeze(result.skipped),
+    }));
+  }
+
   #modelMembership(
     providerId: ProviderId,
     snapshot = requireSnapshot(this.#source),
@@ -492,6 +582,26 @@ export class ProviderSettingsFacade {
     const result = await operation(this.#mutations);
     await this.#mutations.refresh(`settings:${reason}`);
     return { result, view: this.getView() };
+  }
+
+  /** 与 #mutateProvider 相同的按 Provider 串行队列，但支持返回 operation result。 */
+  #mutateProviderWithResult<TResult>(
+    providerId: ProviderId,
+    reason: string,
+    operation: (target: ProviderSettingsMutationTarget) => Promise<TResult>,
+  ): Promise<{ readonly result: TResult; readonly view: ProviderSettingsView }> {
+    const previous = this.#providerMutationTails.get(providerId) ?? Promise.resolve();
+    const waitForPrevious = previous.catch(() => undefined);
+    // 写入与刷新语义复用 #mutateWithResult，队列只负责串行化，避免两处各自维护 refresh 流程。
+    const result = waitForPrevious.then(() => this.#mutateWithResult(reason, operation));
+    this.#providerMutationTails.set(providerId, result);
+    const cleanup = () => {
+      if (this.#providerMutationTails.get(providerId) === result) {
+        this.#providerMutationTails.delete(providerId);
+      }
+    };
+    void result.then(cleanup, cleanup);
+    return result;
   }
 }
 
@@ -591,6 +701,14 @@ function requireSnapshot(source: ProviderRegistryFacadeSource): ProviderRegistry
   const snapshot = source.getSnapshot();
   if (!snapshot) throw new Error("ProviderRegistryService 尚未 start()");
   return snapshot;
+}
+
+/** 连接事实指纹：discover 与 import 两侧用同一构造，保证「连接未变」语义一致。 */
+export function resolveProviderConnectionFingerprint(
+  config: Pick<ProviderConfigObject, "access" | "api">,
+): string {
+  const apiKey = config.access?.type === "api-key" ? (config.access.apiKey ?? "") : "";
+  return JSON.stringify([config.api?.baseUrl ?? "", apiKey]);
 }
 
 function requireEffectiveProvider(

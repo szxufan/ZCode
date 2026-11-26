@@ -426,6 +426,34 @@ Entitlement / Usage / Reset / Model Request
 一次测试只返回一个成功/失败联合结果，不保留单元素 `results[]`、Endpoint 聚合或 Host 端 API 类型推断。
 最终准入由目标 Environment 当前 Registry 的 ModelFactory 完成；测试不修改任何模型选择或 Active Model。
 
+## 模型拉取预览与二次选择导入
+
+普通 API Key Provider 的"拉取模型"按钮分为两个独立阶段，对应两次 Service 调用：
+
+```text
+阶段一：discoverProviderModels
+  保存连接草稿 → GET <baseUrl>/models → 校验/转换
+  → 返回候选列表 + 连接指纹（不写入 Personal Config、不刷新 Registry）
+
+阶段二：importDiscoveredProviderModels
+  用户在弹窗中筛选、勾选、确认
+  → Host 再校验连接指纹 / membership
+  → 选中新模型一次原子写入 → 刷新 Registry → 返回权威 View
+```
+
+候选列表是当前弹窗的 Renderer 内存数据，关闭弹窗即丢弃；Host 不缓存远端目录。`discover` 阶段成功后
+配置文件不变；取消、X、Esc 均放弃本次候选，不产生模型写入。已有模型在预览中禁选并标注"已存在"；
+`supported_endpoint_types` 缺少对话端点的候选同样禁选。
+
+弹窗默认不勾选任何模型；"全选当前筛选结果"只合并/移除当前可见且可选择的新模型，不因筛选条件变化清空
+其他已选项。确认导入只提交选中子集，在一次 Repository update 中完成成员、顺序与稀疏 Exact Rules 的原子
+变更，随后按既有流程刷新 Registry。
+
+导入冲突判据是连接事实指纹（Base URL + API Key），不是全局 Registry revision：无关 Provider 的后台
+刷新会抬高全局 revision，但不影响本 Provider 的导入安全性，不能误伤在途弹窗。拉取后连接信息被修改或
+Provider 被删除时拒绝导入且不写配置，用户重新拉取后再选择；成员新鲜度由写入时快照与
+`membership.personalRevision` 断言保证。导入反馈复用 Provider 详情栏的 saving/success/failure 横幅。
+
 ## 实施边界
 
 Renderer、Host、本地与远端 Environment 使用相同 Settings Service 契约。设置页不建立临时 Registry、

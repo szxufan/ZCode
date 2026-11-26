@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "revision": 44,
+  "revision": 45,
   "config": {
     "providerConfigRules": {
       "templateRules": [
@@ -1046,6 +1046,23 @@
               "type": "builtin",
               "key": "opencode"
             }
+          }
+        },
+        {
+          "templateId": "linkpi",
+          "templateNameMap": {
+            "zh-CN": "连接派",
+            "en-US": "LinkPi"
+          },
+          "config": {
+            "access": {
+              "type": "api-key"
+            },
+            "api": {
+              "type": "openai-chat-completions",
+              "baseUrl": "https://new-api.test.mylinkpi.com/v1"
+            },
+            "builtinModelIds": []
           }
         }
       ],

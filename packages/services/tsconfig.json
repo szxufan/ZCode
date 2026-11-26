@@ -9,5 +9,7 @@
   "include": ["src"],
   // 之前没声明对 rpc 的工程引用，tsc 会把 rpc 当普通源码依赖重复检查，导致错误在多个消费者里反复出现。
   // 这里补上 references，让 services 直接消费 rpc 的声明产物。
-  "references": [{ "path": "../shared" }, { "path": "../rpc" }]
+  // provider-node 同理：services 源码导入 @zcode/provider-node，未声明工程引用时下游（如 client）
+  // 构建会顺着包入口重编 provider-node 源码，在无 node types 的上下文中误报；声明引用后消费声明产物。
+  "references": [{ "path": "../shared" }, { "path": "../rpc" }, { "path": "../provider-node" }]
 }

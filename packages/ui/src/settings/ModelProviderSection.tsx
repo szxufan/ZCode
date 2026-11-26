@@ -78,6 +78,8 @@ export function ModelProviderSection({
     saveDisplayOrder,
     reorderableProviderIds,
     testModelConnectivity,
+    discoverProviderModels,
+    importDiscoveredProviderModels,
     providerSettingsView,
   } = useModelProviders({
     workspacePath,
@@ -323,6 +325,8 @@ export function ModelProviderSection({
           onDelete={handleDelete}
           onReorderProviderModels={reorderProviderModels}
           onTestModel={handleTestModel}
+          onDiscoverModels={discoverProviderModels}
+          onImportDiscoveredModels={importDiscoveredProviderModels}
           onOpenApiKeyUrl={handleOpenApiKeyUrl}
         />
       )}

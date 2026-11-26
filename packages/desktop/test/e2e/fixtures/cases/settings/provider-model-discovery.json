@@ -1,0 +1,16 @@
+{
+  "version": 1,
+  "caseName": "provider-model-discovery",
+  "spec": "./test/e2e/settings/providers/manual-review/pending/provider-model-discovery.test.ts",
+  "providerRequestPolicy": "none",
+  "noProviderRequests": true,
+  "providerFixtures": [],
+  "fileFixtures": [
+    {
+      "kind": "app-data-seed",
+      "path": "provider_config.json",
+      "purpose": "本地 HTTP /models 服务 + 预置 Provider；MD 验证拉取预览、筛选多选和确认导入，不请求真实上游。"
+    }
+  ],
+  "requests": []
+}

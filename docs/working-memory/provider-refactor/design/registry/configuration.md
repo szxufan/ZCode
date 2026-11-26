@@ -530,6 +530,18 @@ capability、context 或 output 上限才可证明相应模型事实。文档示
 不是能力证明。Models API 用于发布校验和差异报告，不直接参与 Runtime Overlay；正式静态事实仍只由现有
 Built-in、Account 与 Personal 层进入 Resolver。
 
+### 用户触发的 Models API 预览导入
+
+设置页允许普通 API Key Provider 显式拉取 OpenAI-compatible `/models`，把响应作为一次性候选预览展示给用户；
+用户筛选并勾选确认后，选中的模型作为稀疏 Personal Exact Rules 一次性写入 Personal Config。这是用户显式
+导入证据，不建立第四层 Runtime Overlay，不做后台同步，也不在 Host 或 Renderer 缓存远端目录。候选数据只
+在当前弹窗的 Renderer 内存中存活，关闭弹窗即丢弃。
+
+响应实际返回的字段映射到现有 Model Config 字段；缺失或 `null` 字段保持未覆盖（继续继承 Built-in/Personal
+规则），不伪造 reasoning 档位、参数 Map 或未声明的能力。`supported_endpoint_types` 明确缺少对话端点的条目
+在预览中禁选，但不影响其他候选。写入仅追加新成员；已有模型、顺序、启停和其他 Provider 不被覆盖，远端消失
+的模型不删除。确认导入在一个 Repository update 内原子完成，之后按既有流程刷新 Registry。
+
 ### OpenAI Responses Reasoning
 
 OpenAI Responses 的通用选项仍使用 `Model.options.reasoningLevel`，具体等级由对应 Model Rule 的

@@ -445,6 +445,61 @@ export class ProviderConfigService implements ProviderSource<ProviderConfigSnaps
     });
   }
 
+  /**
+   * 模型拉取确认后的批量导入边界：成员、顺序和稀疏 Exact Rules 在同一次 Repository update
+   * 中原子提交。已有模型（Built-in 或 Personal）自动跳过；远端消失模型不删除。
+   */
+  async importPersonalModels(
+    providerId: ProviderId,
+    models: readonly { readonly modelId: ModelId; readonly config: ModelConfig }[],
+    membership?: ProviderModelMembership,
+  ): Promise<ProviderConfigLayerSnapshot> {
+    const normalizedProviderId = normalizeId("providerId", providerId);
+    const zcodeBuiltin = await this.#zcodeBuiltinSource.read();
+    return this.#updatePersonal((current) => {
+      assertMembershipCurrent(membership, normalizedProviderId, current);
+      const provider = writableProviderOverlay(zcodeBuiltin, current, normalizedProviderId);
+      const builtinModelIds =
+        membership?.inheritedModelIds ??
+        resolveProviderBuiltinModelIds(zcodeBuiltin, current.providers, normalizedProviderId);
+      const builtinSet = new Set(builtinModelIds);
+      const currentModelIds = provider.personalModelIds ?? [];
+      const currentSet = new Set(currentModelIds);
+      const newModels = models.filter(
+        (model) => !builtinSet.has(model.modelId) && !currentSet.has(model.modelId),
+      );
+      if (newModels.length === 0) {
+        return {
+          providers: current.providers,
+          models: current.models,
+          providerOrder: current.providerOrder,
+        };
+      }
+      const nextModelIds = [...currentModelIds, ...newModels.map((model) => model.modelId)];
+      let nextRules = current.models;
+      for (const model of newModels) {
+        nextRules = nextRules.setExact(
+          normalizedProviderId,
+          model.modelId,
+          model.config.overlay(new ModelConfig({ enabled: true })),
+          true,
+        );
+      }
+      return {
+        providers: current.providers.set(
+          normalizedProviderId,
+          provider
+            .withPersonalModelIds(nextModelIds)
+            .withModelOrder(
+              normalizeModelOrder(builtinModelIds, nextModelIds, provider.modelOrder ?? []),
+            ),
+        ),
+        models: nextRules,
+        providerOrder: current.providerOrder,
+      };
+    });
+  }
+
   /** Model 编辑弹窗的唯一写入边界：成员、顺序、精确 Rule 在同一次 Repository update 中提交。 */
   async savePersonalModelDraft(
     providerId: ProviderId,

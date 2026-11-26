@@ -83,7 +83,7 @@ flowchart TD
 | 国内供应商 | 火山方舟                          | API → Coding Plan → Agent Plan                                          |
 | 国内供应商 | 阶跃星辰                          | API → Step Plan                                                         |
 | 海外原厂   | OpenAI、Anthropic、xAI            | 按此品牌顺序，各保留已有 API 入口                                       |
-| 聚合平台   | SiliconFlow、OpenRouter、OpenCode | 按此品牌顺序；OpenCode 内先 Go 后 Zen，各按 Responses → Messages → Chat |
+| 聚合平台   | SiliconFlow、OpenRouter、OpenCode、连接派 | 按此品牌顺序；OpenCode 内先 Go 后 Zen，各按 Responses → Messages → Chat；连接派追加在末尾 |
 
 **智谱专区保留已有例外。** ProviderTemplatePicker 固定显示 BigModel Coding Plan → Z.ai Coding Plan → BigModel API → Z.ai API，不采用 JSON 内这四项的相对顺序。本轮保留四项原始数组顺序和专区 UI 行为，不能声称只改 JSON 就能改变专区次序。“创建自定义供应商”是其他供应商区第一张操作卡，不属于模板排序。
 

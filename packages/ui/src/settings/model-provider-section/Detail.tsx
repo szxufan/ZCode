@@ -3,7 +3,12 @@ import {
   type ProviderSettingsFormProvider,
 } from "@/lib/providerSettingsFormTypes.js";
 import type { ModelConnectivityResult } from "@zcode/shared";
-import type { SavePersonalModelDraftInput } from "@zcode/provider";
+import type {
+  ImportDiscoveredProviderModelsInput,
+  ImportDiscoveredProviderModelsResult,
+  ProviderModelDiscoveryResult,
+  SavePersonalModelDraftInput,
+} from "@zcode/provider";
 import type { ModelProviderNavItem } from "./constants.js";
 import { InlineEditableProviderCard } from "./InlineEditableProviderCard.js";
 import { ModelProviderLoadingCard } from "./StatusCards.js";
@@ -21,6 +26,8 @@ export function ModelProviderSectionDetail({
   onDelete,
   onReorderProviderModels,
   onTestModel,
+  onDiscoverModels,
+  onImportDiscoveredModels,
   onOpenApiKeyUrl,
 }: {
   selectedNavItem: ModelProviderNavItem | null;
@@ -43,6 +50,10 @@ export function ModelProviderSectionDetail({
   onDelete: (provider: ProviderSettingsFormProvider) => Promise<void>;
   onReorderProviderModels?: (providerId: string, modelIds: string[]) => Promise<void>;
   onTestModel: (providerId: string, modelId: string) => Promise<ModelConnectivityResult>;
+  onDiscoverModels?: (providerId: string) => Promise<ProviderModelDiscoveryResult>;
+  onImportDiscoveredModels?: (
+    input: ImportDiscoveredProviderModelsInput,
+  ) => Promise<ImportDiscoveredProviderModelsResult>;
   onOpenApiKeyUrl: (url: string) => void;
 }) {
   const { intl } = useZCodeIntl();
@@ -85,6 +96,8 @@ export function ModelProviderSectionDetail({
           : undefined
       }
       onTestModel={onTestModel}
+      onDiscoverModels={onDiscoverModels}
+      onImportDiscoveredModels={onImportDiscoveredModels}
       presetApiKeyUrl={customApiKeyUrl}
       readOnlyEndpoints={false}
       nameEditable

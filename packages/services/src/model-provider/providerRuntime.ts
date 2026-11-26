@@ -24,6 +24,7 @@ import {
   type ModelSelectionConfiguredDefaultSource,
   type ProviderSettingsConnectivityTester,
 } from "./providerFacadeServices.js";
+import type { ProviderModelDiscoveryClient } from "./openAIModelDiscoveryClient.js";
 import { createServiceLogger } from "#src/logger/serviceLogger.js";
 
 const log = createServiceLogger("provider-runtime");
@@ -31,6 +32,7 @@ const log = createServiceLogger("provider-runtime");
 export interface ProviderRuntimeOptions extends ProviderConfigRuntimeOptions {
   readonly accountSource?: RefreshableProviderSource<AccountProviderConfigSnapshot>;
   readonly testConnectivity?: ProviderSettingsConnectivityTester;
+  readonly discoverModels?: ProviderModelDiscoveryClient;
 }
 
 export interface ProviderRuntimeDependencies {
@@ -38,6 +40,7 @@ export interface ProviderRuntimeDependencies {
   readonly accountSource?: RefreshableProviderSource<AccountProviderConfigSnapshot>;
   readonly disposeAccountSource?: () => void;
   readonly testConnectivity?: ProviderSettingsConnectivityTester;
+  readonly discoverModels?: ProviderModelDiscoveryClient;
   readonly modelSelectionConfiguredDefaultSource?: ModelSelectionConfiguredDefaultSource;
   readonly disposeModelSelectionConfiguredDefaultSource?: () => void;
 }
@@ -108,6 +111,7 @@ export class ProviderRuntime {
       settingsFacade,
       ensureReady,
       dependencies.testConnectivity,
+      dependencies.discoverModels,
     );
     this.#modelSelectionRuntime = createModelSelectionService(
       createNodeModelSelectionFacade(this.registryService),
@@ -162,6 +166,7 @@ function createSettingsMutationTarget(
       configService.deletePersonalModel(providerId, modelId, membership),
     setPersonalModelEnabled: (providerId, modelId, enabled, membership) =>
       configService.setPersonalModelEnabled(providerId, modelId, enabled, membership),
+    importPersonalModels: configService.importPersonalModels.bind(configService),
     savePersonalModelDraft: (
       providerId,
       originalModelId,
@@ -202,7 +207,7 @@ function createSettingsMutationTarget(
 }
 
 export function createProviderRuntime(options: ProviderRuntimeOptions): ProviderRuntime {
-  const { accountSource, testConnectivity, ...configRuntimeOptions } = options;
+  const { accountSource, testConnectivity, discoverModels, ...configRuntimeOptions } = options;
   const configRuntime = createProviderConfigRuntime(configRuntimeOptions);
   const modelSelectionConfiguredDefaultSource = new NodeModelSelectionConfigRepository({
     personalRepository: configRuntime.personalRepository,
@@ -211,6 +216,7 @@ export function createProviderRuntime(options: ProviderRuntimeOptions): Provider
     configRuntime,
     accountSource,
     testConnectivity,
+    discoverModels,
     modelSelectionConfiguredDefaultSource,
     disposeModelSelectionConfiguredDefaultSource: () =>
       modelSelectionConfiguredDefaultSource.dispose(),

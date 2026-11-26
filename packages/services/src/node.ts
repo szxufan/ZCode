@@ -262,6 +262,11 @@ export {
   type ProviderProvisioningSourceOptions,
 } from "./model-provider/providerProvisioningSource.js";
 export {
+  createOpenAIModelDiscoveryClient,
+  type ProviderModelDiscoveryClient,
+  type ProviderModelDiscoveryClientInput,
+} from "./model-provider/openAIModelDiscoveryClient.js";
+export {
   createProviderProvisioningTarget,
   type ProviderProvisioningTargetOptions,
 } from "./model-provider/providerProvisioningTarget.js";
@@ -485,6 +490,7 @@ import {
   IProviderSettingsService,
 } from "./model-provider/providerFacadeServices.js";
 import { createProviderSettingsConnectivityTester } from "./model-provider/providerSettingsConnectivity.js";
+import { createOpenAIModelDiscoveryClient } from "./model-provider/openAIModelDiscoveryClient.js";
 import {
   createProviderProvisioningSource,
   listProviderProvisioningCredentialKeys,
@@ -1663,6 +1669,7 @@ export function createLocalServices(options: {
         return providerConnectivityAgentService.testModelConnectivity(input);
       },
     }),
+    discoverModels: createOpenAIModelDiscoveryClient({ apiClient }),
     disposeAccountSource: () => {
       disposeAccountProviderInvalidation();
       accountProviderRefreshErrorDispose();
@@ -3046,7 +3053,7 @@ export function disposeServiceResources(services: ServiceCollection): void {
   )?.dispose?.();
   // Bugfix: host process 退出前以前没有统一遍历本地服务做资源回收，
   // terminal/task wrapper 这类会拉起子进程的服务只能等宿主进程自己结束，时序上可能留下短暂残留。
-  // 这里集中调用各服务的本地 disposeAll 钩子，把“退出 app = 回收所有托管资源”落成机械动作。
+  // 这里集中调用各服务的本地 disposeAll 钩子，把"退出 app = 回收所有托管资源"落成机械动作。
   const disposableServices = [
     services.getOptional(ITerminalService),
     services.getOptional(IZCodeTaskService),

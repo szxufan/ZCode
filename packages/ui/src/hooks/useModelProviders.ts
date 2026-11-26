@@ -1,6 +1,11 @@
 import { useState, useCallback, useMemo, useRef } from "react";
 import type { ProviderSettingsFormProvider } from "@/lib/providerSettingsFormTypes.js";
 import type { ModelConnectivityResult } from "@zcode/shared";
+import type {
+  ImportDiscoveredProviderModelsInput,
+  ImportDiscoveredProviderModelsResult,
+  ProviderModelDiscoveryResult,
+} from "@zcode/provider";
 import type { ProviderSettingsView } from "@zcode/services";
 import { useServices } from "@/hooks/useServices.js";
 import { logger } from "@/logger.js";
@@ -44,14 +49,17 @@ export function useModelProviders(target: {
       }),
     [effectiveModelProviders, providerSettingsView],
   );
+  // commit 是 useProviderSettingsServiceView 返回的稳定 useCallback；先解构出稳定引用，
+  // 既满足 exhaustive-deps 的整对象依赖检查，也不让回调随读取对象每渲染换引用。
+  const { commit: commitReadView } = providerSettingsRead;
   const commitProviderSettingsView = useCallback(
     (view: ProviderSettingsView): void => {
       // 远端 mutation 的返回值是目标 Environment 已刷新后的权威 View，
       // 只依赖 onDidChange 会在 attachment 换代/事件丢失时留下删除前的 UI 快照。
       // 统一在 Hook 边界提交返回 View，仍由 useProviderSettingsServiceView 做 Service/revision 守卫。
-      providerSettingsRead.commit(view);
+      commitReadView(view);
     },
-    [providerSettingsRead.commit],
+    [commitReadView],
   );
   const [refreshing, setRefreshing] = useState(false);
   const latestRefreshTokenRef = useRef(0);
@@ -189,7 +197,7 @@ export function useModelProviders(target: {
         target.connectivityWorkspacePath?.trim() || (remoteActive ? "" : target.workspacePath);
       if (!workspacePath.trim()) {
         // Bug 根因（ZCT-2112556538453495808）：旧逻辑只认已打开的本地 tab，只开远程项目时
-        // 直接报“本地工作区不可用”。Provider 配置是本机全局配置，测试不依赖项目；本机 Host
+        // 直接报"本地工作区不可用"。Provider 配置是本机全局配置，测试不依赖项目；本机 Host
         // 始终有自己的对话目录（远程恢复启动时 Host 也用它准备会话库），所以由 Host 解析并创建，
         // UI 不拼路径，也不把远端路径交给本机。
         try {
@@ -223,6 +231,23 @@ export function useModelProviders(target: {
     ],
   );
 
+  const discoverProviderModels = useCallback(
+    async (providerId: string): Promise<ProviderModelDiscoveryResult> =>
+      providerSettingsService.discoverProviderModels(providerId),
+    [providerSettingsService],
+  );
+
+  const importDiscoveredProviderModels = useCallback(
+    async (
+      input: ImportDiscoveredProviderModelsInput,
+    ): Promise<ImportDiscoveredProviderModelsResult> => {
+      const result = await providerSettingsService.importDiscoveredProviderModels(input);
+      commitProviderSettingsView(result.view);
+      return result;
+    },
+    [commitProviderSettingsView, providerSettingsService],
+  );
+
   return {
     modelProviders: effectiveModelProviders,
     providerTemplates: providerSettingsView?.providerTemplates ?? [],
@@ -244,6 +269,8 @@ export function useModelProviders(target: {
     reorderProviderModels,
     saveDisplayOrder,
     testModelConnectivity,
+    discoverProviderModels,
+    importDiscoveredProviderModels,
     providerSettingsView,
   };
 }

@@ -19,9 +19,18 @@ import {
   TID_MODEL_PROVIDER_MODEL_INPUT,
   TID_MODEL_PROVIDER_NAME_EDIT_BUTTON,
   TID_MODEL_PROVIDER_NAME_INPUT,
+  TID_MODEL_PROVIDER_PULL_MODELS_BUTTON,
   testId,
 } from "@zcode/shared/test-ids";
-import { InfoIcon, LockKeyholeIcon, Plus, Pencil, Trash2, MoreHorizontal } from "lucide-react";
+import {
+  InfoIcon,
+  LockKeyholeIcon,
+  Plus,
+  Pencil,
+  Trash2,
+  MoreHorizontal,
+  CloudDownload,
+} from "lucide-react";
 import { Button } from "@/components/ui/button.js";
 import { Input } from "@/components/ui/input.js";
 import {
@@ -359,6 +368,8 @@ export function ProviderModelsSection({
   onDeleteModel,
   onAddModel,
   onReorderModelIds,
+  onPullModels,
+  pullingModels = false,
   settingsRevision = 0,
 }: {
   providerId: string;
@@ -376,6 +387,9 @@ export function ProviderModelsSection({
   onModelEnabledChange?: (modelId: string, enabled: boolean) => void | Promise<void>;
   onAddModel: (model: ProviderSettingsFormModel) => void | Promise<void>;
   onReorderModelIds?: (modelIds: string[]) => void;
+  /** API Key + OpenAI Chat Completions 供应商的拉取模型入口；undefined 时不显示。 */
+  onPullModels?: () => Promise<void>;
+  pullingModels?: boolean;
   settingsRevision?: number;
 }) {
   const { intl } = useZCodeIntl();
@@ -406,24 +420,27 @@ export function ProviderModelsSection({
   });
   const { draft: addDraft } = editor;
 
+  // editor 对象随渲染重建，其方法引用每渲染都变；依赖整个 editor 与依赖 editor.reset
+  // 的稳定性等价，但整对象依赖满足 exhaustive-deps 且不再每轮出现多余依赖诊断。
   const openAddDialog = useCallback(() => {
     editor.reset(createEmptyModel());
     setAddDraftErrorField(null);
     setAddCommitError(null);
     setAddDialogOpen(true);
-  }, [editor.reset]);
+  }, [editor]);
 
   const updateAddDraft = (patch: Partial<ProviderModelDraftValues>) => {
     editor.change(patch);
     setAddDraftErrorField(null);
   };
 
-  const cancelAddDialog = () => {
+  // 包一层 useCallback 让 handleAddDialogOpenChange 依赖的是 memo 引用，而非每渲染重建的普通函数。
+  const cancelAddDialog = useCallback(() => {
     setAddDialogOpen(false);
     editor.reset(createEmptyModel());
     setAddDraftErrorField(null);
     editor.cancel();
-  };
+  }, [editor]);
 
   const handleAddDialogOpenChange = useCallback(
     (open: boolean) => {
@@ -474,17 +491,33 @@ export function ProviderModelsSection({
         <span className="text-ui-base text-foreground-subtle">
           {intl.formatMessage({ id: "settings.modelProvider.models" })}
         </span>
-        <Button
-          type="button"
-          variant="secondary"
-          size="default"
-          className="rounded-lg"
-          data-testid={TID_MODEL_PROVIDER_ADD_MODEL_BUTTON}
-          onClick={openAddDialog}
-        >
-          <Plus data-icon="inline-start" aria-hidden="true" />
-          {intl.formatMessage({ id: "settings.modelProvider.addModel" })}
-        </Button>
+        <div className="flex flex-wrap items-center gap-2">
+          {onPullModels ? (
+            <Button
+              type="button"
+              variant="outline"
+              size="default"
+              className="rounded-lg"
+              data-testid={TID_MODEL_PROVIDER_PULL_MODELS_BUTTON}
+              disabled={pullingModels}
+              onClick={() => void onPullModels()}
+            >
+              <CloudDownload data-icon="inline-start" aria-hidden="true" />
+              {intl.formatMessage({ id: "settings.modelProvider.pullModels" })}
+            </Button>
+          ) : null}
+          <Button
+            type="button"
+            variant="secondary"
+            size="default"
+            className="rounded-lg"
+            data-testid={TID_MODEL_PROVIDER_ADD_MODEL_BUTTON}
+            onClick={openAddDialog}
+          >
+            <Plus data-icon="inline-start" aria-hidden="true" />
+            {intl.formatMessage({ id: "settings.modelProvider.addModel" })}
+          </Button>
+        </div>
       </div>
       {models.length > 0 ? (
         <div className="overflow-hidden rounded-lg border border-input-border bg-input">

@@ -2012,6 +2012,13 @@ exceptions:
     rule: unmanaged-new-file
     paths: [packages/shared/src/conversationSelection.ts]
     reason: 已准入的对话引用 schema 只追加可选 comment 与 agent 字段（选区批注，docs/ui/conversation-selection-side-chat.md「选区批注」）；仍是 conversationQuotes 的唯一 schema，长度上限与模块边界不变，接管整个 shared 包不在本次范围内。
+  - id: provider-model-discovery-openai-endpoint
+    rule: unmanaged-new-file
+    paths:
+      - packages/provider-node/src/openai-model-discovery.ts
+      - packages/services/src/model-provider/openAIModelDiscoveryClient.ts
+      - packages/ui/src/settings/model-provider-section/ProviderModelDiscoveryDialog.tsx
+    reason: 连接派模型拉取的两阶段发现（docs/builtin-provider-maintenance/linkpi.md）：provider-node 承载 /models 请求与逐条校验的唯一实现，services 仅注入既有 apiClient 装配，ui 复用现有 Dialog/Checkbox 模式新增筛选多选预览弹窗；不新增依赖方向或模块边界，接管整个未受管包不在本次范围内。
   - id: conversation-selection-comment-model-guidance-edit
     rule: unmanaged-new-file
     paths: [apps/zcode-cli/packages/core/src/runtime/helpers/conversation-quotes.ts]

@@ -9,7 +9,10 @@ import {
 import type { ModelConnectivityResult } from "@zcode/shared";
 import {
   isApiKeyAccess,
+  type ImportDiscoveredProviderModelsInput,
+  type ImportDiscoveredProviderModelsResult,
   type ProviderApiType,
+  type ProviderModelDiscoveryResult,
   type SavePersonalModelDraftInput,
 } from "@zcode/provider";
 import { logger } from "@/logger.js";
@@ -24,7 +27,9 @@ import {
   ProviderConnectionSection,
   ProviderModelsSection,
 } from "./ProviderCardSections.js";
-import { useProviderDetailFeedback } from "./ProviderDetailFeedback.js";import { MODEL_PROVIDER_TEXT_IDLE_TRIGGER_MS, useIdleTrigger } from "./useIdleTrigger.js";
+import { ProviderModelDiscoveryDialog } from "./ProviderModelDiscoveryDialog.js";
+import { useProviderDetailFeedback } from "./ProviderDetailFeedback.js";
+import { MODEL_PROVIDER_TEXT_IDLE_TRIGGER_MS, useIdleTrigger } from "./useIdleTrigger.js";
 import { useOptimisticReorder } from "./useOptimisticReorder.js";
 
 export type ProviderNameEditKeyAction = "commit" | "cancel";
@@ -145,6 +150,8 @@ export function InlineEditableProviderCard({
   onDelete,
   onTestModel,
   onReorderModelIds,
+  onDiscoverModels,
+  onImportDiscoveredModels,
   readOnlyEndpoints,
   presetApiKeyUrl,
   onOpenPresetApiKey,
@@ -172,6 +179,12 @@ export function InlineEditableProviderCard({
   onDelete?: () => void | Promise<void>;
   onTestModel?: (providerId: string, modelId: string) => Promise<ModelConnectivityResult>;
   onReorderModelIds?: (modelIds: string[]) => Promise<void>;
+  /** 第一阶段：请求 /models 返回候选预览，不写配置。 */
+  onDiscoverModels?: (providerId: string) => Promise<ProviderModelDiscoveryResult>;
+  /** 第二阶段：只导入选中的新模型；返回权威 View 已由 Hook 层提交。 */
+  onImportDiscoveredModels?: (
+    input: ImportDiscoveredProviderModelsInput,
+  ) => Promise<ImportDiscoveredProviderModelsResult>;
   readOnlyEndpoints?: boolean;
   presetApiKeyUrl?: string;
   onOpenPresetApiKey?: () => void;
@@ -368,7 +381,9 @@ export function InlineEditableProviderCard({
         await target([...modelIds]);
       });
     },
-    [provider.providerId, runSaveOperation],
+    // 目标回调经 ref 读取（每渲染刷新），providerId 未在闭包内使用；多余的依赖会让
+    // useOptimisticReorder 的 persist 引用在切 Provider 时无意义地换新。
+    [runSaveOperation],
   );
   const optimisticModelOrder = useOptimisticReorder({
     authoritativeIds: authoritativeModelIds,
@@ -423,7 +438,7 @@ export function InlineEditableProviderCard({
 
       // Linux 下点击左侧供应商切换时，输入框 blur 与 Popover 关闭顺序不稳定，
       // 连接草稿可能在组件卸载前还没走到 blur 保存。这里在切换/卸载前兜底提交，
-      // 避免“新供应商接口地址一切走就恢复为空”。
+      // 避免"新供应商接口地址一切走就恢复为空"。
       logger.info("[ModelProviderSection] 切换前保存未提交的供应商草稿", {
         providerId: provider.providerId,
         reason,
@@ -466,10 +481,13 @@ export function InlineEditableProviderCard({
   };
 
   useEffect(() => {
+    // 删除守卫必须在 cleanup 执行时刻读取最新标记（晚读是有意行为：effect 挂载后才可能
+    // 发起删除）。捕获 ref 对象这一稳定引用，保留晚读语义，同时不再触发 ref-in-cleanup 诊断。
+    const deleteGuardRef = deleteRequestedRef;
     return () => {
       cancelIdleDraftSave();
       const cleanupAction = resolveProviderDraftCleanupAction({
-        deleteRequested: deleteRequestedRef.current,
+        deleteRequested: deleteGuardRef.current,
       });
       if (cleanupAction === "skip-delete") {
         // 确认删除会触发详情卡片卸载；如果 cleanup 继续补保存草稿，
@@ -625,6 +643,79 @@ export function InlineEditableProviderCard({
       return onTestModel(provider.providerId, model);
     },
     [commitPendingDraft, onTestModel, provider.providerId],
+  );
+
+  const [discoveryOpen, setDiscoveryOpen] = useState(false);
+  const [discoveryResult, setDiscoveryResult] = useState<ProviderModelDiscoveryResult | null>(null);
+  const [discovering, setDiscovering] = useState(false);
+  const discoveryGenerationRef = useRef(0);
+
+  const handlePullModels = useCallback(async (): Promise<void> => {
+    if (!onDiscoverModels || discovering) return;
+    setDiscovering(true);
+    const generation = ++discoveryGenerationRef.current;
+    const notification = saveNotificationRef.current;
+    const dedupeKey = `model-discovery:${provider.providerId}`;
+    notification.showFeedback({
+      key: dedupeKey,
+      message: notification.formatMessage({
+        id: "settings.modelProvider.pullModelsLoading",
+      }),
+      state: "pending",
+      durationMs: 0,
+    });
+    try {
+      // 拉取前 flush 本卡片唯一的 Provider 草稿；Service 会等待同 Provider 操作队列。
+      await commitPendingDraft("model-discovery");
+      const result = await onDiscoverModels(provider.providerId);
+      if (discoveryGenerationRef.current !== generation) return;
+      setDiscoveryResult(result);
+      setDiscoveryOpen(true);
+      notification.dismissFeedback(dedupeKey);
+    } catch (error) {
+      if (discoveryGenerationRef.current !== generation) return;
+      notification.showFeedback({
+        key: dedupeKey,
+        message: notification.formatMessage(
+          { id: "settings.modelProvider.pullModelsFailure" },
+          { error: error instanceof Error ? error.message : String(error) },
+        ),
+        state: "failure",
+        durationMs: 8_000,
+        dismissible: true,
+        dismissLabel: notification.formatMessage({ id: "common.close" }),
+      });
+    } finally {
+      if (discoveryGenerationRef.current === generation) setDiscovering(false);
+    }
+  }, [commitPendingDraft, discovering, onDiscoverModels, provider.providerId]);
+
+  const handleImportDiscoveredModels = useCallback(
+    async (
+      input: ImportDiscoveredProviderModelsInput,
+    ): Promise<ImportDiscoveredProviderModelsResult> => {
+      if (!onImportDiscoveredModels) {
+        throw new Error("当前设置入口未装配模型导入能力");
+      }
+      const result = await onImportDiscoveredModels(input);
+      const notification = saveNotificationRef.current;
+      notification.showFeedback({
+        key: `model-import:${provider.providerId}`,
+        message: notification.formatMessage(
+          { id: "settings.modelProvider.pullModelsImportSuccess" },
+          { added: result.addedModelIds.length, skipped: result.skippedModelIds.length },
+        ),
+        state: "success",
+      });
+      return result;
+    },
+    [onImportDiscoveredModels, provider.providerId],
+  );
+
+  const isDiscoveryAvailable = Boolean(
+    onDiscoverModels &&
+    isApiKeyAccess(provider.config.access) &&
+    provider.config.api?.type === "openai-chat-completions",
   );
 
   const handleModelCommit = useCallback(
@@ -850,9 +941,21 @@ export function InlineEditableProviderCard({
           onDeleteModel={handleDeleteModel}
           onAddModel={handleAddModel}
           onReorderModelIds={onReorderModelIds ? handleReorderModelIds : undefined}
+          onPullModels={isDiscoveryAvailable ? handlePullModels : undefined}
+          pullingModels={discovering}
           settingsRevision={settingsRevision ?? 0}
         />
       </div>
+      {isDiscoveryAvailable && discoveryResult ? (
+        <ProviderModelDiscoveryDialog
+          open={discoveryOpen}
+          providerId={provider.providerId}
+          connectionFingerprint={discoveryResult.connectionFingerprint}
+          candidates={discoveryResult.candidates}
+          onOpenChange={setDiscoveryOpen}
+          onImport={handleImportDiscoveredModels}
+        />
+      ) : null}
     </div>
   );
 }
