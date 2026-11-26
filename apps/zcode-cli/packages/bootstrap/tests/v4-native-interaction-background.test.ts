@@ -1303,6 +1303,75 @@ describe("broker × v4 竞速", () => {
     await expect(pending).resolves.toMatchObject({ decision: "allow" });
   });
 
+  // 执行模型（docs/specs/plan-approval-execution-model.md）：只有批准携带，形状必须合法；
+  // 计划反馈是「要求修改计划」，即使带了执行模型也不能换成 allow。
+  it("ExitPlanMode：批准携带合法 executionModel → allow + executionModelSelection", async () => {
+    const { broker, registry } = makeBrokerContext();
+    const pending = broker.requestPermission(
+      permissionRequest({ requestId: "plan_exec_model", toolName: "ExitPlanMode" }),
+    );
+    await new Promise((r) => setTimeout(r, 0));
+
+    registry.resolve("plan_exec_model", {
+      action: "accept",
+      content: {
+        answer: "approve",
+        executionModel: {
+          providerId: "provider-b",
+          modelId: "model-b",
+          options: { reasoningLevel: "high" },
+        },
+      },
+    });
+    await expect(pending).resolves.toMatchObject({
+      decision: "allow",
+      executionModelSelection: {
+        providerId: "provider-b",
+        modelId: "model-b",
+        options: { reasoningLevel: "high" },
+      },
+    });
+  });
+
+  it("ExitPlanMode：executionModel 形状不合法 → 忽略该字段，批准照常生效", async () => {
+    const { broker, registry } = makeBrokerContext();
+    const pending = broker.requestPermission(
+      permissionRequest({ requestId: "plan_exec_bad", toolName: "ExitPlanMode" }),
+    );
+    await new Promise((r) => setTimeout(r, 0));
+
+    registry.resolve("plan_exec_bad", {
+      action: "accept",
+      content: { answer: "approve", executionModel: { providerId: "provider-b" } },
+    });
+    const result = await pending;
+    expect(result).toMatchObject({ decision: "allow" });
+    expect(result.executionModelSelection).toBeUndefined();
+  });
+
+  it("ExitPlanMode：计划反馈带了 executionModel 也不携带", async () => {
+    const { broker, registry } = makeBrokerContext();
+    const pending = broker.requestPermission(
+      permissionRequest({ requestId: "plan_exec_fb", toolName: "ExitPlanMode" }),
+    );
+    await new Promise((r) => setTimeout(r, 0));
+
+    registry.resolve("plan_exec_fb", {
+      action: "accept",
+      content: {
+        answer: "先补测试再实现",
+        executionModel: { providerId: "provider-b", modelId: "model-b" },
+      },
+    });
+    const result = await pending;
+    expect(result).toMatchObject({
+      decision: "deny",
+      reason: "先补测试再实现",
+      reasonSource: "plan_approval_feedback",
+    });
+    expect(result.executionModelSelection).toBeUndefined();
+  });
+
   it("ExitPlanMode：v4 action=accept + content 反馈 → 计划反馈（deny + plan_approval_feedback）", async () => {
     const { broker, registry } = makeBrokerContext();
     const pending = broker.requestPermission(

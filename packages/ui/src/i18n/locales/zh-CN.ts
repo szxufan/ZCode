@@ -7577,6 +7577,9 @@ const zhCN: Record<string, string> = {
   "chat.elicitation.collapseDialog": "折叠问题弹窗",
   "chat.elicitation.planApproval.approve": "批准",
   "chat.elicitation.planApproval.approveDescription": "退出计划模式并开始实施。",
+  "chat.elicitation.planApproval.executionModel": "执行模型",
+  "chat.elicitation.planApproval.executionModel.session": "会话模型",
+  "chat.elicitation.planApproval.executionModelHint": "批准后将从下一步起使用 {model} 执行。",
   "chat.askQuestion.asking": "正在询问",
   "chat.askQuestion.asked": "已询问",
   "chat.askQuestion.questionsCount": "{count} 个问题",
@@ -7642,6 +7645,7 @@ const zhCN: Record<string, string> = {
   "planTool.panel.open": "在侧边栏查看计划",
   "planTool.panel.viewFull": "查看完整计划",
   "planTool.panel.syncing": "正在同步计划…",
+  "planTool.panel.save": "保存计划",
   "planTool.guidance.enterMode": "已开启 Plan Mode",
   "chat.permission.switchMode.placeholder": "实施计划",
 

@@ -22,6 +22,10 @@ semantics are intentionally different.
 - IME composition
   - Pressing `Enter` while an IME composition is active must not advance or submit, because the key
     is confirming the candidate text.
+- Embedded popups
+  - While a popup rendered inside the dialog is open (the plan approval's execution-model menu),
+    `Enter` and `Esc` go to that popup only. The dialog must not submit or cancel on those keys
+    until the popup has closed.
 
 ## Reason
 

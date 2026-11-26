@@ -160,6 +160,8 @@ Drain 只允许发生在 tool calling loop 的安全边界：
 
 这个顺序保证 provider 永远不会看到 dangling tool call，也不会看到 user message 插入 assistant tool call 与 tool result 之间。
 
+计划批准的执行模型换模（`docs/specs/plan-approval-execution-model.md`）落在同一条边界的第 4 步、drain pending input 之前：本批有成功的 `ExitPlanMode` 结果且 broker 结果带 `executionModelSelection` 时，先按会话当前选择创建 Model 并替换 Loop 的 `state.model`（选择变了才重建前缀），再 drain。固定执行模型的轮次不换模；创建失败时保持原模型继续本轮。因为 drain 在其后，同一边界上带意图的 guide 仍然优先。工具结果追加的 guide 没有意图，不参与换模。
+
 后台通知和子 agent 回信（runtime command 队列的 `task-notification` / `subagent-message`）只在带新输入的请求前取出：完整工具批次之后，或文本回复后续上 guide 时，与输入附件同一时机。Stop hook 续跑、流重试、模型降级、Start Plan 排队重试、上下文超限恢复、闲时换票、输出上限续写都重发同一份输入，不取队列；通知留在队列里，本轮结束后开新一轮。轮次已停止时不再取出任何挂起输入：工具批次结算后或文本回复之后、开始取出之前发现已停止，直接结束本轮，挂起的 guide 退回队列（`guide.turnInterrupted`），通知留在队列里。
 
 ## Volatile Queue

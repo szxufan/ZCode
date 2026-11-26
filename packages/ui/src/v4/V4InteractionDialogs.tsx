@@ -5,6 +5,8 @@ import {
   type ZCodeProvider,
 } from "@zcode/shared";
 import { captureRecentOrder } from "@/lib/composerRecent.js";
+import type { ModelSelection } from "@zcode/shared/model-selection";
+import { PlanExecutionModelField, type PlanExecutionModelChoice } from "@/plan-approval/index.js";
 import type { ComposerScope } from "@/v4/composer/composerDraftStore.js";
 import {
   committedPermissionGrantMode,
@@ -65,6 +67,11 @@ export interface V4InteractionDialogsProps {
   onCommandSettled?: (commandId: string) => void;
   resolveRecentScope: (sessionId: string) => Promise<ComposerScope>;
   onPlanInteractionAccepted?: (interactionId: string) => void;
+  /**
+   * 计划审批选了另一个执行模型时，先经既有的会话模型切换路径提交；返回 false 表示切换没被接受，
+   * 弹窗保持打开、不提交批准。缺省时审批弹窗不渲染「执行模型」字段。
+   */
+  onPlanExecutionModelChange?: (selection: ModelSelection) => Promise<boolean>;
 }
 
 export function getCurrentSessionInteractionSnapshot(
@@ -89,6 +96,44 @@ export function buildV4ElicitationProgressKey(request: ZCodeElicitationRequest):
   return `${request.requestId}:${request.currentQuestionIndex ?? 0}:${JSON.stringify(request.answerDrafts ?? {})}`;
 }
 
+/** 计划审批的 pending schema 是否声明支持执行模型；能力由 CLI 逐请求声明，旧 CLI 不带该键。 */
+export function isPlanExecutionModelSupported(schema: unknown): boolean {
+  if (typeof schema !== "object" || schema === null) return false;
+  const executionModel = (schema as { executionModel?: unknown }).executionModel;
+  return (
+    typeof executionModel === "object" &&
+    executionModel !== null &&
+    (executionModel as { supported?: unknown }).supported === true
+  );
+}
+
+function toPlanExecutionModelSelection(
+  choice: PlanExecutionModelChoice,
+): ModelSelection | undefined {
+  return choice.kind === "session"
+    ? undefined
+    : {
+        providerId: choice.providerId,
+        modelId: choice.modelId,
+        options: { reasoningLevel: choice.reasoningLevel },
+      };
+}
+
+/**
+ * 计划审批的应答流程（docs/specs/plan-approval-execution-model.md）：应答里带了执行模型时，先经既有
+ * 会话模型切换提交，被接受后才提交批准。返回这次应答是否成立；切换没被接受时不提交批准，弹窗保持打开。
+ */
+export async function settlePlanApproval(input: {
+  selection: ModelSelection | undefined;
+  switchModel: ((selection: ModelSelection) => Promise<boolean>) | undefined;
+  resolveInteraction: () => Promise<{ accepted: boolean }>;
+}): Promise<boolean> {
+  if (input.selection && input.switchModel && !(await input.switchModel(input.selection))) {
+    return false;
+  }
+  return (await input.resolveInteraction()).accepted;
+}
+
 /**
  * 竖切：把 projection.pendingInteractions 接到 PermissionDialog / userInput 弹窗。
  * ChatView 删除后若无此组件，带 tool 权限的会话会永久阻塞。
@@ -102,6 +147,7 @@ export function V4InteractionDialogs({
   snapshot,
   onCommandSettled,
   onPlanInteractionAccepted,
+  onPlanExecutionModelChange,
   resolveRecentScope,
 }: V4InteractionDialogsProps) {
   const { sendCommand } = useV4Conversation();
@@ -143,6 +189,11 @@ export function V4InteractionDialogs({
     return getTaskUiState(getWorkspaceState(state, workspacePath, workspaceIdentity), sessionId)
       .elicitationFormDraftsByRequestId[pending.interactionId];
   });
+  // 执行模型的选择按 interaction 记：带修改意见提交后保留在弹窗里，换一条审批就回到「会话模型」。
+  const [planExecutionModelState, setPlanExecutionModelState] = useState<{
+    interactionId: string;
+    choice: PlanExecutionModelChoice;
+  } | null>(null);
   usePendingInteractionTaskNotifications({
     snapshot: currentSnapshot,
     enabled: notificationEnabled,
@@ -472,10 +523,42 @@ export function V4InteractionDialogs({
     const isAskUserQuestion =
       pending.payload.toolName?.trim().toLowerCase() === "askuserquestion" ||
       pending.autoResolution !== undefined;
+    // 执行模型（docs/specs/plan-approval-execution-model.md）：能力由 CLI 在审批请求的 schema 里逐请求
+    // 声明，旧 CLI 不带该键就不渲染；宿主没给切换回调或拿不到会话当前模型时同样不渲染。
+    const planSessionModel = workflowSessionModelOf(currentSnapshot?.config);
+    const planSwitch = onPlanExecutionModelChange;
+    const planExecutionModelField =
+      isExitPlanMode &&
+      planSwitch !== undefined &&
+      planSessionModel !== undefined &&
+      isPlanExecutionModelSupported(elicitationRequest.schema) ? (
+        <PlanExecutionModelField
+          workspacePath={workspacePath}
+          workspaceIdentity={workspaceIdentity}
+          remoteSessionId={remoteSessionId}
+          sessionModel={planSessionModel}
+          value={
+            planExecutionModelState?.interactionId === pending.interactionId
+              ? planExecutionModelState.choice
+              : { kind: "session" }
+          }
+          onChange={(choice) =>
+            setPlanExecutionModelState({ interactionId: pending.interactionId, choice })
+          }
+        />
+      ) : undefined;
+    const switchModel = planExecutionModelField ? planSwitch : undefined;
+    const planExecutionModelSelection = toPlanExecutionModelSelection(
+      planExecutionModelState?.interactionId === pending.interactionId
+        ? planExecutionModelState.choice
+        : { kind: "session" },
+    );
     return (
       <ElicitationDialog
         key={buildV4ElicitationProgressKey(elicitationRequest)}
         request={elicitationRequest}
+        planApprovalAccessory={planExecutionModelField}
+        planExecutionModelSelection={switchModel ? planExecutionModelSelection : undefined}
         initialFormDraft={
           botElicitationProgress?.requestId === elicitationRequest.requestId
             ? undefined
@@ -499,18 +582,30 @@ export function V4InteractionDialogs({
             : undefined
         }
         onRespond={(_requestId, action, content) => {
-          void resolveInteraction(pending.interactionId, {
-            action,
-            ...(content ? { content } : {}),
-          }).then(({ accepted }) => {
-            if (!accepted) return;
+          // 返回 Promise 期间弹窗禁用提交与忽略；resolve false 时弹窗保持打开。
+          return (async (): Promise<boolean> => {
+            // 弹窗只在「批准」提交时才在 content 里带 executionModel，带修改意见的提交不会触发切换。
+            const settled = await settlePlanApproval({
+              selection:
+                action === "accept" && content?.executionModel !== undefined
+                  ? planExecutionModelSelection
+                  : undefined,
+              switchModel,
+              resolveInteraction: () =>
+                resolveInteraction(pending.interactionId, {
+                  action,
+                  ...(content ? { content } : {}),
+                }),
+            });
+            if (!settled) return false;
             removeElicitationDraft(pending.interactionId);
             if (isExitPlanMode) {
               // Plan 回执 ACK 与 replayable pending 清场是两条异步路径。
               // 这里只上报已接受的 Plan interaction，由手机 pane 在仍读到旧权威状态时触发恢复。
               onPlanInteractionAccepted?.(pending.interactionId);
             }
-          });
+            return true;
+          })();
         }}
       />
     );

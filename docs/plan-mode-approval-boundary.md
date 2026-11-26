@@ -9,6 +9,7 @@ Plan mode 的 `ExitPlanMode` 是计划审阅边界：模型提交计划后，必
 - `EnterPlanMode` 可以无确认进入只读计划态。
 - `ExitPlanMode` 在 `plan` 模式下始终需要用户确认，包括从 `yolo` 进入 plan 的场景。
 - 用户批准 `ExitPlanMode` 后，runtime 才恢复到进入 plan 前的模式，并允许后续编辑。
+- 用户批准时可以选择执行模型。带执行模型的批准仍是 `allow`，runtime 在工具批次结算后让当前轮改用会话的当前模型选择，下一次模型请求即生效；完整规则见 [计划审批的执行模型](specs/plan-approval-execution-model.md)。不带执行模型的批准与此前完全一致。
 - 用户拒绝 `ExitPlanMode` 且没有填写修改意见时，当前 turn 必须结束，session 保持 `plan` 模式，等待用户继续输入修改意见。
 - 用户在 `ExitPlanMode` 审批里填写修改意见时，runtime 保持 `plan` 模式，并把反馈持久化为一条真实、普通的 `user` message；`ExitPlanMode` 的工具结果只返回一条桥接说明，告诉模型用户反馈会跟随在下一条用户消息中。这样 UI / resume / provider-visible history 都把这段反馈当成用户新 query，而不是吞进工具结果，也不是展示成 turn steer 引导消息。
 
@@ -82,6 +83,16 @@ MCP 写工具、宿主 `node_repl` 的 `js`（可执行本机 Node 代码）在 
 - runtime 收到 `reasonSource: "plan_approval_feedback"` 后，先为 `ExitPlanMode` 注入 tool result 以闭合 provider 的 tool-use 协议，再通过带 `source: "plan_approval_feedback"` 的 active-turn pending input 路径把自定义输入写入真实用户消息历史。这个顺序保证 provider-visible history 是 `assistant tool_use` → `tool_result` → `user feedback`，同时复用 `persistUserPrompt`，让下次 resume 能看到这条反馈。UI 把缺省来源的 active-turn steer 渲染成 guided/steer 消息，计划审批反馈必须渲染为普通用户气泡。
 - 普通 `AskUserQuestion` 不套用这条规则：它的回答仍然是工具调用结果，只有 `ExitPlanMode` 审批反馈会升级成新的用户消息。
 - 投影层把 `ExitPlanMode` 的 pending permission 映射为 pending elicitation，并过滤对应的 `permission.requested` 实时事件，避免 UI 同时出现普通权限弹窗和可输入弹窗。
+
+### 批准携带执行模型
+
+完整规则见 [计划审批的执行模型](specs/plan-approval-execution-model.md)。这里只列与审批边界相关的部分：
+
+- v4 投影把 `ExitPlanMode` 的 pending permission 映射为 pending elicitation 时，在 `payload.schema` 里带 `executionModel: { supported: true }` 声明支持；界面读的是这份投影，不是 broker 的反向请求。子代理来源的审批不带。
+- 用户选了执行模型时，界面先经既有 `switchModelConfig` 提交会话模型切换，被接受后再发批准，并在 `answer.content.executionModel` 带上完整 `ModelSelection`。带修改意见的提交不带。
+- broker 只在映射为 `allow` 时读取该字段，用共享的 `modelSelectionSchema` 校验，合法则放进 `PermissionBrokerResult.executionModelSelection`；不合法则忽略并记 warn，批准照常生效。这不同于 `inputAdjustments`：它不参与工具入参改写，`ExitPlanMode` 的 handler 不读它。
+- executor 把它透传到 `ToolExecutionResult.executionModelSelection`。runtime 在工具批次结算后、消费 guide 之前，按会话当前选择创建 Model 并替换当前轮的 `state.model`（选择变了才重建前缀）。创建失败时保持原模型继续本轮，不让已批准的轮次失败。
+- 没有该字段时，批准路径与此前逐字节一致。
 
 ## 修复原因
 

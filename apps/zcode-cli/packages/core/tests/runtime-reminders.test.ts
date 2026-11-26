@@ -458,19 +458,44 @@ describe("runtime request reminders", () => {
     expect(buildRuntimeModeReminderBody([], "build")).toBeNull();
   });
 
-  // 适配说明：上游 v3.17.2 新增五阶段英文工作流断言；fork 的系统提示词中文化将工作流
-  // 收敛为中文四阶段（阶段 4 合并最终计划与收尾），此处按 fork 实现断言阶段结构完整渲染。
+  // 适配说明：上游为五阶段英文工作流（Final Plan 独立成阶段）；fork 的系统提示词中文化使用中文四阶段，
+  // 最终计划并入阶段 4。合并上游时不随上游的五阶段断言改回。
+  // 阶段 4 必须带齐计划正文要求（spec：docs/design/v2/tool/16-plan-mode.md「规划提醒」），
+  // 否则生成的计划没有固定结构、也没有决策段。固定结构的丢失源于合并上游 v3.17.2 时未把
+  // Final Plan 的正文约束带进阶段 4；决策段是本次新增要求。
   it("renders the complete four-phase plan workflow without a template exception", () => {
     const body = buildRuntimeModeReminderBody([], "plan")!;
     expect(body.match(/^### 阶段 \d：.+$/gm)).toEqual([
       "### 阶段 1：初步理解",
       "### 阶段 2：设计",
       "### 阶段 3：评审",
-      "### 阶段 4：调用 ExitPlanMode",
+      "### 阶段 4：最终计划与调用 ExitPlanMode",
     ]);
     expect(body).toContain("本阶段只允许使用 Explore 子代理类型");
     expect(body).toContain("阅读关键文件加深理解");
-    expect(body).toContain("必须调用 ExitPlanMode 告知用户你已完成规划");
+
+    // 澄清结论回写：阶段 3 问到的用户选择必须落进决策段。
+    expect(body).toContain("把澄清结论回写进计划");
+
+    // 计划正文分节及顺序：Context → 决策 → 实现步骤 → 验证。
+    const sectionIndexes = ["**Context**", "**决策**", "**实现步骤**", "**验证**"].map((section) =>
+      body.indexOf(section),
+    );
+    expect(sectionIndexes.every((index) => index >= 0)).toBe(true);
+    expect([...sectionIndexes].sort((a, b) => a - b)).toEqual(sectionIndexes);
+
+    // 决策段：单独成段，每条写清三要素并标注来源，不为凑数编造备选。
+    expect(body).toContain("**决策**：单独成段");
+    expect(body).toContain("决定了什么、备选方案、选择理由");
+    expect(body).toContain("「用户已确认」");
+    expect(body).toContain("「模型判断」");
+    expect(body).toContain("不为凑数编造备选");
+
+    // 实现步骤只展开推荐方案；完整计划经 plan 参数提交。
+    expect(body).toContain("只展开推荐方案");
+    expect(body).toContain("应复用的既有函数、工具及其路径");
+    expect(body).toContain("如何端到端验证改动");
+    expect(body).toContain("把完整计划放进 `plan` 参数");
     expect(body).toContain("只用于澄清需求或在方案之间做选择");
     expect(body).not.toMatch(/^### Phase /m);
   });
@@ -490,7 +515,9 @@ describe("runtime request reminders", () => {
     expect(
       buildRuntimeModeReminderBody([], "build", false, { askUserQuestionAvailable: true }),
     ).toBeNull();
-    expect(buildRuntimeModeReminderBody([], "plan")).toContain("### 阶段 4：调用 ExitPlanMode");
+    expect(buildRuntimeModeReminderBody([], "plan")).toContain(
+      "### 阶段 4：最终计划与调用 ExitPlanMode",
+    );
   });
 
   it("builds model anomaly reminder bodies without wrapping", () => {

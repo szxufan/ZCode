@@ -17,6 +17,15 @@ Plan mode 的端到端验收面是桌面本地 `desktop-continuous` 会话里的
 1. `ExitPlanMode` 被用户无反馈拒绝时，当前 turn 必须停止，不应继续发带 `ExitPlanMode` tool_result 的 provider 请求；后续用户普通输入仍处于 plan mode，并在 provider-visible context 中带上 plan mode active reminder。
 2. plan mode 下同一条 assistant 回复里先调用写工具再调用只读工具时，写工具必须被 `mode.plan.nonReadOnly` 拒绝且不落盘，后续只读工具仍必须执行并把真实 tool_result 返回给模型。
 
+## Pending Candidates
+
+两个 `manual-review/pending` 候选，转正前不计为覆盖：
+
+- `conversation-session-plan-approval-execution-model.test.ts` 覆盖审批弹窗的执行模型：选另一个模型后批准，命令顺序为先 `switchModelConfig` 后 `resolveInteraction`，批准后的下一次 provider 请求使用新模型，且仍是同一轮；保持会话模型、切换失败、带修改意见提交三条边界不发切换命令、不携带 `executionModel`。
+- `conversation-session-plan-save-to-file.test.ts` 覆盖计划卡片与详情侧栏的保存：mock 另存为对话框并回读文件字节，断言 `defaultPath` 落在 `docs/superpowers/plans` 或回退到工作区根目录、文件内容等于计划原文；取消不产生文件。
+
+执行模型与保存的运行时、协议部分由 CLI 定向测试与 UI 单测覆盖（见 `docs/specs/plan-approval-execution-model.md`）。
+
 ## Out Of Scope
 
 - 手机 `web-remote-replayable` 的 snapshot/gap 恢复不从本组推断。

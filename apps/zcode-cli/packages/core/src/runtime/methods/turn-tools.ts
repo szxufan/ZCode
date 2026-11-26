@@ -21,7 +21,11 @@ import {
 } from "./tool-part-persistence.js";
 import { persistToolModelStepFinish } from "./turn-step-finish.js";
 import { mcpToolPartMetadata } from "./tool-part-metadata.js";
-import { drainInlineGuideForNextRequest } from "./turn-guide-drain.js";
+import {
+  adoptSessionModelAfterPlanApproval,
+  drainInlineGuideForNextRequest,
+  hasPlanApprovalExecutionModelSelection,
+} from "./turn-guide-drain.js";
 import { handleToolCallAnomalyWarnings } from "./turn-tool-warnings.js";
 import type { RegularTurnLoopState } from "./turn-loop-state.js";
 import {
@@ -315,6 +319,11 @@ export async function executeToolCallsForModelStep(
   await persistToolModelStepFinish(this, state, options);
   if (coreToolCalls.length > 0 && results.length === coreToolCalls.length) {
     state.completedRealToolResultBatch = true;
+  }
+  // 计划批准带了执行模型：先让当前轮跟上会话选择，再 drain。顺序与 guide 的优先级见
+  // turn-steering.md「Drain 边界」。
+  if (hasPlanApprovalExecutionModelSelection(results)) {
+    adoptSessionModelAfterPlanApproval(this, state);
   }
   await drainInlineGuideForNextRequest(this, state);
   recordCompletedToolBatch(state);

@@ -489,6 +489,7 @@ async function executeToolCallImpl(
     executionInput = permissionResult.executionInput;
     const permissionWaitMs = permissionResult.permissionWaitMs;
     const inputAdjustments = permissionResult.inputAdjustments;
+    const executionModelSelection = permissionResult.executionModelSelection;
 
     const startTime = Date.now();
     // 按**执行入参**解析一次副作用旗标（Bash 的只读命令判定就在这里落定），随 ToolCallStarted 发出：
@@ -760,6 +761,8 @@ async function executeToolCallImpl(
           ...(hookAdditionalContexts.length > 0 ? { hookAdditionalContexts } : {}),
           ...(readFileStateMetadata ? { readFileStateMetadata } : {}),
           ...(subagent ? { subagent } : {}),
+          // 计划批准的执行模型：runtime 在批次结算后据此让当前轮跟上会话选择。
+          ...(executionModelSelection ? { executionModelSelection } : {}),
           performance: perf,
           serialization,
           durationMs,

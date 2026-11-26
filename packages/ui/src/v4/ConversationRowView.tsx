@@ -2452,6 +2452,7 @@ const ToolCallRowView = memo(function ToolCallRowView({
         <ToolCallBlock
           toolCallNode={toolCallNode}
           workspacePath={context.workspacePath}
+          workspaceRemoteSessionId={context.workspaceRemoteSessionId}
           theme={context.theme}
           codePreviewSettings={context.codePreviewSettings}
           showTodoToolCalls={context.messageStreamShowTodos === true}

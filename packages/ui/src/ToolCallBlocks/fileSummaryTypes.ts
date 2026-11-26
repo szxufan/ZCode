@@ -213,6 +213,11 @@ export interface ToolCallBlockRenderContext {
   toolCallNode: TaskChatToolCallTreeNode;
   workspacePath: string;
   /**
+   * 远程工作区的 remoteSessionId；本机工作区为 null/undefined。由宿主绑定，供需要区分本机与远程的
+   * 动作使用（如计划卡片的另存为只给本机路径作默认目录）。
+   */
+  workspaceRemoteSessionId?: string | null;
+  /**
    * 插件 UI：scope 是沙箱登记需要的 session 范围，onOpenSidePane 是"在侧栏打开"回调；
    * 由 PluginUiSessionProvider 在边界注入。缺省表示宿主不提供，带 ui:// 资源的工具回退普通 MCP 卡片。
    */

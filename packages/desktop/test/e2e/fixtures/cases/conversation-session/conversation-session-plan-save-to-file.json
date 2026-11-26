@@ -1,0 +1,44 @@
+{
+  "version": 1,
+  "caseName": "conversation-session-plan-save-to-file",
+  "spec": "./test/e2e/conversation-session/planning/manual-review/pending/conversation-session-plan-save-to-file.test.ts",
+  "providerFixtures": [
+    "./test/e2e/fixtures/upstream/common.json",
+    "./test/e2e/fixtures/upstream/conversation-session/conversation-session-plan-save-to-file.json"
+  ],
+  "fileFixtures": [],
+  "requests": [
+    {
+      "id": "upstream-plan-save-to-file-enter-plan-call",
+      "description": "首轮请求返回 EnterPlanMode，进入 plan mode。",
+      "kind": "main",
+      "source": "synthetic",
+      "timingPolicy": "fast-text",
+      "syntheticReason": "需要稳定制造 plan mode 状态，避免依赖真实模型是否选择 EnterPlanMode。"
+    },
+    {
+      "id": "upstream-plan-save-to-file-exit-plan-call",
+      "description": "plan mode 内返回 ExitPlanMode，触发计划审批弹窗并固定计划原文。",
+      "kind": "main",
+      "source": "synthetic",
+      "timingPolicy": "fast-text",
+      "syntheticReason": "需要稳定触发 ExitPlanMode 审批弹窗并固定计划原文，让文件内容与文件名断言可重复。"
+    },
+    {
+      "id": "upstream-plan-save-to-file-auto-compact",
+      "description": "审批后的 mid-turn auto compact 返回稳定摘要，让主 turn 继续。",
+      "kind": "main",
+      "source": "synthetic",
+      "timingPolicy": "fast-text",
+      "syntheticReason": "E2E 模型使用极小 context window，ExitPlanMode 批准后会稳定触发 mid-turn auto compact；本响应只用于让审批主路径继续。"
+    },
+    {
+      "id": "upstream-plan-save-to-file-final",
+      "description": "批准计划后返回固定文本，让当前轮完成。",
+      "kind": "main",
+      "source": "synthetic",
+      "timingPolicy": "fast-text",
+      "syntheticReason": "核心合同是另存为写出的文件内容；最终回复只需稳定结束当前轮。"
+    }
+  ]
+}

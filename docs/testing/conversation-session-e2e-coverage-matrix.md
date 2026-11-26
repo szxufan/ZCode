@@ -2855,6 +2855,29 @@ PLAN151-02/03/04 先由 Core、Bootstrap、共享 Schema 与 UI 单测覆盖，�
 | S16        | covered      | PP、focused                                                                                                                                                                       | `PP` 在真实 Electron 弹窗中不点击“批准”选项，只点击 footer 主提交，断言弹窗关闭、批准后的 plan 落盘，且 provider continuation 包含 `User has approved your plan` 而不含拒绝语义；focused 单测继续隔离普通 `AskUserQuestion`、自定义反馈与显式忽略路径                                                                        |
 | S17        | unit-retired | `retired:packages/ui/test/v4PlanInteractionAcknowledgement.test.ts` + `retired:packages/ui/test/v4SessionPaneModelSwitchRecovery.test.ts`；mobile shared-host runtime replay 待补 | 退役单测的独立断言待补；历史记录：focused 已锁定：仅 mobile Plan accepted/duplicate/noop 在 grace 后仍 pending 时触发既有 same-sub recovery，自然清场、重复点击、桌面 continuous、`AskUserQuestion` 与失败 ACK 均保持隔离；真实 relay/attachment 证据保留为 manual-review 待补，不用 desktop compact UI 冒充 replayable 覆盖 |
 
+## Plan 审批执行模型覆盖口径
+
+这些 case 对应 [conversation-session-case-catalog.md](../conversation-session-case-catalog.md) 的 `PEM` 分组。`PEM` 使用 case-local synthetic provider fixture 让模型进入 plan mode 并调用 `ExitPlanMode`，在真实 Electron 审批弹窗里选择另一个模型后批准，断言命令顺序、`resolveInteraction` 应答里的 `content.executionModel`，以及批准后的下一次 provider 请求使用新模型且仍是同一轮。broker 映射、投影 schema 与批次边界换模由 CLI 定向测试覆盖；弹窗提交内容由 UI 单测覆盖。手机 replayable 沿用计划模式现有口径，不从本组推断。
+
+| Catalog ID | 覆盖状态 | 自动化                                                                                                                                                     | 备注                                                                                 |
+| ---------- | -------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------ |
+| PEM01      | planned  | pending：`packages/desktop/test/e2e/conversation-session/planning/manual-review/pending/conversation-session-plan-approval-execution-model.test.ts` + CLI unit | 候选尚未运行；CLI 单测覆盖 broker 只在 allow 时携带、批次边界按会话选择换模           |
+| PEM02      | planned  | 同上候选 + UI unit                                                                                                                                         | 不带执行模型时不发切换命令、应答不带该键                                             |
+| PEM03      | planned  | 同上候选 + UI unit                                                                                                                                         | 切换失败时弹窗保持打开                                                               |
+| PEM04      | planned  | 同上候选 + UI unit                                                                                                                                         | 反馈提交不携带执行模型                                                               |
+| PEM05      | planned  | CLI unit                                                                                                                                                   | 固定执行模型不换模；创建失败保持原模型                                               |
+
+## 计划保存到文件覆盖口径
+
+这些 case 对应 [conversation-session-case-catalog.md](../conversation-session-case-catalog.md) 的 `PSV` 分组。`PSV` mock 另存为对话框并回读文件字节，写法参照 `conversation-session-preview-image-actions.test.ts`。文件名与候选目录的纯函数、按钮在无能力平台不渲染、取消不提示成功由 UI 单测覆盖。
+
+| Catalog ID | 覆盖状态 | 自动化                                                                                                                         | 备注                                       |
+| ---------- | -------- | ------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------ |
+| PSV01      | planned  | pending：`packages/desktop/test/e2e/conversation-session/planning/manual-review/pending/conversation-session-plan-save-to-file.test.ts` + UI unit | 候选尚未运行                               |
+| PSV02      | planned  | 同上候选 + UI unit                                                                                                             | 目录不存在时回退工作区根目录               |
+| PSV03      | planned  | 同上候选 + UI unit                                                                                                             | 远程无候选目录、取消静默、失败提示         |
+| PSV04      | planned  | UI unit                                                                                                                       | 流式期间禁用；无能力平台不渲染             |
+
 ## Plan Mode × Goal composer guard 覆盖口径
 
 | Catalog ID | 覆盖状态 | 自动化     | 备注                                                                                                                                                                                                                                             |

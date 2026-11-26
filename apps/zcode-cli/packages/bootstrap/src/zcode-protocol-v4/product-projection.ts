@@ -4109,7 +4109,13 @@ export class ProductProjection {
           toolName: payload.toolName,
           traceId: event.traceId,
           input: payload.input,
-          schema: { interaction: "plan_approval", toolName: payload.toolName },
+          // 主会话来源的计划审批声明支持执行模型，界面据此渲染「执行模型」字段。子代理来源的审批
+          // 路由到父会话，换模作用层级未定义，不声明（docs/specs/plan-approval-execution-model.md）。
+          schema: {
+            interaction: "plan_approval",
+            toolName: payload.toolName,
+            ...(payload.origin ? {} : { executionModel: { supported: true } }),
+          },
           questions: [createExitPlanModeApprovalQuestion(payload.reason)],
           ...(payload.origin ? { origin: payload.origin } : {}),
         },

@@ -2102,6 +2102,29 @@ S17 的恢复边界由 2026-08-18 用户复现确认：普通手机 permission �
 | S16 | `running`，assistant 已进入 plan mode 并调用 `ExitPlanMode`；计划审批只有自动聚焦的“批准”项且自定义反馈为空                                          | 用户不点选项，直接点击右下角主提交按钮                                                 | planApprovalPrimarySubmitApproves + askOptionalAnswerIsolation             | UI 提交稳定 `approve` 答案，runtime `decision=allow` 并退出 plan mode；不得提交空 answers、不得触发 `plan_exit_denied`；直接点“批准”、有反馈提交、忽略拒绝和普通 `AskUserQuestion` 空答案语义保持不变                                                              | accepted |
 | S17 | 手机 `web-remote-replayable` 已显示 `ExitPlanMode` pending；`resolveInteraction` ACK 为 accepted/duplicate/noop，但自然清场 frame 未在短暂窗口内应用 | 用户批准、提交反馈或忽略；同一旧卡可被重复点击                                         | mobilePlanInteractionAckRequiresAuthoritativeReconcile                     | grace 后若同一 `interactionId` 仍 pending，只发起一次既有 same-sub recovery，并以权威 delta/snapshot 清场；自然 frame 已清场则零 recovery；不本地隐藏、不重放答案；桌面 continuous、普通 permission、`AskUserQuestion`、workspace identity 与 runtime/owner 均不变 | accepted |
 
+## PEM. Plan 审批执行模型
+
+本组让用户在 `ExitPlanMode` 审批弹窗里选择执行模型，规则见 [plan-approval-execution-model.md](specs/plan-approval-execution-model.md)。会话模型仍只经既有 `switchModelConfig` 路径写入；运行时在工具批次结算后让当前轮跟上会话选择，不新增轮次、不合成用户消息。桌面 continuous 与手机 replayable 共用同一弹窗组件与命令路径；子代理来源的审批、固定执行模型的轮次、飞书 Bot 渠道剪枝。
+
+| ID    | 前置状态                                                                  | 用户/系统事件                 | 规则命中                                                | 期望结果                                                                                                                                              | Review   |
+| ----- | ------------------------------------------------------------------------- | ----------------------------- | ------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------- | -------- |
+| PEM01 | `running`，主会话的 `ExitPlanMode` 等待审批，请求 `schema.executionModel.supported` 为真 | 用户选另一个模型并批准        | planApprovalSwitchesModelBeforeResolve                  | 先发 `switchModelConfig` 后发 `resolveInteraction`，应答带 `content.executionModel`；批准后的下一次 provider 请求使用新模型；仍是同一轮，不新增用户消息 | accepted |
+| PEM02 | 同上，执行模型保持「会话模型」                                            | 用户批准                      | planApprovalWithoutExecutionModelIsPlainAllow           | 不发切换命令，应答不带 `executionModel`，运行时行为与改动前一致                                                                                       | accepted |
+| PEM03 | 同上，所选模型的切换命令未被接受                                          | 用户批准                      | planApprovalKeepsDialogOnSwitchFailure                  | 弹窗保持打开，出现既有切换失败提示，不发 `resolveInteraction`                                                                                          | accepted |
+| PEM04 | 同上，用户选了另一个模型但提交自定义反馈                                  | 用户提交反馈                  | planApprovalFeedbackOmitsExecutionModel                 | 不发切换命令，应答不带 `executionModel`；反馈仍升级为真实用户消息                                                                                      | accepted |
+| PEM05 | 本轮 `modelSelectionScope` 为 `execution`，或会话选择指向的 Model 创建失败 | 带 `executionModel` 的批准完成 | fixedExecutionModelNotSwitched                          | 固定执行模型的轮次不换模；创建失败时保持原模型继续本轮，本轮不失败                                                                                    | accepted |
+
+## PSV. 计划保存到文件
+
+本组把计划原文另存为本机 Markdown 文件，规则见 [plan-detail-side-pane.md](ui/plan-detail-side-pane.md)。保存只读取既有投影里的正文并发起平台另存为，不发送 task command，不改变任何投递或恢复链路。
+
+| ID    | 前置状态                                         | 用户/系统事件                 | 规则命中                                   | 期望结果                                                                                                    | Review   |
+| ----- | ------------------------------------------------ | ----------------------------- | ------------------------------------------ | ----------------------------------------------------------------------------------------------------------- | -------- |
+| PSV01 | 本地工作区存在 `docs/superpowers/plans`，计划已完整 | 用户在卡片或详情侧栏保存并确认 | planSaveDefaultsToPlansDirectory           | 另存为对话框 `defaultPath` 以 `docs/superpowers/plans/YYYY-MM-DD-标题.md` 结尾；文件内容等于计划原文；出现成功 toast | accepted |
+| PSV02 | 本地工作区不存在 `docs/superpowers/plans`        | 同上                          | planSaveFallsBackToWorkspaceRoot           | `defaultPath` 落在工作区根目录下同一文件名                                                                   | accepted |
+| PSV03 | 远程工作区；用户取消另存为；写入失败             | 用户点击保存                  | planSaveRemoteHasNoDirectory               | 远程不传候选目录；取消不产生文件也不提示；失败出既有保存失败提示                                             | accepted |
+| PSV04 | 计划仍在流式增长；平台没有另存为能力             | 用户查看卡片或侧栏            | streamingPlanSaveDisabled                  | 流式期间保存按钮禁用；无能力的平台不渲染保存按钮                                                             | accepted |
+
 ## PG. Plan Mode × Goal Command
 
 本组只改变共享 composer 的 admission 行为，不改变 CLI goal runtime 或多端 delivery。desktop

@@ -51,7 +51,7 @@ ZCode 第一版不引入 plan file、auto mode gate、teammate mailbox、专用 
 
 - 只在 plan mode 中、已经完成实现计划、准备交给用户审批时调用。
 - 工具必须通过 `plan` 参数传入完整计划；模型不要假设存在 plan file，也不要只发空输入。
-- `plan` 参数就是用户审批时看到的内容，必须完整、明确、可执行。
+- `plan` 参数就是用户审批时看到的内容，必须完整、明确、可执行。正文结构与决策段要求见「规划提醒」阶段 4。
 - 正常模式下调用本工具会请求用户审批；从 `yolo` 进入 plan 时，本工具直接退出回 `yolo`，不会请求审批。
 - 只用于需要写代码的实现任务；纯研究、搜索文件、阅读文件、理解代码库时不要调用。
 - 若需求或方案仍有未解问题，先用 `AskUserQuestion` 澄清。
@@ -83,19 +83,34 @@ If this plan is relevant to the current work and not already complete, continue 
 
 ## 规划提醒
 
-主会话完整提醒使用五阶段流程；规划期间仍禁止写文件，不授予 plan file 编辑例外：
+主会话完整提醒使用四阶段流程；规划期间仍禁止写文件，不授予 plan file 编辑例外：
 
-1. Initial Understanding：保留 Explore 探索指引，先查找可复用实现，最多并行三个探索任务。
-2. Design：基于探索结果说明背景、文件路径、需求和约束，形成详细方案。当前没有专用 Plan
-   agent 类型，因此由当前 agent 设计，不提示调用不存在的类型。
-3. Review：回看探索中识别的关键文件，核对用户意图，并用 AskUserQuestion 澄清剩余问题。
-4. Final Plan：准备作为 `ExitPlanMode.plan` 参数的完整正文。以 Context 说明动机、问题和预期
-   结果；只给推荐方案；保持易读且可执行；列关键修改路径，重复模式只举代表路径；引用可复用
-   的函数和工具及路径；包含端到端验证方法。模型不创建或编辑计划文件。
-5. Call ExitPlanMode：使用 `plan` 参数提交完整正文；澄清走 AskUserQuestion，计划审批走
-   ExitPlanMode，不用普通文本问题请求批准。
+1. 初步理解：保留 Explore 探索指引，先查找可复用实现，最多并行三个探索任务。
+2. 设计：基于探索结果说明背景、文件路径、需求和约束，形成详细方案，并按任务类型考虑权衡视角；
+   这些视角下的取舍在阶段 4 记入决策段。当前没有专用 Plan agent 类型，因此由当前 agent 设计，
+   不提示调用不存在的类型。
+3. 评审：回看探索中识别的关键文件，核对用户意图，并用 AskUserQuestion 澄清剩余问题。澄清结论
+   必须回写计划：用户确认的选择记入决策段，并标注为「用户已确认」。
+4. 最终计划与调用 ExitPlanMode：把评审与澄清的结论收口为最终计划，作为 `ExitPlanMode.plan`
+   参数提交。正文按以下顺序分节，标题沿用下列名称；模型不创建或编辑计划文件。
+   - Context：说明动机、问题和预期结果。
+   - 决策：单独成段，不并入其他章节。逐条记录本次计划的真实取舍，每条写清决定了什么、备选方案、
+     选择理由，并标注来源：经 AskUserQuestion 确认或用户明确指定的记为「用户已确认」，其余为
+     「模型判断」。不为凑数编造备选。
+   - 实现步骤：只展开推荐方案，被放弃的备选只出现在决策段；点名关键修改路径，重复模式只举
+     代表路径，不逐一枚举文件或行号；引用应复用的函数和工具及路径。
+   - 验证：包含端到端验证方法。
 
-简短提醒对应五阶段；完整／简短提醒仍按现有五次用户输入间隔和每五次公告的周期切换。用户轮次按历史中的普通 user 消息计：真实的新 prompt、开启新一轮的后台通知与 agent 回复、中断标记、compact summary 都计入；轮内插入的中途消息（含人类 steer）不计入间隔（中途消息是 attachment，不是用户轮次）。
+   正文保持易读且可执行。澄清走 AskUserQuestion，计划审批走 ExitPlanMode，不用普通文本问题
+   请求批准。
+
+阶段数为 fork 口径：上游是英文五阶段（Final Plan 独立成第 4 阶段），fork 自系统提示词中文化起使用
+中文四阶段，最终计划并入阶段 4。合并上游时提醒与测试断言按本节的四阶段保留，不随上游改回五阶段。
+修复原因：fork 的中文四阶段早于上游的 Final Plan 阶段；合并上游 v3.17.2（b906a7b0d）时提醒保留了
+四阶段，却没有把 Final Plan 对正文的约束并入阶段 4，本节也直接沿用了上游的五阶段描述。结果是 spec
+与实现不一致，生成的计划没有任何正文结构保证，也没有决策段。
+
+简短提醒对应四阶段；完整／简短提醒仍按现有五次用户输入间隔和每五次公告的周期切换。用户轮次按历史中的普通 user 消息计：真实的新 prompt、开启新一轮的后台通知与 agent 回复、中断标记、compact summary 都计入；轮内插入的中途消息（含人类 steer）不计入间隔（中途消息是 attachment，不是用户轮次）。
 当前轮的 prompt 在模型回应它之前不计入：轮首请求前的收集不计它，该轮工具批次之后的收集才计入。
 所以间隔满五次的那一轮，轮首请求不发提醒，第一个工具批次之后的请求才发；该轮只有文本回复时，
 提醒在下一个 prompt 的轮首请求发出。
@@ -110,10 +125,10 @@ If this plan is relevant to the current work and not already complete, continue 
 
 子会话（Agent 工具派生、`taskType: "subagent_child"`）继承父会话的 Plan 状态时，只收到精简提醒：
 声明 Plan 已开启、只能做只读操作、完整回答委派的查询；子会话可见 `AskUserQuestion` 时，再提示可以用它澄清。
-精简提醒不含五阶段流程，也不要求以 `AskUserQuestion` 或 `ExitPlanMode` 结束本轮（子会话没有
+精简提醒不含主会话的阶段流程，也不要求以 `AskUserQuestion` 或 `ExitPlanMode` 结束本轮（子会话没有
 `ExitPlanMode`，也不能再派生子 agent）。提醒间隔、持久化与恢复规则与主会话相同，不区分完整与简短；compact 后重发提醒时
 同样按会话类型选择正文，子会话重发的仍是精简提醒。
-修复原因：继承父会话 Plan 的子会话曾收到主会话的完整五阶段提醒，被要求再派生 Explore、只能以
+修复原因：继承父会话 Plan 的子会话曾收到主会话的完整工作流提醒，被要求再派生 Explore、只能以
 `AskUserQuestion` 或 `ExitPlanMode` 收尾，而这些工具子会话都没有。
 
 ## Runtime 和事件
@@ -144,3 +159,5 @@ runtime 实现负责保存 `prePlanMode`、更新 `config.mode`、写入 `Sessio
 - runtime：`EnterPlanMode` 调用成功后 mode=plan；`ExitPlanMode` 审批通过后恢复 previous mode；拒绝后 mode 不变。
 - events：`SessionModeChanged` 能更新 projection，snapshot 使用 projection mode。
 - reminder：退出后下一轮注入 `plan_mode_exit`，且只注入一次。
+- reminder：完整提醒渲染四阶段，阶段 4 带齐最终计划正文的分节与决策段要求，阶段 3 要求澄清结论
+  回写；合并上游时保留这组断言，不随上游的五阶段断言改回。

@@ -31,6 +31,7 @@ import type {
   ModelCatalogPort,
   ModelContentProtection,
   ModelMessageContent,
+  ModelSelection,
   ModelToolSideEffectScope,
   OffPeakPort,
   TopicResourcePort,
@@ -586,6 +587,11 @@ export interface ToolExecutionResult {
   output: unknown;
   turnControl?: ToolExecutionTurnControl;
   followUpUserInput?: ToolExecutionFollowUpUserInput;
+  /**
+   * 计划批准时用户选择的执行模型；只由 ExitPlanMode 的 allow 结果携带，不进入模型可见 Tool Output。
+   * runtime 把它当作「让当前轮在下一步跟上会话选择」的触发信号。
+   */
+  executionModelSelection?: ModelSelection;
   display?: ToolResultDisplayPayload;
   modelContent?: ModelMessageContent;
   /**

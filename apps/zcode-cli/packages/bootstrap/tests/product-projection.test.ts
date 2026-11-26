@@ -3081,6 +3081,50 @@ describe("ProductProjection 黄金测试（L1）", () => {
     expect(projection.getSnapshot().pendingInteractions).toHaveLength(0);
   });
 
+  // 执行模型能力逐请求声明（docs/specs/plan-approval-execution-model.md）：子代理来源的计划审批
+  // 路由到父会话，换模作用层级未定义，所以不声明支持，界面也就不渲染执行模型字段。
+  it("Q：子代理来源的 ExitPlanMode 审批 → plan approval schema 不带 executionModel", () => {
+    const turnId = "turn-plan-subagent";
+    const log = new EventLog();
+    log.push(SessionEventType.SessionCreated, { mode: "default", contextWindow: 1000 });
+    log.push(SessionEventType.TurnStarted, { turnNumber: 1, input: "子代理提交计划" }, { turnId });
+    log.push(
+      SessionEventType.ToolCallScheduled,
+      {
+        toolCallId: "exit-plan-sub",
+        toolName: "ExitPlanMode",
+        input: { plan: "1. 子代理计划" },
+        schedule: { parallelGroups: [["exit-plan-sub"]], executionOrder: ["exit-plan-sub"] },
+      },
+      { turnId },
+    );
+    log.push(
+      SessionEventType.PermissionRequested,
+      {
+        requestId: "plan-request-sub",
+        toolCallId: "exit-plan-sub",
+        toolName: "ExitPlanMode",
+        riskLevel: "low",
+        reason: "ExitPlanMode requires user approval before implementation",
+        input: { plan: "1. 子代理计划" },
+        origin: {
+          kind: "subagent",
+          agentId: "agent-1",
+          agentType: "Explore",
+          childSessionId: "child-session",
+          parentSessionId: "parent-session",
+        },
+      },
+      { turnId },
+    );
+
+    const { projection } = runAll(log.events);
+    const pending = projection.getSnapshot().pendingInteractions[0];
+    expect(pending).toMatchObject({ kind: "userInput" });
+    const payload = pending?.kind === "userInput" ? pending.payload : undefined;
+    expect(payload?.schema).toEqual({ interaction: "plan_approval", toolName: "ExitPlanMode" });
+  });
+
   it("Q：ExitPlanMode 权限等待态 → plan approval elicitation pendingInteraction", () => {
     const turnId = "turn-plan";
     const log = new EventLog();
@@ -3116,7 +3160,12 @@ describe("ProductProjection 黄金测试（L1）", () => {
         kind: "userInput",
         toolName: "ExitPlanMode",
         toolCallId: "exit-plan-1",
-        schema: { interaction: "plan_approval", toolName: "ExitPlanMode" },
+        // 主会话来源的计划审批声明支持执行模型；界面据此决定是否渲染「执行模型」字段。
+        schema: {
+          interaction: "plan_approval",
+          toolName: "ExitPlanMode",
+          executionModel: { supported: true },
+        },
         questions: [
           {
             header: "Plan",

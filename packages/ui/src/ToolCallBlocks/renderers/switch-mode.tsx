@@ -1,13 +1,14 @@
-import { useState, type KeyboardEvent, type MouseEvent } from "react";
+import type { KeyboardEvent, MouseEvent } from "react";
 import { MessageResponse } from "@/components/ai-elements/message.js";
 import { ToolOutput } from "@/components/ai-elements/tool.js";
 import { Button } from "@/components/ui/button.js";
 import { useZCodeIntl } from "@/i18n/IntlProvider.js";
 import { getToolCallErrorText } from "@/lib/toolError.js";
 import { extractPlanToolCallContent, getPlanFileLabel } from "@/lib/planToolCall.js";
+import { PlanCopyButton, PlanSaveButton } from "@/plan-approval/index.js";
 import { ToolSnapshotFieldNotice } from "@/ToolCallBlocks/ToolSnapshotFieldNotice.js";
 import type { ToolCallBlockRenderContext } from "../shared.js";
-import { ArrowRightIcon, CheckIcon, CopyIcon, NotepadTextIcon } from "lucide-react";
+import { ArrowRightIcon, NotepadTextIcon } from "lucide-react";
 
 function isInteractiveDescendant(target: EventTarget | null, card: HTMLElement): boolean {
   if (!(target instanceof Element)) return false;
@@ -15,6 +16,12 @@ function isInteractiveDescendant(target: EventTarget | null, card: HTMLElement):
   // 卡片自身带 role=button，旧 closest 会让卡片任意位置都命中自己，
   // 结果“点击卡片打开详情”从未执行。这里只拦截复制/展开/正文链接等真实子控件。
   return interactive !== null && interactive !== card;
+}
+
+/** v4 行的原始状态经 toolCallRowAdapter 落在 raw.v4Status。 */
+function readV4ToolStatus(raw: unknown): string | undefined {
+  if (typeof raw !== "object" || raw === null || !("v4Status" in raw)) return undefined;
+  return typeof raw.v4Status === "string" ? raw.v4Status : undefined;
 }
 
 export function SwitchModeToolCallBlock(context: ToolCallBlockRenderContext) {
@@ -33,8 +40,13 @@ export function SwitchModeToolCallBlock(context: ToolCallBlockRenderContext) {
     />
   );
   const hasMarkdown = typeof markdown === "string" && markdown.length > 0;
-  const [copiedMarkdown, setCopiedMarkdown] = useState<string | null>(null);
-  const copied = copiedMarkdown === markdown;
+  // 远程工作区的路径不是本机路径：另存为不传候选目录，由系统决定对话框位置。
+  const saveScope = {
+    ...(context.workspacePath ? { workspacePath: context.workspacePath } : {}),
+    remote: Boolean(context.workspaceRemoteSessionId),
+  };
+  // 计划参数仍在流式到达：此时保存会写出半截计划，先禁用（复制不受影响）。
+  const planStreaming = readV4ToolStatus(toolCall.raw) === "inputStreaming";
 
   const openDetail = () => {
     if (!markdown || !context.onOpenPlanDetail) return;
@@ -56,14 +68,6 @@ export function SwitchModeToolCallBlock(context: ToolCallBlockRenderContext) {
     if (isInteractiveDescendant(event.target, event.currentTarget)) return;
     event.preventDefault();
     openDetail();
-  };
-
-  const handleCopy = () => {
-    if (!markdown || typeof navigator === "undefined" || !navigator.clipboard?.writeText) return;
-    void navigator.clipboard.writeText(markdown).then(
-      () => setCopiedMarkdown(markdown),
-      () => setCopiedMarkdown(null),
-    );
   };
 
   if (hasMarkdown) {
@@ -93,20 +97,12 @@ export function SwitchModeToolCallBlock(context: ToolCallBlockRenderContext) {
               </code>
             ) : null}
             <div className="ml-auto flex shrink-0 items-center gap-1">
-              <Button
-                type="button"
-                variant="ghost"
-                size="icon-sm"
-                aria-label={intl.formatMessage({
-                  id: copied ? "planTool.panel.copied" : "planTool.panel.copy",
-                })}
-                onClick={(event) => {
-                  event.stopPropagation();
-                  handleCopy();
-                }}
-              >
-                {copied ? <CheckIcon className="size-3.5" /> : <CopyIcon className="size-3.5" />}
-              </Button>
+              <PlanCopyButton markdown={markdown ?? ""} />
+              <PlanSaveButton
+                markdown={markdown ?? ""}
+                scope={saveScope}
+                disabled={planStreaming}
+              />
             </div>
           </header>
           <div className="relative overflow-hidden">

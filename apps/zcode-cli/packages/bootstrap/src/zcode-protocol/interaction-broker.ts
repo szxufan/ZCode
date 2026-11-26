@@ -12,6 +12,7 @@ import {
   SessionEventType,
   createEventId,
   type AskUserQuestion,
+  type Logger,
   type McpElicitationRequest,
   type McpElicitationResult,
   type PermissionBrokerPort,
@@ -36,6 +37,7 @@ import {
   type ZCodeUserInputQuestion,
   type ZCodeUserInputResponse,
 } from "@zcode/shared";
+import { modelSelectionSchema, type ModelSelection } from "@zcode/shared/model-selection";
 import type {
   V4InteractionAnswer,
   V4InteractionRegistrationOptions,
@@ -451,7 +453,22 @@ async function requestExitPlanModeApproval(
     options?.onRegistered,
   );
 
-  return planApprovalResponseToBrokerResult(response);
+  return planApprovalResponseToBrokerResult(response, context.logger);
+}
+
+function parsePlanApprovalExecutionModel(
+  content: Record<string, unknown> | undefined,
+  logger?: Logger,
+): ModelSelection | undefined {
+  if (!content || content.executionModel === undefined) return undefined;
+  const parsed = modelSelectionSchema.safeParse(content.executionModel);
+  if (parsed.success) return parsed.data;
+  logger?.warn("ExitPlanMode approval carried a malformed executionModel; approving without it", {
+    event: "zcode_protocol.plan_approval.execution_model_invalid",
+    module: "bootstrap.zcode_protocol",
+    status: "failed",
+  });
+  return undefined;
 }
 
 function v4AnswerToPlanApprovalResponse(answer: V4InteractionAnswer): ZCodeUserInputResponse {
@@ -550,6 +567,7 @@ function userInputResponseToBrokerResult(
 
 function planApprovalResponseToBrokerResult(
   response: ZCodeUserInputResponse,
+  logger?: Logger,
 ): PermissionBrokerResult {
   if (response.action !== "accept") {
     return {
@@ -561,8 +579,13 @@ function planApprovalResponseToBrokerResult(
 
   const answer = normalizePlanApprovalAnswer(response.content);
   if (answer === EXIT_PLAN_MODE_APPROVAL_APPROVE) {
+    // 执行模型只是「让当前轮在下一步跟上会话选择」的触发信号
+    // （docs/specs/plan-approval-execution-model.md）。形状不合法时按没选处理，批准本身不受影响；
+    // 计划反馈走到下面的 deny，不携带它。
+    const executionModelSelection = parsePlanApprovalExecutionModel(response.content, logger);
     return {
       decision: "allow",
+      ...(executionModelSelection ? { executionModelSelection } : {}),
       reason: response.reason,
       resolvedAt: new Date(),
     };

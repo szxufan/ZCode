@@ -33,6 +33,10 @@
   - picker owner 只在当前 `workspaceKey + sessionId/draft scope` 内有效；scope 切换时必须
     同步清空。`ConversationComposer` React 实例可以跨 task/draft 复用，但打开状态不得跨 scope
     保留或自动弹出。
+- `packages/ui/src/plan-approval/PlanExecutionModelField.tsx`
+  - `ExitPlanMode` 审批弹窗里的「执行模型」字段，使用非 Composer 的 DropdownMenu 形态；`focusSelectorOnClose={null}`，菜单向上展开。
+  - 清单与 Composer 同源，首项是「会话模型」并带当前模型名。选中值由弹窗宿主持有，不写草稿、不写 workspace default；只有批准时才经既有 `switchModelConfig` 路径切换。
+  - 行为契约见 [计划审批的执行模型](../specs/plan-approval-execution-model.md)。
 
 ## 兼容边界
 

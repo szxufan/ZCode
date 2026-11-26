@@ -9,7 +9,15 @@
 ## 已确认产品语义
 
 - 左上角固定显示“计划”，不显示工具原名或“套餐”。
-- 右上角只显示复制；不显示展开、点赞、点踩。
+- 右上角显示复制和保存；不显示展开、点赞、点踩。
+- 「保存计划」把计划原文另存为本机 Markdown 文件：
+  - 走平台另存为对话框，不弹窗直接写盘。建议文件名为 `YYYY-MM-DD-<标题>.md`；标题取 Markdown 首个 H1，没有则取首个非空行，再没有用 `plan`；文件名里的路径非法字符与空白折叠为 `-`，标题最长 80 个字符。
+  - 默认目录候选依次为工作区的 `docs/superpowers/plans`、工作区根目录，由 main 选第一个存在的候选；远程工作区不传候选目录，对话框落在系统默认位置。
+  - 保存内容是计划原文，不加 frontmatter，不读取卡片裁切 DOM。
+  - 成功出 toast；取消另存为不产生文件也不提示；失败出既有保存失败提示。
+  - 计划详情侧栏顶部提供同一条工具栏（复制、保存），行为与卡片一致。
+  - 没有另存为能力的平台（本 fork 的 Web 端）不渲染保存按钮；计划的 `plan` 仍在流式增长时保存按钮禁用。
+  - 保存只读取既有投影里的正文并发起平台动作，不发送 task command，不改变 `desktop-continuous` 与 `web-remote-replayable` 任一链路。
 - 正文预览底部 `bottom-6` 悬浮显示默认主按钮样式、`h-10 pl-6 !pr-4.5` 的胶囊按钮
   “查看完整计划 →”，替代原 header 展开按钮。
 - 点击卡片非交互区域或底部“查看完整计划”按钮，行为一致：在 Side Pane 打开详情。
@@ -70,6 +78,13 @@ ExitPlanMode terminal / row.removed / snapshot
    ---> ExitPlanMode markdown（同轮原顺序）
    ---> 以空行拼接后写入剪贴板
 
+卡片 / 详情侧栏「保存计划」
+   ---> PlanSaveButton（读取投影里的计划原文）
+   ---> platform.saveFile({ data, suggestedName, defaultDirectoryCandidates })
+   ---> main：逐个检查候选目录是否存在 ---> 另存为对话框（defaultPath）
+   ---> 用户确认 ---> 写入本机文件 ---> 成功 toast
+   ---> 用户取消 ---> 无文件、无提示
+
 切换父任务
    ---> 按 parentSessionId 隐藏 / 恢复对应计划 tab
    ---> 不新建 runtime，不改 owner / queue / deliveryKind
@@ -84,6 +99,7 @@ ExitPlanMode terminal / row.removed / snapshot
 | plan detail tab 与激活项 | renderer workspace Side Pane memory | 当前窗口；不落盘 |
 | tab 稳定身份 | `workspaceIdentity?.trim() \|\| workspacePath` + parent session + tool call | 当前窗口 |
 | 最近一份非空计划正文 | plan detail 组件本地展示 fallback | tab 挂载期 |
+| 保存的目标文件 | 本机文件；路径由用户在另存为对话框中确认 | 一次性动作；不回写会话、投影或 plan file |
 
 ## 交互与可访问性
 
@@ -100,6 +116,9 @@ ExitPlanMode terminal / row.removed / snapshot
   可见文案作为无障碍名称，不与整卡复用 `aria-label`。
 - 图标按钮使用紧凑 `icon-xs` / `icon-sm` 尺寸并提供本地化 `aria-label`。
 - 复制成功只改变按钮可访问名称与图标，不引入常驻 toast。
+- 保存按钮与复制按钮同排、同为 `icon-sm` ghost 图标按钮，带本地化 `aria-label` 与 tooltip；保存期间按钮禁用，防止重复弹出另存为对话框。
+- 保存成功与失败都走 toast（成功文案沿用平台另存为的既有键），不改变按钮图标。
+- 详情侧栏的工具栏吸顶，右对齐放复制和保存；正文滚动时工具栏保持可见。
 - 主时间线预览的正文节点同时承载 `max-h-64`、溢出裁切和底部 mask；前
   `30%` 完全可见，后 `70%` 渐隐，确保渐变按可见高度计算。空计划不显示计划卡片，
   Side Pane 仍展示完整正文。
@@ -118,5 +137,9 @@ ExitPlanMode terminal / row.removed / snapshot
 | S13  | 当前有效分支存在多个已结束计划                   | 右上角“计划”按最新优先列出全部计划；标题取 Markdown H1/首个非空行；点击打开对应 Side Pane                                  | accepted |
 | S14  | 计划处于流式/审批中，随后终态；或 edit/retry 裁枝 | 非终态不进摘要；终态后出现；`row.removed` 后从目录移除；迟到 query 不恢复旧计划                                             | accepted |
 | S15  | 冷恢复、桌面 continuous、手机 remote replayable | 复用同一 CLI 全量投影 query 和 shared-host attachment；返回同一有效集合，不新增 runtime、owner、queue 或 replay 分支       | accepted |
+| PSV01 | 本地工作区存在 `docs/superpowers/plans`；在卡片或详情侧栏点击保存并确认 | `defaultPath` 以 `docs/superpowers/plans/YYYY-MM-DD-标题.md` 结尾；文件内容等于计划原文；出现成功 toast | accepted |
+| PSV02 | 本地工作区不存在 `docs/superpowers/plans`；点击保存 | `defaultPath` 落在工作区根目录下同一文件名 | accepted |
+| PSV03 | 远程工作区；在另存为对话框取消；写入失败 | 远程不传候选目录；取消不产生文件也不提示；失败出既有保存失败提示 | accepted |
+| PSV04 | 计划仍在流式增长；平台没有另存为能力 | 流式期间保存按钮禁用，复制不受影响；无能力的平台不渲染保存按钮 | accepted |
 
-剪枝：不把 `model × permission mode × goal × fork × queue` 与计划详情做笛卡尔积，因为详情和目录都只读既有 projection，不发送 session command。`success/error/cancelled` 共用同一终态过滤实现，组件测试枚举即可；远程 snapshot/gap 的恢复正确性继续由既有 replayable case 负责，S15 只证明 query 路由与 workspace identity 不串联。
+剪枝：不把 `model × permission mode × goal × fork × queue` 与计划详情做笛卡尔积，因为详情和目录都只读既有 projection，不发送 session command。`success/error/cancelled` 共用同一终态过滤实现，组件测试枚举即可；远程 snapshot/gap 的恢复正确性继续由既有 replayable case 负责，S15 只证明 query 路由与 workspace identity 不串联。保存动作只读取投影正文并发起平台能力调用，同样不把 `provider × 工作区类型 × deliveryKind` 与保存做全排列：目录存在与不存在、本地与远程各取一例代表。

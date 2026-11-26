@@ -35,6 +35,7 @@ function ToolCallBlockComponent({
   toolCallNode,
   depth = 0,
   workspacePath,
+  workspaceRemoteSessionId,
   theme,
   codePreviewSettings,
   showIcon = true,
@@ -63,6 +64,8 @@ function ToolCallBlockComponent({
   toolCallNode: TaskChatToolCallTreeNode;
   depth?: number;
   workspacePath: string;
+  /** 远程工作区的 remoteSessionId；本机工作区不传。由宿主绑定，与 workspacePath 同路注入。 */
+  workspaceRemoteSessionId?: ToolCallBlockRenderContext["workspaceRemoteSessionId"];
   /** 应用主题（store 耦合剥离）：由宿主（v4 SessionPane 等）传入，缺省按 "system" 兜底。 */
   theme?: ToolCallBlockRenderContext["theme"];
   /** 代码预览设置（store 耦合剥离）：由宿主传入并保持引用稳定。 */
@@ -163,6 +166,7 @@ function ToolCallBlockComponent({
               toolCallNode={childToolCallNode}
               depth={depth + 1}
               workspacePath={workspacePath}
+              workspaceRemoteSessionId={workspaceRemoteSessionId}
               theme={theme}
               codePreviewSettings={codePreviewSettings}
               showIcon={showIcon}
@@ -196,6 +200,7 @@ function ToolCallBlockComponent({
       codePreviewSettings,
       toolPreviewCodeViewer,
       workspacePath,
+      workspaceRemoteSessionId,
     ],
   );
 
@@ -205,6 +210,7 @@ function ToolCallBlockComponent({
       isOfficeMode,
       toolCallNode,
       workspacePath,
+      workspaceRemoteSessionId,
       theme,
       codePreviewSettings,
       displayModel,
@@ -275,6 +281,7 @@ function ToolCallBlockComponent({
       workflowRun,
       workflowDraft,
       workspacePath,
+      workspaceRemoteSessionId,
     ],
   );
 

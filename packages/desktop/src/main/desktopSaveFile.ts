@@ -1,10 +1,10 @@
-import { copyFile, mkdtemp, open, rm, writeFile } from "node:fs/promises";
+import { copyFile, mkdtemp, open, rm, stat, writeFile } from "node:fs/promises";
 import { lookup } from "node:dns/promises";
 import type { LookupAddress } from "node:dns";
 import { BlockList } from "node:net";
 import type { LookupFunction } from "node:net";
 import { tmpdir } from "node:os";
-import { basename, join } from "node:path";
+import { basename, isAbsolute, join } from "node:path";
 import type { SaveFileRequest, SaveFileResult } from "@zcode/shared";
 import { PlatformChannels } from "@zcode/shared";
 import { BrowserWindow, dialog, ipcMain } from "electron";
@@ -181,6 +181,26 @@ async function downloadRemoteFile(sourceUrl: URL, destinationPath: string): Prom
   }
 }
 
+/**
+ * 另存为对话框的起始目录：按调用方给的顺序取第一个存在的本机绝对目录。
+ * 目录是否存在只有 main 知道，所以由这里判定，渲染进程只给候选（例如工作区的
+ * docs/superpowers/plans、工作区根目录）。非法或都不存在时返回 undefined，沿用系统默认位置。
+ */
+export async function resolveSaveFileDefaultDirectory(
+  candidates: readonly string[] | undefined,
+): Promise<string | undefined> {
+  if (!Array.isArray(candidates)) return undefined;
+  for (const candidate of candidates) {
+    if (typeof candidate !== "string" || !isAbsolute(candidate)) continue;
+    try {
+      if ((await stat(candidate)).isDirectory()) return candidate;
+    } catch {
+      // 不存在或不可访问：看下一个候选。
+    }
+  }
+  return undefined;
+}
+
 export function registerDesktopSaveFileIpcHandler(logger: { warn: (...args: unknown[]) => void }) {
   ipcMain.handle(
     PlatformChannels.SaveFile,
@@ -201,7 +221,12 @@ export function registerDesktopSaveFileIpcHandler(logger: { warn: (...args: unkn
       }
 
       const senderWindow = BrowserWindow.fromWebContents(event.sender);
-      const dialogOptions = { defaultPath: suggestedName };
+      const defaultDirectory = await resolveSaveFileDefaultDirectory(
+        payload.defaultDirectoryCandidates,
+      );
+      const dialogOptions = {
+        defaultPath: defaultDirectory ? join(defaultDirectory, suggestedName) : suggestedName,
+      };
       const result = senderWindow
         ? await dialog.showSaveDialog(senderWindow, dialogOptions)
         : await dialog.showSaveDialog(dialogOptions);

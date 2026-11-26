@@ -2,8 +2,10 @@ import {
   CoreErrorType,
   createCoreError,
   type CollaborationMode,
+  type ModelSelection,
   type PermissionBrokerResult,
 } from "@zcode/contracts";
+import { modelSelectionSchema } from "@zcode/shared/model-selection";
 import type { PermissionDecisionResult } from "../../permission/service.js";
 import type { ExecutableToolCall, ToolEntry, ToolExecutionResult } from "../types.js";
 import { createErrorResult, createPermissionErrorResult } from "./errors.js";
@@ -18,6 +20,8 @@ export type PermissionFlowResult =
       permissionWaitMs?: number;
       /** 确认窗里的调整中实际生效的那部分（applyInputAdjustments 的 applied）。 */
       inputAdjustments?: Readonly<Record<string, unknown>>;
+      /** 计划批准时用户选的执行模型；只在 ExitPlanMode 的 allow 上出现，原样带到 ToolExecutionResult。 */
+      executionModelSelection?: ModelSelection;
     }
   | { allowed: false; result: ToolExecutionResult };
 
@@ -86,7 +90,16 @@ export function interpretPermissionResponse(params: {
       if (outcome.source === "hook") return { kind: "rewrite", input };
     }
   }
-  return { kind: "complete", result: { allowed: true, executionInput: input } };
+  return {
+    kind: "complete",
+    result: {
+      allowed: true,
+      executionInput: input,
+      ...(response.executionModelSelection
+        ? { executionModelSelection: response.executionModelSelection }
+        : {}),
+    },
+  };
 }
 
 function validatePermissionResponse(response: PermissionBrokerResult, once: boolean): void {
@@ -94,6 +107,9 @@ function validatePermissionResponse(response: PermissionBrokerResult, once: bool
     !response ||
     !["allow", "deny", "modify", ...(once ? [] : ["escalate"])].includes(response.decision) ||
     (response.reason !== undefined && typeof response.reason !== "string") ||
+    // 执行模型选择的合法值由 broker 用同一份 schema 产出；这里挡住其它 responder 带来的畸形值。
+    (response.executionModelSelection !== undefined &&
+      !modelSelectionSchema.safeParse(response.executionModelSelection).success) ||
     (response.permissionUpdates !== undefined &&
       (!Array.isArray(response.permissionUpdates) ||
         (once && response.permissionUpdates.length > 0))) ||

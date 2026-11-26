@@ -348,17 +348,27 @@ export interface MaterializeWorkflowArtifactFileResult {
   localPath: string;
 }
 
-export type SaveFileRequest =
-  | {
-      data: ArrayBuffer;
-      sourceUrl?: never;
-      suggestedName: string;
-    }
-  | {
-      data?: never;
-      sourceUrl: string;
-      suggestedName: string;
-    };
+/**
+ * 另存为对话框的起始目录候选，按优先级排列，必须是本机绝对路径。桌面 main 取第一个存在的；
+ * 都不存在时不指定目录，对话框落在系统默认位置。远程工作区的路径不是本机路径，调用方不应传入。
+ */
+export interface SaveFileDefaultDirectoryCandidates {
+  defaultDirectoryCandidates?: string[];
+}
+
+export type SaveFileRequest = SaveFileDefaultDirectoryCandidates &
+  (
+    | {
+        data: ArrayBuffer;
+        sourceUrl?: never;
+        suggestedName: string;
+      }
+    | {
+        data?: never;
+        sourceUrl: string;
+        suggestedName: string;
+      }
+  );
 
 export interface SaveFileResult {
   /** 桌面表示已写入文件；Web 仅表示已将下载交给浏览器，不确认最终落盘。 */

@@ -16,6 +16,7 @@ import {
 import { resolveSelectionSideInheritedModel } from "@/lib/selectionSideInheritedModel.js";
 import { useStartPlanRecommendation } from "@/hooks/useStartPlanRecommendation.js";
 import type { SessionCreateSource } from "@zcode/shared";
+import type { ModelSelection } from "@zcode/shared/model-selection";
 import { reportSessionCreate } from "@/lib/sessionCreateTelemetry.js";
 import { getLocalTtftObserver } from "@/v4/telemetry/local-ttft/contract.js";
 import { BotGroupDeliveryProvider } from "@/v4/BotGroupDeliveryAction.js";
@@ -3951,32 +3952,20 @@ export function SessionPane({
     confirm: handleDraftSelectModel,
   });
   modelSelectionOwnerRef.current = { key: modelSelectionOwnerKey, confirm: handleDraftSelectModel };
-  const handleSelectModel = useCallback(
+  // 会话模型切换的唯一提交点：composer 模型菜单与计划审批的执行模型
+  // （docs/specs/plan-approval-execution-model.md）共用同一条 configCommandBarrier + CAS 路径，
+  // 成功才确认草稿偏好并提示切换。返回是否被接受；失败提示由这里发出，调用方据此决定是否继续
+  // （计划审批切换失败时不提交批准）。
+  const commitSessionModelSwitch = useCallback(
     async (
-      modelProvider: string,
-      model: string,
+      selection: ModelSelection,
       sourceModel: ModelSelectionSource | null,
-      reasoningLevel?: string,
-    ) => {
-      const resolvedProvider =
-        modelProvider || draftConfigRef.current.provider || sourceModel?.provider || "";
-      if (!sessionId) {
-        handleDraftSelectModel(resolvedProvider, model, reasoningLevel);
-        return;
-      }
-      if (modelSelectionFlightsRef.current.has(modelSelectionOwnerKey)) return;
-      const targetSessionId = sessionId;
-      const selection = reasoningLevel
-        ? { providerId: resolvedProvider, modelId: model, options: { reasoningLevel } }
-        : modelSelectionDisplayView
-          ? completeNewModelSelection(modelSelectionDisplayView, {
-              providerId: resolvedProvider,
-              modelId: model,
-            })
-          : undefined;
-      if (!selection?.options?.reasoningLevel) {
+      targetSessionId: string,
+    ): Promise<boolean> => {
+      if (modelSelectionFlightsRef.current.has(modelSelectionOwnerKey)) return false;
+      if (!selection.options?.reasoningLevel) {
         toast(intl.formatMessage({ id: "chat.toolbar.connection.switchFailed" }));
-        return;
+        return false;
       }
       // Bug 原因：面板共用 pending 会阻塞 B；按会话和请求归属，返回 A 仍保留门禁。
       const flight = Symbol();
@@ -4004,7 +3993,7 @@ export function SessionPane({
           currentOwner: modelSelectionOwnerRef.current.key === modelSelectionOwnerKey,
           thought: selection.options.reasoningLevel,
         });
-        if (modelSelectionOwnerRef.current.key !== modelSelectionOwnerKey) return;
+        if (modelSelectionOwnerRef.current.key !== modelSelectionOwnerKey) return true;
         // 返回原会话后使用当前草稿入口；旧闭包绑定的页面 scope 已失效。
         modelSelectionOwnerRef.current.confirm(
           selection.providerId,
@@ -4015,6 +4004,7 @@ export function SessionPane({
           provider: selection.providerId,
           model: selection.modelId,
         });
+        return true;
       } catch (error) {
         logger.warn("[v4-pane] 会话模型切换失败，保留旧选择", {
           targetSessionId,
@@ -4022,6 +4012,7 @@ export function SessionPane({
         });
         if (modelSelectionOwnerRef.current.key === modelSelectionOwnerKey)
           toast(intl.formatMessage({ id: "chat.toolbar.connection.switchFailed" }));
+        return false;
       } finally {
         // 旧回执只能释放自己的请求，不能解除另一个会话的 pending。
         if (modelSelectionFlightsRef.current.get(modelSelectionOwnerKey) === flight) {
@@ -4030,17 +4021,59 @@ export function SessionPane({
         }
       }
     },
+    [configCommandBarrier, dispatchConfigCas, intl, modelSelectionOwnerKey, showModelChangeNotice],
+  );
+
+  const handleSelectModel = useCallback(
+    async (
+      modelProvider: string,
+      model: string,
+      sourceModel: ModelSelectionSource | null,
+      reasoningLevel?: string,
+    ) => {
+      const resolvedProvider =
+        modelProvider || draftConfigRef.current.provider || sourceModel?.provider || "";
+      if (!sessionId) {
+        handleDraftSelectModel(resolvedProvider, model, reasoningLevel);
+        return;
+      }
+      const selection = reasoningLevel
+        ? { providerId: resolvedProvider, modelId: model, options: { reasoningLevel } }
+        : modelSelectionDisplayView
+          ? completeNewModelSelection(modelSelectionDisplayView, {
+              providerId: resolvedProvider,
+              modelId: model,
+            })
+          : undefined;
+      if (!selection?.options?.reasoningLevel) {
+        toast(intl.formatMessage({ id: "chat.toolbar.connection.switchFailed" }));
+        return;
+      }
+      await commitSessionModelSwitch(selection, sourceModel, sessionId);
+    },
     [
-      configCommandBarrier,
-      dispatchConfigCas,
+      commitSessionModelSwitch,
       draftConfigRef,
       handleDraftSelectModel,
       intl,
       modelSelectionDisplayView,
-      modelSelectionOwnerKey,
       sessionId,
-      showModelChangeNotice,
     ],
+  );
+
+  // 计划审批选了另一个执行模型：先走同一条切换路径，被接受后才提交批准。
+  const switchSessionModelForPlanApproval = useCallback(
+    async (selection: ModelSelection): Promise<boolean> => {
+      if (!sessionId) return false;
+      const config =
+        snapshotRef.current?.sessionId === sessionId ? snapshotRef.current.config : undefined;
+      return commitSessionModelSwitch(
+        selection,
+        config ? { provider: config.provider, model: config.model } : null,
+        sessionId,
+      );
+    },
+    [commitSessionModelSwitch, sessionId],
   );
 
   const handleSelectThought = useCallback(
@@ -4953,6 +4986,7 @@ export function SessionPane({
           onPlanInteractionAccepted={
             compactForRemoteControl ? handleMobilePlanInteractionAccepted : undefined
           }
+          onPlanExecutionModelChange={switchSessionModelForPlanApproval}
         />
       ) : null}
       {/* 阻塞交互只隐藏编辑器；队列是已接纳输入，必须仍可管理。

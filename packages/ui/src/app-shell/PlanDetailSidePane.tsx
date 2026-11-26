@@ -1,10 +1,12 @@
 import { memo, useEffect, useMemo, useState } from "react";
+import { TID_PLAN_DETAIL_COPY, TID_PLAN_DETAIL_SAVE } from "@zcode/shared/test-ids";
 import type { MessageFileLinkTarget } from "@/components/ai-elements/message.js";
 import { MessageResponse } from "@/components/ai-elements/message.js";
 import type { CodeViewerSource } from "@/lib/codeViewer.js";
 import { DEFAULT_CODE_PREVIEW_SETTINGS } from "@/lib/codePreviewSettings.js";
 import { extractPlanToolCallContent } from "@/lib/planToolCall.js";
 import type { PlanDetailSidePaneTab } from "@/lib/workspaceSidePane.js";
+import { PlanCopyButton, PlanSaveButton } from "@/plan-approval/index.js";
 import { useZCodeStoreWithDefault } from "@/store/StoreProvider.js";
 import type { SessionLease } from "@/v4/sessionDataLayer.js";
 import { toolCallRowToLegacyNode } from "@/v4/toolCallRowAdapter.js";
@@ -56,22 +58,48 @@ const PlanDetailContent = memo(function PlanDetailContent({
   }, [tab.markdown]);
 
   const markdown = liveMarkdown ?? lastMarkdown;
+  // 计划参数仍在流式到达：此时保存会写出半截计划，先禁用（复制不受影响）。
+  const planStreaming = useMemo(
+    () =>
+      state.snapshot?.rows.window.some(
+        (candidate) =>
+          candidate.kind === "toolCall" &&
+          candidate.toolCallId === tab.toolCallId &&
+          candidate.status === "inputStreaming",
+      ) === true,
+    [state.snapshot, tab.toolCallId],
+  );
+  const planText = markdown ?? "";
   return (
     <div
       data-plan-detail-tool-call-id={tab.toolCallId}
-      className="h-full min-h-0 overflow-y-auto bg-background px-4 py-4"
+      className="flex h-full min-h-0 flex-col bg-background"
     >
-      <MessageResponse
-        className="mx-auto w-full max-w-4xl min-w-0 break-words text-foreground"
-        workspacePath={tab.workspacePath}
-        theme={theme}
-        codePreviewSettings={codePreviewSettings}
-        onOpenCodeViewer={onOpenCodeViewer}
-        onOpenFileLink={onOpenFileLink}
-        onOpenExternalUrl={onOpenBrowserUrl}
-      >
-        {markdown}
-      </MessageResponse>
+      <div className="flex h-10 shrink-0 items-center justify-end gap-1 border-b border-border px-4">
+        <PlanCopyButton markdown={planText} testId={TID_PLAN_DETAIL_COPY} />
+        <PlanSaveButton
+          markdown={planText}
+          scope={{
+            workspacePath: tab.workspacePath,
+            remote: Boolean(tab.remoteSessionId),
+          }}
+          disabled={planStreaming}
+          testId={TID_PLAN_DETAIL_SAVE}
+        />
+      </div>
+      <div className="min-h-0 flex-1 overflow-y-auto px-4 py-4">
+        <MessageResponse
+          className="mx-auto w-full max-w-4xl min-w-0 break-words text-foreground"
+          workspacePath={tab.workspacePath}
+          theme={theme}
+          codePreviewSettings={codePreviewSettings}
+          onOpenCodeViewer={onOpenCodeViewer}
+          onOpenFileLink={onOpenFileLink}
+          onOpenExternalUrl={onOpenBrowserUrl}
+        >
+          {markdown}
+        </MessageResponse>
+      </div>
     </div>
   );
 });

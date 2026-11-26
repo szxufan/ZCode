@@ -1921,6 +1921,22 @@ modules:
       adapters: .
     owner: runtime
 
+  # plan-approval：由 architecture:adopt 登记
+  - id: plan-approval
+    roots:
+      - packages/ui/src/plan-approval
+    managed: true
+    requires:
+      - provider
+      - shared
+      - ui
+    publicEntrypoints:
+      - packages/ui/src/plan-approval/index.ts
+      - packages/ui/src/plan-approval/contract.ts
+    layers:
+      ui: .
+    owner: conversation
+
 global:
   # 临时时间戳（2026-09-10）：unmanaged-new-file 只约束此日期之后首次入库的文件。
   # 基于领先 staging 很多的分支开工时，merge-base 之前的"新增"文件不应被追溯。
@@ -1935,6 +1951,10 @@ global:
   acceptedUpstreamSnapshot: scripts/architecture/upstream-snapshot.json
 
 exceptions:
+  - id: plan-approval-execution-model-permission-response
+    rule: unmanaged-new-file
+    paths: [apps/zcode-cli/packages/core/src/tool/executor/permission-response.ts]
+    reason: 计划审批的执行模型（docs/specs/plan-approval-execution-model.md）：上游已有的权限应答解释函数只在放行分支透传 executionModelSelection，并给 guarded 校验补同一条形状检查；不新增依赖方向，本次不接管整个未受管的 zcode-cli。
   - id: region-copy-suggested-prompts-edit
     rule: unmanaged-new-file
     paths: [packages/ui/src/v4/featureSuggestedPrompts.ts]

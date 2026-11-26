@@ -7990,6 +7990,10 @@ const enUS: Record<string, string> = {
   "chat.elicitation.collapseDialog": "Collapse question dialog",
   "chat.elicitation.planApproval.approve": "Approve",
   "chat.elicitation.planApproval.approveDescription": "Exit plan mode and start implementation.",
+  "chat.elicitation.planApproval.executionModel": "Execution model",
+  "chat.elicitation.planApproval.executionModel.session": "Session model",
+  "chat.elicitation.planApproval.executionModelHint":
+    "After approval, the plan runs with {model} from the next step.",
   "chat.askQuestion.asking": "Asking questions",
   "chat.askQuestion.asked": "Asked",
   "chat.askQuestion.questionsCount": "{count} questions",
@@ -8062,6 +8066,7 @@ const enUS: Record<string, string> = {
   "planTool.panel.open": "Open plan in side pane",
   "planTool.panel.viewFull": "View full plan",
   "planTool.panel.syncing": "Syncing plan…",
+  "planTool.panel.save": "Save plan",
   "planTool.guidance.enterMode": "Entered plan mode",
   "chat.permission.switchMode.placeholder": "Implementation plan",
 

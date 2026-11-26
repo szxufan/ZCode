@@ -6,8 +6,13 @@ import {
   useRef,
   useState,
   type KeyboardEvent as ReactKeyboardEvent,
+  type ReactNode,
 } from "react";
-import type { ZCodeElicitationQuestion, ZCodeElicitationRequest } from "@zcode/shared";
+import type {
+  ModelSelection,
+  ZCodeElicitationQuestion,
+  ZCodeElicitationRequest,
+} from "@zcode/shared";
 import type { InteractionAutoResolution } from "@zcode/shared/zcode-protocol-v4";
 import { CheckIcon, ChevronDown, ChevronLeft, ChevronRight, ChevronUp, Info } from "lucide-react";
 import { Badge } from "@/components/ui/badge.js";
@@ -22,17 +27,28 @@ import { useZCodeIntl } from "./i18n/IntlProvider.js";
 interface ElicitationDialogProps {
   request: ZCodeElicitationRequest;
   autoResolution?: InteractionAutoResolution;
+  /**
+   * 返回 false（或 resolve 为 false 的 Promise）表示这次应答没有成立，弹窗保持打开；
+   * 返回 Promise 期间禁用「忽略」与主按钮。同步返回 void 是既有行为。
+   */
   onRespond: (
     requestId: string,
     action: "accept" | "decline" | "cancel",
     content?: Record<string, unknown>,
-  ) => void;
+  ) => void | boolean | Promise<void | boolean>;
   /** 普通 AskUserQuestion 首次暂停来源；失败返回 false 后允许下一次操作重试。 */
   onFirstInteraction?: (
     source: ElicitationAutoResolutionSnoozeSource,
   ) => boolean | void | Promise<boolean | void>;
   initialFormDraft?: ElicitationFormDraft;
   onFormDraftChange?: (requestId: string, draft: ElicitationFormDraft) => void;
+  /**
+   * 计划审批的「执行模型」字段，由宿主渲染，弹窗只负责摆位。
+   * 宿主只在 CLI 声明支持时传入（docs/specs/plan-approval-execution-model.md）。
+   */
+  planApprovalAccessory?: ReactNode;
+  /** 计划审批：用户选的执行模型；只有「批准」且没有自定义反馈的提交才带上。 */
+  planExecutionModelSelection?: ModelSelection;
 }
 
 export type ElicitationAutoResolutionSnoozeSource =
@@ -302,6 +318,23 @@ export function buildElicitationResponseContent(
   return content;
 }
 
+/**
+ * 计划审批：只有选了「批准」且没有自定义反馈时，才把执行模型并进 content。
+ * 带修改意见的提交是「要求修改计划」，不是执行，不能触发换模。
+ */
+export function withPlanExecutionModelSelection(
+  content: Record<string, unknown>,
+  approval: { question: NormalizedElicitationQuestion; drafts: DraftState } | null,
+  selection: ModelSelection | undefined,
+): Record<string, unknown> {
+  if (!approval || !selection) return content;
+  const draft = approval.drafts[approval.question.key];
+  if (!draft || draft.customAnswer.trim()) return content;
+  return draft.selectedValues.includes(PLAN_APPROVAL_APPROVE_VALUE)
+    ? { ...content, executionModel: selection }
+    : content;
+}
+
 export function updateElicitationDraftsForOption(
   drafts: DraftState,
   question: NormalizedElicitationQuestion,
@@ -347,6 +380,8 @@ function ElicitationDialogContent({
   onFirstInteraction,
   initialFormDraft,
   onFormDraftChange,
+  planApprovalAccessory,
+  planExecutionModelSelection,
 }: ElicitationDialogProps) {
   const { intl } = useZCodeIntl();
   const questions = useMemo(() => normalizeElicitationQuestions(request), [request]);
@@ -361,6 +396,8 @@ function ElicitationDialogContent({
   );
   const [isQuestionExpanded, setIsQuestionExpanded] = useState(false);
   const [isDialogExpanded, setIsDialogExpanded] = useState(true);
+  // 宿主的 onRespond 返回 Promise 时置真：等待期间禁用「忽略」与主按钮。
+  const [isResponding, setIsResponding] = useState(false);
   const optionRefs = useRef<Array<HTMLButtonElement | null>>([]);
   const customInputRef = useRef<HTMLTextAreaElement | null>(null);
   const cardRef = useRef<HTMLDivElement | null>(null);
@@ -450,12 +487,34 @@ function ElicitationDialogContent({
     [reportFirstInteraction, updateDraft],
   );
 
+  // 宿主可能要先完成会话模型切换再提交批准（计划审批的执行模型）：等待期间禁用按钮；
+  // 同步返回是既有行为，不改任何时序。
+  const respond = useCallback(
+    (action: "accept" | "decline" | "cancel", content?: Record<string, unknown>) => {
+      if (isResponding) return;
+      const response = onRespond(request.requestId, action, content);
+      if (!(response instanceof Promise)) return;
+      setIsResponding(true);
+      void response.then(
+        () => setIsResponding(false),
+        () => setIsResponding(false),
+      );
+    },
+    [isResponding, onRespond, request.requestId],
+  );
+
   const submitWithDrafts = useCallback(
     (nextDrafts: DraftState) => {
-      const content = buildElicitationResponseContent(questions, nextDrafts);
-      onRespond(request.requestId, "accept", content);
+      const content = withPlanExecutionModelSelection(
+        buildElicitationResponseContent(questions, nextDrafts),
+        isPlanApproval && currentQuestion
+          ? { question: currentQuestion, drafts: nextDrafts }
+          : null,
+        planExecutionModelSelection,
+      );
+      respond("accept", content);
     },
-    [onRespond, questions, request.requestId],
+    [currentQuestion, isPlanApproval, planExecutionModelSelection, questions, respond],
   );
 
   const advanceFromQuestion = useCallback(
@@ -526,8 +585,8 @@ function ElicitationDialogContent({
 
   const dismiss = useCallback(() => {
     reportFirstInteraction("answer");
-    onRespond(request.requestId, "decline");
-  }, [onRespond, reportFirstInteraction, request.requestId]);
+    respond("decline");
+  }, [reportFirstInteraction, respond]);
 
   const goPreviousPage = useCallback(() => {
     if (questions.length === 0) {
@@ -878,6 +937,9 @@ function ElicitationDialogContent({
   const handleCardKeyDown = useCallback(
     (event: ReactKeyboardEvent<HTMLDivElement>) => {
       if (activeOptionIndex >= 0) return; // 按钮已有焦点，由按钮 onKeyDown 处理
+      // 弹窗内嵌的浮层（计划审批的执行模型菜单）渲染在 portal 里：按键沿 React 树冒泡到这里，
+      // 但目标不在卡片 DOM 内，交给浮层自己处理（docs/elicitation-keyboard-behavior.md）。
+      if (!(event.target instanceof Node) || !event.currentTarget.contains(event.target)) return;
       switch (event.key) {
         case "ArrowDown":
           event.preventDefault();
@@ -1088,6 +1150,7 @@ function ElicitationDialogContent({
                   )}
                   {renderCustomInput(currentQuestion, currentQuestion.options.length)}
                 </div>
+                {isPlanApproval ? planApprovalAccessory : null}
               </div>
             ) : (
               <p className="px-1 text-ui-base text-foreground-subtle">
@@ -1145,12 +1208,19 @@ function ElicitationDialogContent({
               </span>
             </p>
             <div className="flex shrink-0 items-center gap-2">
-              <Button type="button" size="lg" variant="outline" onClick={dismiss}>
+              <Button
+                type="button"
+                size="lg"
+                variant="outline"
+                disabled={isResponding}
+                onClick={dismiss}
+              >
                 {intl.formatMessage({ id: "chat.elicitation.dismiss" })}
               </Button>
               <Button
                 type="button"
                 size="lg"
+                disabled={isResponding}
                 onClick={questions.length === 0 ? submit : continueOrSubmit}
                 className="bg-brand text-foreground-inverse hover:bg-brand/80"
               >

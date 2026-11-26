@@ -656,6 +656,14 @@ export const TID_V4_COMPOSER_SCHEDULE_MENU_ITEM = "v4-composer-schedule-menu-ite
 export const TID_V4_COMPOSER_SCHEDULE_PRESET = "v4-composer-schedule-preset";
 /** v4 composer 定时发送浮层：确认按钮 */
 export const TID_V4_COMPOSER_SCHEDULE_CONFIRM = "v4-composer-schedule-confirm";
+/** ExitPlanMode 计划卡片右上角的「保存计划」按钮 */
+export const TID_PLAN_CARD_SAVE = "plan-card-save";
+/** 计划详情侧栏工具栏的「复制计划」按钮 */
+export const TID_PLAN_DETAIL_COPY = "plan-detail-copy";
+/** 计划详情侧栏工具栏的「保存计划」按钮 */
+export const TID_PLAN_DETAIL_SAVE = "plan-detail-save";
+/** ExitPlanMode 审批弹窗「执行模型」选择器的触发器 */
+export const TID_PLAN_APPROVAL_EXECUTION_MODEL_TRIGGER = "plan-approval-execution-model-trigger";
 /** v4 composer 语音输入按钮（data-voice-state 标记 idle / requesting / recording / finishing） */
 export const TID_V4_COMPOSER_VOICE_INPUT = "v4-composer-voice-input";
 /** v4 composer 语音输入音量点阵（data-voice-active-dots 为当前有音量的点数） */

@@ -1,0 +1,44 @@
+{
+  "version": 1,
+  "caseName": "conversation-session-plan-approval-execution-model",
+  "spec": "./test/e2e/conversation-session/planning/manual-review/pending/conversation-session-plan-approval-execution-model.test.ts",
+  "providerFixtures": [
+    "./test/e2e/fixtures/upstream/common.json",
+    "./test/e2e/fixtures/upstream/conversation-session/conversation-session-plan-approval-execution-model.json"
+  ],
+  "fileFixtures": [],
+  "requests": [
+    {
+      "id": "upstream-plan-exec-model-enter-plan-call",
+      "description": "首轮请求返回 EnterPlanMode，进入 plan mode。",
+      "kind": "main",
+      "source": "synthetic",
+      "timingPolicy": "fast-text",
+      "syntheticReason": "需要稳定制造 plan mode 状态，避免依赖真实模型是否选择 EnterPlanMode。"
+    },
+    {
+      "id": "upstream-plan-exec-model-exit-plan-call",
+      "description": "plan mode 内返回 ExitPlanMode，触发带执行模型字段的审批弹窗。",
+      "kind": "main",
+      "source": "synthetic",
+      "timingPolicy": "fast-text",
+      "syntheticReason": "需要稳定触发 ExitPlanMode 审批弹窗，让执行模型字段的端到端接线可断言。"
+    },
+    {
+      "id": "upstream-plan-exec-model-auto-compact",
+      "description": "审批后的 mid-turn auto compact 返回稳定摘要，让主 turn 继续。",
+      "kind": "main",
+      "source": "synthetic",
+      "timingPolicy": "fast-text",
+      "syntheticReason": "E2E 模型使用极小 context window，ExitPlanMode 批准后会稳定触发 mid-turn auto compact；本响应只用于让审批主路径继续。"
+    },
+    {
+      "id": "upstream-plan-exec-model-final",
+      "description": "批准计划后返回固定文本，让当前轮完成。",
+      "kind": "main",
+      "source": "synthetic",
+      "timingPolicy": "fast-text",
+      "syntheticReason": "核心合同是批准后同一轮继续；最终回复只需稳定结束当前轮。"
+    }
+  ]
+}

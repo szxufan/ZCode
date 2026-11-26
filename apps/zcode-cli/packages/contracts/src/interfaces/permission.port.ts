@@ -4,6 +4,7 @@
 
 import type { PermissionDecision } from "../events/session.events.js";
 import type { ModelToolSideEffectScope } from "../model/index.js";
+import type { ModelSelection } from "@zcode/shared/model-selection";
 import type { CollaborationMode, RiskLevel } from "./session.port.js";
 import type { InteractionRequestOrigin, SessionId, ToolCallId, TraceId, TurnId } from "./shared.js";
 
@@ -93,6 +94,15 @@ export interface PermissionBrokerResult {
    * Synthesized by the broker from the v4 answer's `content`.
    */
   inputAdjustments?: Readonly<Record<string, unknown>>;
+  /**
+   * The model the user picked to execute an approved plan with. Carried only on an `allow` for
+   * `ExitPlanMode`, and only when the v4 answer's `content.executionModel` parses as a complete
+   * ModelSelection. It never rewrites tool input and the `ExitPlanMode` handler does not read it:
+   * the runtime treats it as a request to let the running turn adopt the session's current
+   * selection at the next model-step boundary (docs/specs/plan-approval-execution-model.md).
+   * Synthesized by the broker from the v4 answer's `content`.
+   */
+  executionModelSelection?: ModelSelection;
   resolvedAt?: Date;
 }
 
