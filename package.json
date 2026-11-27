@@ -2,6 +2,7 @@
   "name": "zcode",
   "version": "4.0.3",
   "private": true,
+  "license": "Apache-2.0",
   "type": "module",
   "imports": {
     "#libreoffice/*": "./scripts/preinstalled-tools/libreoffice/*.mjs",
@@ -36,7 +37,7 @@
     "test:e2e:container:plugins": "bash scripts/test-desktop-e2e-container.sh plugins-verified",
     "test:coverage": "vitest run --coverage --project unit --project fork-isolated",
     "test:unit": "vitest run --project unit --project fork-isolated",
-    "verify:pre-push": "node scripts/check-push-worktree.mjs && pnpm run check:e2e-remote-targets && pnpm run lint && pnpm run docs:stale-phrases:check && pnpm run db:schema:check && pnpm run test:architecture && pnpm run architecture:check -- --changed && pnpm run test:engineering:affected --scope push",
+    "verify:pre-push": "node scripts/check-push-worktree.mjs && pnpm run check:e2e-remote-targets && pnpm run lint:gate && pnpm run docs:stale-phrases:check && pnpm run db:schema:check && pnpm run test:architecture && pnpm run architecture:check -- --changed && pnpm run test:engineering:affected --scope push",
     "build": "pnpm -r build",
     "build:desktop-agent:bytecode": "node scripts/build-desktop-agent-bytecode.mjs",
     "build:docs": "pnpm --filter @zcode/dev-docs build",
@@ -63,6 +64,7 @@
     "build:cua": "pnpm --filter @zcode/zcode-cua build",
     "doctor:macos-release": "bash scripts/doctor-macos-release-app.sh",
     "lint": "oxlint && node scripts/architecture/session-control-boundary.mjs && node scripts/check-document-libreoffice.mjs && node scripts/check-document-python.mjs",
+    "lint:gate": "oxlint --quiet && node scripts/architecture/session-control-boundary.mjs && node scripts/check-document-libreoffice.mjs && node scripts/check-document-python.mjs",
     "lint:fix": "oxlint --fix --fix-suggestions",
     "bootstrap": "node scripts/bootstrap.mjs",
     "bootstrap:with-remote": "node scripts/bootstrap.mjs --with-remote",
@@ -83,7 +85,7 @@
     "test:git-invocation": "node --import tsx --test scripts/test/git-product-invocation.test.ts",
     "test:engineering": "vitest run --project engineering",
     "test:engineering:affected": "node scripts/run-affected-engineering-tests.mjs",
-    "test:engineering-tools": "node --test scripts/test/affected-engineering-test-cli.test.mjs scripts/test/pre-push-worktree.test.mjs scripts/test/retired-app-unit-evidence.test.mjs scripts/test/e2e-remote-targets-check.test.mjs",
+    "test:engineering-tools": "node --test scripts/test/affected-engineering-test-cli.test.mjs scripts/test/pre-push-worktree.test.mjs scripts/test/retired-app-unit-evidence.test.mjs scripts/test/e2e-remote-targets-check.test.mjs scripts/test/lint-gate.test.mjs",
     "check:e2e-remote-targets": "node scripts/check-e2e-remote-targets.mjs"
   },
   "dependencies": {
@@ -127,6 +129,5 @@
   "engines": {
     "node": ">=24.0.0"
   },
-  "packageManager": "pnpm@11.29.0",
-  "license": "Apache-2.0"
+  "packageManager": "pnpm@11.29.0"
 }

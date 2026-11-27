@@ -17,6 +17,7 @@ Git push ref 输入 → 清理 Git local env → 工作区与目标检查
 - Git local env 必须先清理，避免工程测试的临时 Git 仓库误操作当前仓库。
 - 过时文档措辞检查（`pnpm docs:stale-phrases:check`，`scripts/check-stale-doc-phrases.mjs`）：规则改了以后，旧说法常留在复述这条规则的其他文档里。脚本登记已作废的说法，扫描 `docs/` 与 `apps/zcode-cli/docs/` 的 Markdown，出现即失败并指向现行规则；`docs/plans/`、`docs/v4-refactor/` 是历史记录，不检查。改规则时把旧说法加进登记表。
 - 远程目标清单一致性检查（`pnpm check:e2e-remote-targets`）直接比较内部队列声明与公开 JSON，不依赖 affected 的 import 图。只有私有 harness 目录不存在时跳过；有队列时清单缺失、损坏或漂移均阻止 push，且检查不改写文件。
+- Lint 门禁（`pnpm lint:gate`）以 `oxlint --quiet` 只输出错误，避免数百条既有 warning 淹没推送结果；完整诊断仍由 `pnpm lint` 提供，warning 不会被静默修复或计入通过结论。
 - 任何检查失败均阻止 push；工作区检查也可独立执行 node scripts/check-push-worktree.mjs。
 
 ## 测试边界
