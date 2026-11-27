@@ -113,6 +113,7 @@ describe("Relay V3 控制端（P4，fake relay 集成）", () => {
       },
       getRelayConfig: () => ({ endpointOrigin: relay.httpUrl }),
       account,
+      getOwnDeviceMid: () => "mid_self_test",
       deliverBridgePort: (session) => {
         deliveredPorts.push({
           bridgeSessionId: session.bridgeSessionId,
@@ -137,10 +138,10 @@ describe("Relay V3 控制端（P4，fake relay 集成）", () => {
   });
 
   it("选设备 → 配对 → 密文 bootstrap → bridge port 投递（§6.5）", async () => {
-    // 1. 设备列表（排除本机 null sid；目标在线）。
-    const devices = await manager.listDevices(null);
+    // 1. 设备列表包含本机记录用于“本机”标记；目标在线且带机器名。
+    const devices = await manager.listDevices();
     const target = devices.find((device) => device.device_sid === targetDeviceSid && device.online);
-    expect(target).toBeTruthy();
+    expect(target?.meta?.name).toBe("target-desktop");
 
     // 2. 连接（terminal 一次性密钥对；auth_init 携带公钥）。
     await manager.connect(target!);
@@ -162,6 +163,20 @@ describe("Relay V3 控制端（P4，fake relay 集成）", () => {
     session.port.postMessage(new Uint8Array(rpcMessage));
     // 被控端 harness 校验到达即通过（rpc-frame 解密在 P1/P2 已覆盖）。
   }, 30_000);
+
+  it("本机设备禁止连接（以 device_mid 识别）", async () => {
+    await manager.disconnect();
+    const keyPair = generateRelayV3KeyPair();
+    await expect(
+      manager.connect({
+        device_sid: "d_self",
+        device_mid: "mid_self_test",
+        public_key: encodeRelayV3Base64Url(keyPair.publicKey),
+        meta: { name: "self-desktop" },
+      }),
+    ).rejects.toThrow("cannot connect to this device");
+    expect(manager.getStatus().phase).toBe("idle");
+  });
 
   it("断开控制连接 → 状态回 idle；被控端收 waiting（§6.5 后到者优先的逆操作）", async () => {
     await manager.disconnect();

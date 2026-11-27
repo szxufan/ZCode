@@ -207,12 +207,14 @@ export function defineRelayV3ConsistencyMatrix(setup: RelayV3ConsistencySetup): 
         const list = await relayV3Request(target, "list", undefined, access);
         const record = list.parsed?.data?.find((item) => item.device_sid === device.device_sid);
         expect(record?.online).toBe(true);
+        expect(record?.meta.name).toBe("桌面");
         await socket.close();
         const listAfter = await relayV3Request(target, "list", undefined, access);
         const recordAfter = listAfter.parsed?.data?.find(
           (item) => item.device_sid === device.device_sid,
         );
         expect(recordAfter?.online).toBe(false);
+        expect(recordAfter?.meta.name).toBe("桌面");
       } finally {
         await cleanup();
       }

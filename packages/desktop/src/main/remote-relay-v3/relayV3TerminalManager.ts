@@ -50,6 +50,8 @@ export interface RelayV3TerminalManagerOptions {
   getRelayConfig: () => { endpointOrigin: string | null };
   /** 与 device manager 共用的 relay 账号服务。 */
   account: RelayV3AccountService;
+  /** 本机稳定设备标识；连接前硬拒绝自连。 */
+  getOwnDeviceMid: () => string;
   fetchImpl?: typeof fetch;
   /** bridge ready 后把 port 交给控制端 renderer（main→renderer 投递）。 */
   deliverBridgePort: (session: RelayV3TerminalBridgeSession) => void;
@@ -104,21 +106,20 @@ export class RelayV3TerminalManager {
     this.options.onStatusChanged?.(this.getStatus());
   }
 
-  /** 列出同账号设备（排除本机 deviceSid）。 */
-  async listDevices(ownDeviceSid: string | null): Promise<RelayV3Device[]> {
+  /** 列出同账号设备；本机记录保留给 renderer 标记，但连接会被硬拒绝。 */
+  async listDevices(): Promise<RelayV3Device[]> {
     const baseUrl = this.options.getRelayConfig().endpointOrigin;
     const access = await this.options.account.getAccessToken();
     if (!baseUrl || !access) {
       throw new RelayV3ConnectionError("auth-required", false);
     }
     const client = new RelayV3HttpClient({ baseUrl, fetch: this.options.fetchImpl });
-    const devices = await client.request("list", { bearer: access });
-    return devices.filter((device) => device.device_sid !== ownDeviceSid);
+    return client.request("list", { bearer: access });
   }
 
   /** 列表→按 SID 连接的便捷入口（IPC 用；公钥从列表取，§4.2）。 */
   async connectByDeviceSid(deviceSid: string): Promise<void> {
-    const devices = await this.listDevices(null);
+    const devices = await this.listDevices();
     const device = devices.find((item) => item.device_sid === deviceSid && item.online);
     if (!device) {
       throw new Error(`device offline or not found: ${deviceSid}`);
@@ -127,7 +128,13 @@ export class RelayV3TerminalManager {
   }
 
   /** 连接目标设备（terminal 角色，一次性密钥对；断开重连重新生成，§4.2）。 */
-  async connect(device: Pick<RelayV3Device, "device_sid" | "public_key" | "meta">): Promise<void> {
+  async connect(
+    device: Pick<RelayV3Device, "device_sid" | "device_mid" | "public_key" | "meta">,
+  ): Promise<void> {
+    const ownDeviceMid = this.options.getOwnDeviceMid();
+    if (ownDeviceMid && device.device_mid === ownDeviceMid) {
+      throw new Error("cannot connect to this device");
+    }
     await this.disconnect();
     const baseUrl = this.options.getRelayConfig().endpointOrigin;
     if (!baseUrl) {
@@ -157,7 +164,8 @@ export class RelayV3TerminalManager {
       deriveSessionKey: () => deriveRelayV3SessionKey(this.keyPair.privateKey, devicePublicKey),
       onState: (state) => this.handleState(state),
       onAppPayload: (payload) => this.handlePayload(payload),
-      onProtocolFault: (kind) => this.options.logger.warn("relay-v3 terminal protocol fault", { kind }),
+      onProtocolFault: (kind) =>
+        this.options.logger.warn("relay-v3 terminal protocol fault", { kind }),
     });
     this.transportCore.start();
   }
@@ -193,7 +201,13 @@ export class RelayV3TerminalManager {
         clearTimeout(timer);
         resolve(workspaces);
       };
-      if (!this.transportCore?.send({ zcode_type: "bootstrap-request", terminal_client_id: `desktop_${randomUUID()}`, terminal_kind: "desktop-terminal" })) {
+      if (
+        !this.transportCore?.send({
+          zcode_type: "bootstrap-request",
+          terminal_client_id: `desktop_${randomUUID()}`,
+          terminal_kind: "desktop-terminal",
+        })
+      ) {
         clearTimeout(timer);
         this.pendingBootstrap = null;
         reject(new Error("terminal transport not paired"));
@@ -333,7 +347,10 @@ export class RelayV3TerminalManager {
         if (decoded.kind === "rpc") {
           channel.port1.postMessage(new Uint8Array(decoded.bytes));
         } else {
-          channel.port1.postMessage({ __zcodeRpcControl: "connection-flow-v1", state: decoded.state });
+          channel.port1.postMessage({
+            __zcodeRpcControl: "connection-flow-v1",
+            state: decoded.state,
+          });
         }
       },
       onDegraded: () => {

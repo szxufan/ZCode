@@ -169,7 +169,7 @@ export function registerRelayV3TerminalIpc(manager: RelayV3TerminalManager): voi
   );
   ipcMain.handle(PlatformChannels.RelayV3TerminalList, async () => {
     try {
-      const devices = await manager.listDevices(null);
+      const devices = await manager.listDevices();
       return { ok: true as const, devices };
     } catch (error) {
       return {

@@ -81,4 +81,15 @@ describe("设置 → 远程控制：Relay 服务器地址", () => {
     });
     expect((await readSettings()).relayV3?.endpointOrigin).toBe(next);
   });
+
+  it("RCE05：未保存服务器地址时发送验证码被拦截并提示先保存", async () => {
+    const saved = (await readSettings()).relayV3?.endpointOrigin;
+    await input().setValue("https://relay-unsaved.e2e.example.com");
+    await $('[data-testid="relay-v3-phone"]').setValue("+8613800138000");
+    await $('[data-testid="relay-v3-send-code"]').click();
+    const notice = $('[data-testid="relay-v3-notice"]');
+    await notice.waitForDisplayed({ timeout: 15000 });
+    expect(await notice.getText()).toMatch(/保存|save/i);
+    expect((await readSettings()).relayV3?.endpointOrigin).toBe(saved);
+  });
 });

@@ -50,6 +50,8 @@ export interface RelayV3DesktopStatus {
   /** 已登录的 relay 账号摘要（未登录为 null）。 */
   account: { phoneMasked: string } | null;
   deviceSid: string | null;
+  /** 本机稳定设备标识；控制端据此标记并拒绝连接本机。 */
+  deviceMid: string;
   /** 配对可用（waiting/active）后的扫码 URL；base 指向 relay 静态页（§5.3/§5.4）。 */
   qrUrl: string | null;
   /** relay endpoint origin（设置项，供 UI 展示）。 */

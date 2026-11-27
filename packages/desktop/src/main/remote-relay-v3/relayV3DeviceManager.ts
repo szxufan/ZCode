@@ -168,6 +168,7 @@ export class RelayV3DeviceManager {
       ...(this.failure ? { failure: this.failure } : {}),
       account: this.account.getSession(),
       deviceSid,
+      deviceMid: this.resolveDeviceMid(),
       qrUrl:
         qrReady && deviceSid && (staticPageBaseUrl ?? endpointOrigin)
           ? buildRelayV3QrUrl(staticPageBaseUrl ?? endpointOrigin ?? "", {
@@ -214,6 +215,8 @@ export class RelayV3DeviceManager {
       this.setPhase("auth-required");
       return;
     }
+    // 登录成功立即广播账号摘要，否则已挂载的设置节要重进页面才看得到 signedIn。
+    this.options.broadcastStatus?.(this.getStatus());
     // signed-in：存在启用意图且未运行时恢复。
     void this.maybeAutoStart();
   }

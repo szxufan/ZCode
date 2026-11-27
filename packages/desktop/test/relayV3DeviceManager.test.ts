@@ -168,6 +168,9 @@ describe("Relay V3 device manager（P1，fake relay 集成）", () => {
     expect(code).toBeTruthy();
     const loginResult = await harness.manager.loginWithCode(PHONE, code!);
     expect(loginResult.ok).toBe(true);
+    // 登录提交后当前已挂载的设置节必须立刻看到账号，不能等重新进入页面再查状态。
+    expect(harness.statuses.some((item) => item.account?.phoneMasked)).toBe(true);
+    expect(harness.manager.getStatus().deviceMid).toBe("mid_test_123");
 
     // 2. workspace 同步 + 票据启动。
     harness.manager.syncWorkspaces(1, [

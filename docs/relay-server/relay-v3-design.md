@@ -113,11 +113,14 @@ sequenceDiagram
     R-->>C: 新 {access, refresh}（旧 refresh 失效，重放撤销家族）
 ```
 
+- **登录后的状态广播**：`signed-in` 必须由 main `RelayV3DeviceManager` 广播一次完整状态（含账号摘要），使已经挂载的设置节无需重新进入即可启用启动按钮；广播与随后的 auto-start 状态推送保持幂等。
+
 ### 3.5 桌面端服务器地址（relay origin）
 
 桌面端不内置任何 relay 地址：未配置时账号登录请求失败、被控端不可启动（`no-endpoint`）。地址的唯一录入口是设置界面，不再要求手改 `setting.json`。
 
 - **入口**：设置 → 远程控制 → 「Relay 服务器地址」，位于设置节首行。显式「保存」（或输入框回车）生效，未保存的输入只是 renderer 本地草稿；该行纳入设置搜索（定位 id `settings.remoteControl.server.address`）。
+- **未保存草稿门禁**：地址草稿与当前事实不同时，renderer 必须阻止发送验证码、验证码登录和启动远控，并提示先保存；不得把草稿地址直接传给命令，也不得静默保存（保存不同地址会登出并重置设备身份）。
 - **格式**：带协议头的 http(s) origin（`https://relay.example.com`、`http://10.0.0.2:8080`），不含路径、查询、片段与凭据。main 用 `normalizeRelayV3EndpointOrigin` 归一化为 `URL.origin`（去尾斜杠、主机小写、去默认端口）；缺协议头或其他非法输入返回 `invalid-origin`，界面就地提示且不落盘。
 - **所有权与写路径**：运行期 `AppSettings.relayV3.endpointOrigin` 的唯一写入口是 main `relayV3DeviceManager.configureEndpoint`（IPC `RelayV3ConfigureEndpoint`）；renderer 只提交原始输入，并经 `status.relayOrigin` 读取事实。`staticPageBaseUrl` 不在界面暴露，仍只经 AppSettings 配置（部署期确定，§5.4）。
 - **凭据归属**：账号会话（access/refresh）与设备身份（SID/公钥）只对签发它们的 relay 有效。保存一个与当前地址不同的值等同「停止远控 + 登出」：被控端 transport 与 bridge 释放、启用意图清除、控制端连接断开、已注册设备身份丢弃；之后需在新地址重新登录并手动启动。
@@ -224,7 +227,7 @@ V3 的 `data` 消息外层结构为 `{payload, client_ts}`（上行）/ `{payloa
 | `POST /v3/device-auth/approve` | Bearer | `{user_code}` | `{device: 设备记录}`（凭据经 poll 交付给发起方） |
 | `POST /v3/device-auth/poll` | 无 | `{device_code}` | 未批准：`{status: "pending"}`；已批准：`{access, refresh, device}`；过期：业务错误码 |
 
-设备记录：`{device_sid, device_mid, public_key, online, created_at, meta: {name?, platform?, version?}}`。注册不接收 `meta` 与 `online`；同 MID 每次注册产生新 SID 与新公钥绑定。
+设备记录：`{device_sid, device_mid, public_key, online, created_at, meta: {name?, platform?, version?}}`。注册不接收 `meta` 与 `online`；同 MID 每次注册产生新 SID 与新公钥绑定。device 在 WS `auth_init` 上报的合法 `meta` 必须写入设备行并由设备列表返回，使控制端显示机器名而不是 UUID。
 
 ### 5.2 WebSocket
 
@@ -293,6 +296,7 @@ sequenceDiagram
 - 桌面控制端就是一个 terminal，复用 §5.2 的 terminal 协议、一次性 token、配对与加密栈；relay 与被控端不感知控制端是手机还是桌面。
 - 入口不扫码：桌面控制端登录 relay 账号后，经认证的 `GET /v3/device` 列出同账号设备，选择在线目标设备 → `POST /v3/relay/token {role: "terminal"}` → WS 配对（§5.2），每一步与手机 terminal 相同。
 - 一台桌面可同时持有两种角色：本地 renderer 的 `desktop-continuous` 主链路（作为被控端被手机/其他桌面控制）与自身作为控制端的 replayable 链路互相独立，两个方向的连接、密钥、配对状态、退避互不干扰。
+- 本机识别与自连：设备列表保留本机记录用于辨识；renderer 以状态中的本机 `deviceMid` 与设备 `device_mid` 比较，本机显示「本机」标记并禁用连接，main 的 terminal manager 在建立连接前也必须硬拒绝同 MID 自连，不能只依赖界面禁用。
 
 ### 6.2 能力边界（第一版）
 

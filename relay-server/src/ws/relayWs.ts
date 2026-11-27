@@ -170,7 +170,15 @@ export function attachRelayWebSocket(
     connection.deviceSid = parsed.device_sid;
     connection.authed = true;
     clearTimeout(connection.handshakeTimer);
-    if ("meta" in parsed && parsed.meta) connection.meta = parsed.meta;
+    if ("meta" in parsed && parsed.meta) {
+      connection.meta = parsed.meta;
+      // device 在线时上报的机器名是设备目录的展示事实；落库后列表/离线记录都可读。
+      if (connection.role === "device") {
+        db.prepare(
+          "UPDATE devices SET meta = ? WHERE sid = ? AND account_id = ? AND deleted_at IS NULL",
+        ).run(JSON.stringify(parsed.meta), parsed.device_sid, connection.accountId);
+      }
+    }
     connection.presenceMeta = { meta: connection.meta as Record<string, unknown> };
     presence.setRole(parsed.device_sid, connection.role, connection.presenceMeta);
 

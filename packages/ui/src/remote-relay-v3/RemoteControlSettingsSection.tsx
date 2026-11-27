@@ -49,6 +49,12 @@ export function RemoteControlSettingsSection({
   const endpointDraft = endpointEdit?.origin === relayOrigin ? endpointEdit.text : relayOrigin;
   const endpointDirty = endpointDraft.trim() !== relayOrigin;
 
+  const requireSavedEndpoint = useCallback((): boolean => {
+    if (!endpointDirty) return true;
+    setNotice(intl.formatMessage({ id: "settings.remoteControl.server.saveFirst" }));
+    return false;
+  }, [endpointDirty, intl]);
+
   const handleSaveEndpoint = useCallback(async () => {
     setBusy(true);
     setEndpointError(null);
@@ -112,6 +118,7 @@ export function RemoteControlSettingsSection({
   }, [intl, status?.phase]);
 
   const handleSendCode = useCallback(async () => {
+    if (!requireSavedEndpoint()) return;
     setBusy(true);
     setNotice(null);
     const result = await sendCode(phone.trim());
@@ -119,9 +126,10 @@ export function RemoteControlSettingsSection({
     if (!result.ok) {
       setNotice(result.message ?? `error ${result.businessCode ?? ""}`);
     }
-  }, [phone, sendCode]);
+  }, [phone, requireSavedEndpoint, sendCode]);
 
   const handleLogin = useCallback(async () => {
+    if (!requireSavedEndpoint()) return;
     setBusy(true);
     setNotice(null);
     const result = await login(phone.trim(), code.trim());
@@ -131,7 +139,7 @@ export function RemoteControlSettingsSection({
     } else {
       setNotice(result.message ?? `error ${result.businessCode ?? ""}`);
     }
-  }, [code, login, phone]);
+  }, [code, login, phone, requireSavedEndpoint]);
 
   const handleLogout = useCallback(async () => {
     setBusy(true);
@@ -142,7 +150,7 @@ export function RemoteControlSettingsSection({
   }, [logout]);
 
   const handleStart = useCallback(async () => {
-    if (!workspacePath) return;
+    if (!workspacePath || !requireSavedEndpoint()) return;
     setBusy(true);
     setNotice(null);
     const result = await start({ workspacePath, workspaceIdentity });
@@ -150,7 +158,7 @@ export function RemoteControlSettingsSection({
     if (!result.accepted && result.reason && result.reason !== "auth-required") {
       setNotice(result.reason);
     }
-  }, [start, workspaceIdentity, workspacePath]);
+  }, [requireSavedEndpoint, start, workspaceIdentity, workspacePath]);
 
   const handleStop = useCallback(async () => {
     setBusy(true);
@@ -377,7 +385,7 @@ export function RemoteControlSettingsSection({
         )}
       </section>
 
-      <TerminalSection />
+      <TerminalSection selfDeviceMid={status?.deviceMid ?? null} />
       <DeviceAuthSection />
     </div>
   );
@@ -529,7 +537,7 @@ function DeviceAuthSection() {
 }
 
 /** 控制端（P4，§6）：设备切换器 + workspace 打开；选中态仅控制端本地。 */
-function TerminalSection() {
+function TerminalSection({ selfDeviceMid }: { selfDeviceMid: string | null }) {
   const { intl } = useZCodeIntl();
   const terminal = useRelayV3Terminal();
   const [busy, setBusy] = useState(false);
@@ -607,26 +615,37 @@ function TerminalSection() {
             {intl.formatMessage({ id: "settings.remoteControl.terminal.empty" })}
           </p>
         ) : null}
-        {online.map((device) => (
-          <div key={device.device_sid} className="flex items-center gap-2">
-            <span className="min-w-0 flex-1 truncate text-ui-base">
-              {device.meta?.name || device.device_mid}
-            </span>
-            <Button
-              type="button"
-              size="sm"
-              disabled={busy}
-              data-testid={`relay-v3-terminal-connect-${device.device_sid}`}
-              onClick={async () => {
-                setBusy(true);
-                await terminal.connect(device.device_sid);
-                setBusy(false);
-              }}
-            >
-              {intl.formatMessage({ id: "settings.remoteControl.terminal.connect" })}
-            </Button>
-          </div>
-        ))}
+        {online.map((device) => {
+          const isSelf = selfDeviceMid !== null && device.device_mid === selfDeviceMid;
+          return (
+            <div key={device.device_sid} className="flex items-center gap-2">
+              <span className="min-w-0 flex-1 truncate text-ui-base">
+                {device.meta?.name || device.device_mid}
+              </span>
+              {isSelf ? (
+                <span
+                  className="rounded-full border border-border px-2 py-0.5 text-ui-xs text-foreground-subtle"
+                  data-testid={`relay-v3-terminal-self-${device.device_sid}`}
+                >
+                  {intl.formatMessage({ id: "settings.remoteControl.terminal.thisDevice" })}
+                </span>
+              ) : null}
+              <Button
+                type="button"
+                size="sm"
+                disabled={busy || isSelf}
+                data-testid={`relay-v3-terminal-connect-${device.device_sid}`}
+                onClick={async () => {
+                  setBusy(true);
+                  await terminal.connect(device.device_sid);
+                  setBusy(false);
+                }}
+              >
+                {intl.formatMessage({ id: "settings.remoteControl.terminal.connect" })}
+              </Button>
+            </div>
+          );
+        })}
       </div>
       {terminal.status?.workspaces && terminal.status.workspaces.length > 0 ? (
         <div className="flex flex-col gap-2">

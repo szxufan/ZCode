@@ -8988,6 +8988,8 @@ const enUS: Record<string, string> = {
     "Failed to save the server address. Please try again.",
   "settings.remoteControl.server.signedOutHint":
     "Saving a different address signs you out of the Relay account and stops remote control. You will need to sign in again.",
+  "settings.remoteControl.server.saveFirst":
+    "Save the server address before sending a code, signing in, or starting remote control.",
   "settings.remoteControl.account.title": "Relay account",
   "settings.remoteControl.account.phone": "Phone number",
   "settings.remoteControl.account.code": "Verification code",
@@ -9015,7 +9017,8 @@ const enUS: Record<string, string> = {
   "settings.remoteControl.terminal.connect": "Connect",
   "settings.remoteControl.terminal.disconnect": "Disconnect",
   "settings.remoteControl.terminal.status": "{name} · {phase}",
-  "settings.remoteControl.terminal.empty": "No other online computers on this account.",
+  "settings.remoteControl.terminal.empty": "No online computers on this account.",
+  "settings.remoteControl.terminal.thisDevice": "This computer",
   "settings.remoteControl.terminal.workspaces": "Workspaces on the target computer",
   "settings.remoteControl.terminal.open": "Open",
   "settings.remoteControl.deviceAuth.title": "Approve a headless device",

@@ -443,6 +443,10 @@ export async function createFakeRelayV3(options: FakeRelayV3Options = {}) {
             return;
           }
           connection.deviceSid = parsed.device_sid;
+          if ("meta" in parsed && parsed.meta) {
+            connection.meta = parsed.meta;
+            if (connection.role === "device") device.view.meta = parsed.meta;
+          }
           const roles = owners.get(parsed.device_sid) ?? {};
           if (connection.role === "device") {
             const old = roles.device;

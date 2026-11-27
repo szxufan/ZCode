@@ -8499,6 +8499,8 @@ const zhCN: Record<string, string> = {
   "settings.remoteControl.server.saveFailed": "服务器地址保存失败，请重试。",
   "settings.remoteControl.server.signedOutHint":
     "保存不同的地址会退出当前 Relay 账号并停止远程控制，需要重新登录。",
+  "settings.remoteControl.server.saveFirst":
+    "请先保存服务器地址，再发送验证码、登录或启动远程控制。",
   "settings.remoteControl.account.title": "Relay 账号",
   "settings.remoteControl.account.phone": "手机号",
   "settings.remoteControl.account.code": "验证码",
@@ -8525,7 +8527,8 @@ const zhCN: Record<string, string> = {
   "settings.remoteControl.terminal.connect": "连接",
   "settings.remoteControl.terminal.disconnect": "断开",
   "settings.remoteControl.terminal.status": "{name} · {phase}",
-  "settings.remoteControl.terminal.empty": "同账号没有其他在线电脑。",
+  "settings.remoteControl.terminal.empty": "同账号没有在线电脑。",
+  "settings.remoteControl.terminal.thisDevice": "本机",
   "settings.remoteControl.terminal.workspaces": "目标电脑的工作区",
   "settings.remoteControl.terminal.open": "打开",
   "settings.remoteControl.deviceAuth.title": "批准无屏设备",

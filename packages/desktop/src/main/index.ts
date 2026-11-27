@@ -322,7 +322,8 @@ const fallbackEnabled = enablePrivateFileKeyFallback({
     }),
   onReset: ({ status, ...event }) => {
     const detail = { ...event, platform: process.platform };
-    if (status === "reset") logger.info("[credential] 凭据密钥不可用，已备份并重置凭据存储", detail);
+    if (status === "reset")
+      logger.info("[credential] 凭据密钥不可用，已备份并重置凭据存储", detail);
     else if (status === "failed") logger.warn("[credential] 凭据存储自动重置失败", detail);
     else logger.info("[credential] 凭据存储自动重置已放弃（锁内复核不再满足）", detail);
   },
@@ -850,6 +851,7 @@ const relayV3TerminalManager = new RelayV3TerminalManager({
     endpointOrigin: relayV3SettingsCache?.endpointOrigin ?? null,
   }),
   account: relayV3DeviceManager.getAccountService(),
+  getOwnDeviceMid: () => relayV3DeviceManager.getStatus().deviceMid,
   deliverBridgePort: (session) => {
     for (const win of getApplicationWindowsExcludingCuaIndicator()) {
       if (win.isDestroyed()) continue;
