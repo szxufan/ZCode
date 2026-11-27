@@ -1,5 +1,17 @@
 # Changelog
 
+## [4.0.4](https://github.com/szxufan/ZCode/compare/v4.0.3...v4.0.4) (2026-11-27)
+
+### Bug Fixes
+
+* **relay:** 修复远控地址草稿、登录状态与设备识别 ([385317a](https://github.com/szxufan/ZCode/commit/385317a72efcd9d2f9a10705b77b72f4c14c4800))
+  * 服务器地址未保存时阻止发送验证码、登录和启动远控并提示保存\n- 登录成功后立即广播账号状态，无需重进设置页\n- 持久化设备机器名，标记本机并禁止自连
+
+
+### Chores
+
+* **ci:** 精简 pre-push Lint 输出 ([e8e02c3](https://github.com/szxufan/ZCode/commit/e8e02c3e3e9382b8ab1e7114d87f483366e66f13))
+
 ## [4.0.3](https://github.com/szxufan/ZCode/compare/v4.0.0...v4.0.3) (2026-11-26)
 
 ### ⚠ BREAKING CHANGES
