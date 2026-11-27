@@ -207,12 +207,13 @@ function toError(error: unknown): { ok: false; businessCode?: number; message?: 
   return { ok: false, message: error instanceof Error ? error.message : "unknown" };
 }
 
-/** 二维码/链接参数解析（§5.3）：仅放行 sid/mid/name/app_version。 */
+/** 二维码/链接参数解析（§5.3）：仅放行 sid/mid/name/app_version/fingerprint。 */
 export function parseEntryParams(): {
   sid?: string;
   mid?: string;
   name?: string;
   appVersion?: string;
+  fingerprint?: string;
 } {
   if (typeof window !== "undefined" && window.location) {
     // relay 覆盖参数不属于扫码参数白名单；先剔除再交给严格解析，否则会丢失 sid 等意图。
@@ -225,6 +226,7 @@ export function parseEntryParams(): {
         mid: parsed.mid,
         name: parsed.name,
         appVersion: parsed.app_version,
+        fingerprint: parsed.fingerprint,
       };
     }
   }

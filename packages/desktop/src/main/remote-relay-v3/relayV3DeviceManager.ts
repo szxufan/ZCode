@@ -5,7 +5,6 @@ import { MessageChannelMain } from "electron";
 
 import type { AppSettings } from "@zcode/shared";
 import {
-  buildRelayV3QrUrl,
   decodeRelayV3BridgePortMessage,
   encodeRelayV3Base64Url,
   encodeRelayV3BridgePortMessage,
@@ -35,8 +34,8 @@ import {
 } from "./relayV3DeviceIdentity.js";
 import { RelayV3AccountService, type RelayV3AccountEvent } from "./relayV3AccountService.js";
 import { RelayV3DeviceTransport } from "./relayV3DeviceTransport.js";
+import { buildRelayV3StatusQrUrl } from "./relayV3Qr.js";
 import { findRelayV3Workspace, flattenRelayV3Workspaces } from "./relayV3Workspaces.js";
-
 // Relay V3 device manager（P1）：桌面被控端运行态的唯一 owner。
 // 职责（V2 webRemoteControlManager 语义在 V3 的重建，见
 // docs/web-remote-control/web-remote-control-architecture.md §Desktop Main）：
@@ -163,21 +162,23 @@ export class RelayV3DeviceManager {
     const { endpointOrigin, staticPageBaseUrl } = this.options.getRelayConfig();
     const deviceSid = this.identity?.deviceSid ?? null;
     const qrReady = (this.phase === "waiting" || this.phase === "active") && deviceSid !== null;
+    const baseUrl = staticPageBaseUrl ?? endpointOrigin;
     return {
       phase: this.phase,
       ...(this.failure ? { failure: this.failure } : {}),
       account: this.account.getSession(),
       deviceSid,
       deviceMid: this.resolveDeviceMid(),
-      qrUrl:
-        qrReady && deviceSid && (staticPageBaseUrl ?? endpointOrigin)
-          ? buildRelayV3QrUrl(staticPageBaseUrl ?? endpointOrigin ?? "", {
-              sid: deviceSid,
-              mid: this.resolveDeviceMid(),
-              name: this.options.hostname ?? os.hostname(),
-              app_version: this.options.appVersion,
-            })
-          : null,
+      qrUrl: qrReady
+        ? buildRelayV3StatusQrUrl({
+            baseUrl,
+            deviceSid,
+            deviceMid: this.resolveDeviceMid(),
+            keyPair: this.identity?.keyPair ?? null,
+            hostname: this.options.hostname,
+            appVersion: this.options.appVersion,
+          })
+        : null,
       relayOrigin: endpointOrigin,
     };
   }

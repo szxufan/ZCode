@@ -13,9 +13,11 @@ import {
   generateRelayV3KeyPair,
   openRelayV3Envelope,
   parseRelayV3AppPayload,
+  parseRelayV3QrUrl,
   parseRelayV3RpcFrame,
   RELAY_V3_HTTP,
   relayV3EnvelopeAad,
+  relayV3KeyId,
   sealRelayV3Envelope,
   type RelayV3DesktopStatus,
 } from "@zcode/shared/remote-relay-v3";
@@ -202,14 +204,14 @@ describe("Relay V3 device manager（P1，fake relay 集成）", () => {
     expect(listEnvelope.code).toBe(0);
     const deviceRecord = listEnvelope.data.find((device) => device.device_sid === status.deviceSid);
     expect(deviceRecord).toBeTruthy();
+    const kid = relayV3KeyId(decodeRelayV3Base64Url(deviceRecord!.public_key));
+    // 二维码指纹必须来自被控端本地公钥，不能依赖 relay 目录内容。
+    expect(parseRelayV3QrUrl(status.qrUrl ?? "")?.fingerprint).toBe(kid);
 
     const terminalKeys = generateRelayV3KeyPair();
     const sessionKey = deriveRelayV3SessionKey(
       terminalKeys.privateKey,
       decodeRelayV3Base64Url(deviceRecord!.public_key),
-    );
-    const kid = await import("@zcode/shared/remote-relay-v3").then((m) =>
-      m.relayV3KeyId(decodeRelayV3Base64Url(deviceRecord!.public_key)),
     );
 
     const tokenResponse = await fetch(`${relay.httpUrl}/v3/relay/token`, {

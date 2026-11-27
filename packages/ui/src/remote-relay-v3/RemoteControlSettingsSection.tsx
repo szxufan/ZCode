@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import QRCode from "qrcode";
 
+import { relayV3DeviceFingerprint } from "@zcode/shared/remote-relay-v3";
+
 import { Input } from "@/components/ui/input.js";
 import { Button } from "@/components/ui/button.js";
 import { usePlatform } from "@/hooks/usePlatform.js";
@@ -541,6 +543,8 @@ function TerminalSection({ selfDeviceMid }: { selfDeviceMid: string | null }) {
   const { intl } = useZCodeIntl();
   const terminal = useRelayV3Terminal();
   const [busy, setBusy] = useState(false);
+  const [expectedFingerprint, setExpectedFingerprint] = useState("");
+  const [notice, setNotice] = useState<string | null>(null);
 
   const refreshRef = useRef(terminal.refresh);
   refreshRef.current = terminal.refresh;
@@ -566,6 +570,24 @@ function TerminalSection({ selfDeviceMid }: { selfDeviceMid: string | null }) {
       <h3 className="text-ui-lg font-semibold text-foreground">
         {intl.formatMessage({ id: "settings.remoteControl.terminal.title" })}
       </h3>
+      <div className="flex flex-col gap-1">
+        <Input
+          size="lg"
+          value={expectedFingerprint}
+          onChange={(event) => setExpectedFingerprint(event.target.value.toLowerCase())}
+          placeholder="0123456789abcdef"
+          inputMode="text"
+          maxLength={16}
+          spellCheck={false}
+          aria-label={intl.formatMessage({
+            id: "settings.remoteControl.terminal.expectedFingerprint",
+          })}
+          data-testid="relay-v3-terminal-expected-fingerprint"
+        />
+        <p className="text-ui-xs text-foreground-subtle">
+          {intl.formatMessage({ id: "settings.remoteControl.terminal.fingerprintHint" })}
+        </p>
+      </div>
       <div className="flex items-center gap-2">
         <Button
           type="button"
@@ -609,6 +631,11 @@ function TerminalSection({ selfDeviceMid }: { selfDeviceMid: string | null }) {
       {terminal.listError ? (
         <p className="text-ui-sm text-destructive">{terminal.listError}</p>
       ) : null}
+      {notice ? (
+        <p className="text-ui-sm text-destructive" data-testid="relay-v3-terminal-notice">
+          {notice}
+        </p>
+      ) : null}
       <div className="flex flex-col gap-2">
         {online.length === 0 ? (
           <p className="text-ui-sm text-foreground-subtle">
@@ -619,8 +646,16 @@ function TerminalSection({ selfDeviceMid }: { selfDeviceMid: string | null }) {
           const isSelf = selfDeviceMid !== null && device.device_mid === selfDeviceMid;
           return (
             <div key={device.device_sid} className="flex items-center gap-2">
-              <span className="min-w-0 flex-1 truncate text-ui-base">
-                {device.meta?.name || device.device_mid}
+              <span className="min-w-0 flex-1">
+                <span className="block truncate text-ui-base">
+                  {device.meta?.name || device.device_mid}
+                </span>
+                <span className="block truncate text-ui-xs text-foreground-subtle">
+                  {intl.formatMessage(
+                    { id: "settings.remoteControl.terminal.fingerprint" },
+                    { fingerprint: relayV3DeviceFingerprint(device.public_key) ?? "—" },
+                  )}
+                </span>
               </span>
               {isSelf ? (
                 <span
@@ -636,6 +671,19 @@ function TerminalSection({ selfDeviceMid }: { selfDeviceMid: string | null }) {
                 disabled={busy || isSelf}
                 data-testid={`relay-v3-terminal-connect-${device.device_sid}`}
                 onClick={async () => {
+                  const expected = expectedFingerprint.trim();
+                  if (expected) {
+                    const actual = relayV3DeviceFingerprint(device.public_key);
+                    if (!actual || actual !== expected) {
+                      setNotice(
+                        intl.formatMessage({
+                          id: "settings.remoteControl.terminal.keyMismatch",
+                        }),
+                      );
+                      return;
+                    }
+                  }
+                  setNotice(null);
                   setBusy(true);
                   await terminal.connect(device.device_sid);
                   setBusy(false);

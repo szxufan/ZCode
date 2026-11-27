@@ -8531,6 +8531,12 @@ const zhCN: Record<string, string> = {
   "settings.remoteControl.terminal.thisDevice": "本机",
   "settings.remoteControl.terminal.workspaces": "目标电脑的工作区",
   "settings.remoteControl.terminal.noWorkspaces": "目标电脑当前没有打开的工作区。",
+  "settings.remoteControl.terminal.fingerprint": "公钥指纹 {fingerprint}",
+  "settings.remoteControl.terminal.expectedFingerprint": "对方电脑公钥指纹（可选）",
+  "settings.remoteControl.terminal.fingerprintHint":
+    "从对方电脑带外获取指纹并填入；填写后仅连接指纹一致的设备。",
+  "settings.remoteControl.terminal.keyMismatch":
+    "公钥指纹不一致，已拒绝连接。请确认目标电脑，防止中间人攻击。",
   "settings.remoteControl.terminal.open": "打开",
   "settings.remoteControl.deviceAuth.title": "批准无屏设备",
   "settings.remoteControl.deviceAuth.hint":

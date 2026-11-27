@@ -9021,6 +9021,13 @@ const enUS: Record<string, string> = {
   "settings.remoteControl.terminal.thisDevice": "This computer",
   "settings.remoteControl.terminal.workspaces": "Workspaces on the target computer",
   "settings.remoteControl.terminal.noWorkspaces": "No workspaces are open on the target computer.",
+  "settings.remoteControl.terminal.fingerprint": "Public key fingerprint {fingerprint}",
+  "settings.remoteControl.terminal.expectedFingerprint":
+    "Expected public key fingerprint (optional)",
+  "settings.remoteControl.terminal.fingerprintHint":
+    "Enter a fingerprint obtained out of band; only a matching device will be connected.",
+  "settings.remoteControl.terminal.keyMismatch":
+    "Public key fingerprint mismatch. Connection refused to prevent interception.",
   "settings.remoteControl.terminal.open": "Open",
   "settings.remoteControl.deviceAuth.title": "Approve a headless device",
   "settings.remoteControl.deviceAuth.hint":

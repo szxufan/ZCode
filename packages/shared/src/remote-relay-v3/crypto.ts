@@ -35,6 +35,16 @@ export function relayV3KeyId(publicKey: Uint8Array): string {
   return hex;
 }
 
+/** 从设备目录返回的 Base64URL 公钥计算展示/核对用指纹；非法公钥返回 null。 */
+export function relayV3DeviceFingerprint(publicKeyB64: string): string | null {
+  try {
+    const bytes = decodeRelayV3Base64Url(publicKeyB64);
+    return bytes.length === RELAY_V3_PUBLIC_KEY_BYTES ? relayV3KeyId(bytes) : null;
+  } catch {
+    return null;
+  }
+}
+
 export interface RelayV3KeyPair {
   privateKey: Uint8Array;
   publicKey: Uint8Array;

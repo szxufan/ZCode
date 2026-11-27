@@ -20,6 +20,12 @@ const STRINGS = {
     "devices.emptyHint": "在电脑端 ZCode 登录同一账号并开启远程控制，然后刷新列表。",
     "devices.loadFailed": "无法加载设备，请检查网络后刷新。",
     "devices.unnamed": "未命名设备",
+    "devices.fingerprint": "公钥指纹 {fingerprint}",
+    "devices.expectedFingerprint": "对方电脑公钥指纹（可选）",
+    "devices.fingerprintHint": "从对方电脑带外获取指纹并填入；填写后仅连接指纹一致的设备。",
+    "devices.keyMismatch": "公钥指纹不一致，已拒绝连接。请确认目标电脑，防止中间人攻击。",
+    "devices.qrMissingFingerprint": "二维码缺少公钥指纹，无法验证目标电脑，已拒绝连接。",
+    "devices.invalidPublicKey": "目标电脑公钥无效，已拒绝连接。",
     "devices.connections": "{n} 个连接",
     "connect.connecting": "正在连接",
     "connect.bootstrap": "同步工作区",
@@ -55,6 +61,15 @@ const STRINGS = {
       "Sign in with the same account on your computer, enable remote control, then refresh.",
     "devices.loadFailed": "Could not load devices. Check your connection and refresh.",
     "devices.unnamed": "Unnamed device",
+    "devices.fingerprint": "Public key fingerprint {fingerprint}",
+    "devices.expectedFingerprint": "Expected public key fingerprint (optional)",
+    "devices.fingerprintHint":
+      "Enter a fingerprint obtained out of band; only a matching device will be connected.",
+    "devices.keyMismatch":
+      "Public key fingerprint mismatch. Connection refused to prevent interception.",
+    "devices.qrMissingFingerprint":
+      "The QR code has no public key fingerprint, so the target cannot be verified.",
+    "devices.invalidPublicKey": "The target public key is invalid, so the connection was refused.",
     "devices.connections": "{n} connections",
     "connect.connecting": "Connecting to",
     "connect.bootstrap": "Syncing workspaces",
@@ -75,7 +90,11 @@ const STRINGS = {
 
 export type WebStringKey = keyof (typeof STRINGS)["zh-CN"];
 
-export function formatWebString(locale: WebLocale, key: WebStringKey, params?: Record<string, string | number>): string {
+export function formatWebString(
+  locale: WebLocale,
+  key: WebStringKey,
+  params?: Record<string, string | number>,
+): string {
   const template = STRINGS[locale][key] ?? STRINGS["zh-CN"][key];
   if (!params) return template;
   return template.replace(/\{(\w+)\}/g, (_, name: string) => String(params[name] ?? `{${name}}`));

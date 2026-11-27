@@ -1,7 +1,11 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { ChannelClient, MessagePortProtocol } from "@zcode/rpc";
-import type { RelayV3Device } from "@zcode/shared/remote-relay-v3";
+import {
+  relayV3DeviceFingerprint,
+  verifyRelayV3QrFingerprint,
+  type RelayV3Device,
+} from "@zcode/shared/remote-relay-v3";
 
 import { WebRelayAccount, parseEntryParams } from "./relay/relayAccount.js";
 import { createDeviceCatalog } from "./relay/deviceCatalog.js";
@@ -27,6 +31,7 @@ export function RemoteApp() {
   const [entryParams] = useState(() => parseEntryParams());
   const [relayOriginInput, setRelayOriginInput] = useState("");
   const [relayOrigin, setRelayOrigin] = useState<string | null>(null);
+  const [expectedFingerprint, setExpectedFingerprint] = useState("");
   const [devices, setDevices] = useState<RelayV3Device[] | null>(null);
   const [devicesError, setDevicesError] = useState<string | null>(null);
   const [refreshing, setRefreshing] = useState(false);
@@ -115,20 +120,42 @@ export function RemoteApp() {
           setDevices(list);
           return;
         }
+        const trust = verifyRelayV3QrFingerprint(entryParams.fingerprint, device.public_key);
+        if (!trust.ok) {
+          setStage("devices");
+          setDevices(list);
+          setDevicesError(
+            t(
+              trust.reason === "key-mismatch"
+                ? "devices.keyMismatch"
+                : trust.reason === "invalid-public-key"
+                  ? "devices.invalidPublicKey"
+                  : "devices.qrMissingFingerprint",
+            ),
+          );
+          return;
+        }
         beginConnectRef.current(device);
       } catch {
         setStage("devices");
         setDevicesError(t("devices.loadFailed"));
       }
     },
-    [catalog, t],
+    [catalog, entryParams.fingerprint, t],
   );
   startDirectConnectRef.current = (sid: string) => void startDirectConnect(sid);
 
   // 最近设备自动连接：仅在本次无码入口的设备列表首次成功时尝试一次（V2 06）。
   const autoConnectAttemptedRef = useRef(false);
   useEffect(() => {
-    if (stage !== "devices" || entryParams.sid || autoConnectAttemptedRef.current) return;
+    // 带指纹的二维码必须走明确的目标校验，不能落到“最近设备”自动连接绕过信任检查。
+    if (
+      stage !== "devices" ||
+      entryParams.sid ||
+      entryParams.fingerprint ||
+      autoConnectAttemptedRef.current
+    )
+      return;
     if (!devices || devices.length === 0) return;
     autoConnectAttemptedRef.current = true;
     const landing = catalog.resolveRecentLanding(devices);
@@ -136,7 +163,7 @@ export function RemoteApp() {
       catalog.rememberDevice(landing.device_sid, landing.device_mid);
       beginConnectRef.current(landing);
     }
-  }, [stage, devices, entryParams.sid, catalog]);
+  }, [stage, devices, entryParams.sid, entryParams.fingerprint, catalog]);
 
   const appendLog = useCallback((line: string) => {
     setStreamLog((previous) => [...previous.slice(-200), line]);
@@ -269,7 +296,17 @@ export function RemoteApp() {
         error={devicesError}
         refreshing={refreshing}
         onRefresh={() => void refreshDevices()}
+        expectedFingerprint={expectedFingerprint}
+        onExpectedFingerprintChange={setExpectedFingerprint}
         onSelect={(device) => {
+          const expected = expectedFingerprint.trim().toLowerCase();
+          if (expected) {
+            const actual = relayV3DeviceFingerprint(device.public_key);
+            if (!actual || actual !== expected) {
+              setDevicesError(t("devices.keyMismatch"));
+              return;
+            }
+          }
           catalog.rememberDevice(device.device_sid, device.device_mid);
           beginConnect(device);
         }}
@@ -446,6 +483,8 @@ function DeviceListPage({
   refreshing,
   onRefresh,
   onSelect,
+  expectedFingerprint,
+  onExpectedFingerprintChange,
   onLogout,
   account,
 }: {
@@ -458,6 +497,8 @@ function DeviceListPage({
   refreshing: boolean;
   onRefresh: () => void;
   onSelect: (device: RelayV3Device) => void;
+  expectedFingerprint: string;
+  onExpectedFingerprintChange: (value: string) => void;
   onLogout: () => void;
   account: { account: { phone_masked: string } } | null;
 }) {
@@ -489,6 +530,23 @@ function DeviceListPage({
         >
           {refreshing ? "…" : t("devices.refresh")}
         </button>
+      </div>
+      <div className="card" style={{ padding: 16 }}>
+        <label className="field-label" htmlFor="relay-expected-fingerprint">
+          {t("devices.expectedFingerprint")}
+        </label>
+        <input
+          id="relay-expected-fingerprint"
+          className="input"
+          value={expectedFingerprint}
+          onChange={(event) => onExpectedFingerprintChange(event.target.value.toLowerCase())}
+          placeholder="0123456789abcdef"
+          inputMode="text"
+          maxLength={16}
+          autoComplete="off"
+          spellCheck={false}
+        />
+        <p className="hint-text">{t("devices.fingerprintHint")}</p>
       </div>
       {error ? (
         <p className="error-text" style={{ padding: "0 4px" }}>
@@ -531,6 +589,12 @@ function DeviceListPage({
                     <span className="device-meta">
                       {device.meta?.platform ? `${device.meta.platform} · ` : ""}
                       {device.meta?.version ? `ZCode ${device.meta.version}` : "ZCode"}
+                    </span>
+                    <br />
+                    <span className="device-meta">
+                      {t("devices.fingerprint", {
+                        fingerprint: relayV3DeviceFingerprint(device.public_key) ?? "—",
+                      })}
                     </span>
                   </span>
                   <span aria-hidden>›</span>
