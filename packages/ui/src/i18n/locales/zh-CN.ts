@@ -8530,6 +8530,7 @@ const zhCN: Record<string, string> = {
   "settings.remoteControl.terminal.empty": "同账号没有在线电脑。",
   "settings.remoteControl.terminal.thisDevice": "本机",
   "settings.remoteControl.terminal.workspaces": "目标电脑的工作区",
+  "settings.remoteControl.terminal.noWorkspaces": "目标电脑当前没有打开的工作区。",
   "settings.remoteControl.terminal.open": "打开",
   "settings.remoteControl.deviceAuth.title": "批准无屏设备",
   "settings.remoteControl.deviceAuth.hint":

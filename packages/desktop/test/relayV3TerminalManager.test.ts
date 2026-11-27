@@ -17,6 +17,7 @@ import {
   relayV3EnvelopeAad,
   sealRelayV3Envelope,
   type RelayV3Envelope,
+  type RelayV3TerminalStatus,
 } from "@zcode/shared/remote-relay-v3";
 
 import {
@@ -79,6 +80,7 @@ describe("Relay V3 控制端（P4，fake relay 集成）", () => {
   let manager: RelayV3TerminalManager;
   let configDir: string;
   let deliveredPorts: { bridgeSessionId: string; workspaceKey: string }[];
+  let statuses: RelayV3TerminalStatus[];
   let targetDeviceSid: string;
   let targetSocket: WebSocket;
   let targetSessionKey: Uint8Array | null;
@@ -104,6 +106,7 @@ describe("Relay V3 控制端（P4，fake relay 集成）", () => {
     targetKeyPair = target.keyPair;
 
     deliveredPorts = [];
+    statuses = [];
     manager = new RelayV3TerminalManager({
       logger: {
         debug: () => {},
@@ -114,6 +117,7 @@ describe("Relay V3 控制端（P4，fake relay 集成）", () => {
       getRelayConfig: () => ({ endpointOrigin: relay.httpUrl }),
       account,
       getOwnDeviceMid: () => "mid_self_test",
+      onStatusChanged: (status) => statuses.push(status),
       deliverBridgePort: (session) => {
         deliveredPorts.push({
           bridgeSessionId: session.bridgeSessionId,
@@ -148,8 +152,11 @@ describe("Relay V3 控制端（P4，fake relay 集成）", () => {
     await waitFor(() => (manager.getStatus().phase === "active" ? true : null), "terminal active");
     expect(manager.getStatus().target?.deviceSid).toBe(targetDeviceSid);
 
-    // 3. bootstrap：密文往返，workspace 列表到达控制端。
-    const workspaces = await manager.fetchWorkspaces();
+    // 3. active 后自动 bootstrap：workspace 列表经状态推送到达控制端。
+    const workspaces = await waitFor(
+      () => statuses.find((status) => status.workspaces.length > 0)?.workspaces ?? null,
+      "terminal workspaces",
+    );
     expect(workspaces[0]).toMatchObject({ workspace_key: "/w/target", bridgeable: true });
 
     // 4. bridge：port 投递给控制端 renderer（deliveredPorts）；被控端收到 bridge-open。

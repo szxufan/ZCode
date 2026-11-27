@@ -303,6 +303,7 @@ sequenceDiagram
 - 控制端可：浏览目标设备已有工作区与任务、打开会话、发送输入、新建任务、处理权限与交互请求——与手机 terminal 能力对齐。
 - 控制端不可：启动独立 Host/Agent/runtime（任务一律在目标设备执行，控制端不落地业务状态）；新建 SSH/WSL/Docker 连接或管理目标设备的工作区连接（与手机边界一致；目标设备断开的远程工作区由被控端自身重连，控制端只展示状态）。
 - UI 第一版范围：设备切换器 + 任务首页 + 会话聊天页（宽屏布局）。文件管理器、终端直连等更重的表面经 attachment capability 约束默认关闭，后续版本评估。
+- 工作区发现时序：控制端进入 `active` 后由 main 自动发送 `bootstrap-request`；收到 `bootstrap-response` 后写入 `status.workspaces` 并立即广播，renderer 只消费该状态投影。`workspace-list-updated` 继续增量刷新同一份状态，不再要求用户手动触发；连接后列表为空时界面给出明确提示。
 
 ### 6.3 同步语义
 

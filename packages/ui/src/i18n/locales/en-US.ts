@@ -9020,6 +9020,7 @@ const enUS: Record<string, string> = {
   "settings.remoteControl.terminal.empty": "No online computers on this account.",
   "settings.remoteControl.terminal.thisDevice": "This computer",
   "settings.remoteControl.terminal.workspaces": "Workspaces on the target computer",
+  "settings.remoteControl.terminal.noWorkspaces": "No workspaces are open on the target computer.",
   "settings.remoteControl.terminal.open": "Open",
   "settings.remoteControl.deviceAuth.title": "Approve a headless device",
   "settings.remoteControl.deviceAuth.hint":

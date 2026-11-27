@@ -647,6 +647,14 @@ function TerminalSection({ selfDeviceMid }: { selfDeviceMid: string | null }) {
           );
         })}
       </div>
+      {connected && terminal.status?.workspaces.length === 0 ? (
+        <p
+          className="text-ui-sm text-foreground-subtle"
+          data-testid="relay-v3-terminal-workspaces-empty"
+        >
+          {intl.formatMessage({ id: "settings.remoteControl.terminal.noWorkspaces" })}
+        </p>
+      ) : null}
       {terminal.status?.workspaces && terminal.status.workspaces.length > 0 ? (
         <div className="flex flex-col gap-2">
           <p className="text-ui-sm text-foreground-subtle">

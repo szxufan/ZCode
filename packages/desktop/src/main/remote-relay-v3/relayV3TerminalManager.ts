@@ -263,6 +263,12 @@ export class RelayV3TerminalManager {
     }
     if (state.phase === "matched") {
       this.setPhase("active");
+      // 手机端在配对后显式 bootstrap；桌面端也必须主动取目标工作区，否则 UI 永远只有 active 状态。
+      void this.fetchWorkspaces().catch((error: unknown) => {
+        this.options.logger.warn("relay-v3 terminal bootstrap failed", {
+          error: error instanceof Error ? error.message : String(error),
+        });
+      });
       return;
     }
     if (state.phase === "failed") {
@@ -290,6 +296,7 @@ export class RelayV3TerminalManager {
         this.workspaces = payload.workspaces;
         this.pendingBootstrap?.(payload.workspaces);
         this.pendingBootstrap = null;
+        this.options.onStatusChanged?.(this.getStatus());
         return;
       case "workspace-list-response":
       case "workspace-list-updated":
