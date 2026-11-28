@@ -1,5 +1,16 @@
 # Changelog
 
+## [4.0.6](https://github.com/szxufan/ZCode/compare/v4.0.5...v4.0.6) (2026-11-28)
+
+### Features
+
+* 用 relay v3 账号登录替换桌面端 OAuth 应用登录 ([2bdad05](https://github.com/szxufan/ZCode/commit/2bdad05dda0211c633cc64712d1315ebad810b74))
+
+
+### Bug Fixes
+
+* **provider:** 防止远端 Release 覆盖连接派模板并置顶显示 ([b1a5ac4](https://github.com/szxufan/ZCode/commit/b1a5ac4ccbc655d69fd1939b5662a435bc76a793))
+
 ## [4.0.5](https://github.com/szxufan/ZCode/compare/v4.0.4...v4.0.5) (2026-11-28)
 
 ### Bug Fixes
