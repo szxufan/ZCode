@@ -1,5 +1,16 @@
 # Changelog
 
+## [4.0.5](https://github.com/szxufan/ZCode/compare/v4.0.4...v4.0.5) (2026-11-28)
+
+### Bug Fixes
+
+* **relay:** 连接后自动拉取目标工作区 ([131735c](https://github.com/szxufan/ZCode/commit/131735ccecea3b068edde9e282d31832ff4e4cf8))
+
+* **relay:** 增加公钥指纹带外校验 ([b033e21](https://github.com/szxufan/ZCode/commit/b033e21a3fa4d0a166490f089d50555fbaf03d3a))
+  * 二维码携带设备公钥指纹，手机扫码连接前强制比对目录公钥\n- 手机与桌面设备列表展示指纹，支持输入带外指纹后强制比对\n- 指纹不一致或缺省时拒绝扫码连接，防止 relay 替换公钥中间人
+
+* **relay:** 重启后恢复远控启用意图 ([14cf3e2](https://github.com/szxufan/ZCode/commit/14cf3e285c672561ccc95ebbb3d76ebdf90d73d3))
+
 ## [4.0.4](https://github.com/szxufan/ZCode/compare/v4.0.3...v4.0.4) (2026-11-27)
 
 ### Bug Fixes
