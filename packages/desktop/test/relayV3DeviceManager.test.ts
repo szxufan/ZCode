@@ -2,7 +2,7 @@ import { existsSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import WebSocket from "ws";
 
 import { createFakeRelayV3 } from "@zcode/shared/testing/fake-relay-v3";
@@ -628,5 +628,98 @@ describe("Relay V3 device manager：切换服务器地址（设计 §3.5）", ()
 
     expect(await start).toEqual({ accepted: false, reason: "stopped" });
     expect(manager.getStatus()).toMatchObject({ phase: "idle", deviceSid: null });
+  }, 30_000);
+});
+
+describe("Relay V3 device manager：重启恢复启用意图", () => {
+  const phone = "+8613800138999";
+  let relay: Awaited<ReturnType<typeof createFakeRelayV3>>;
+  let configDir: string;
+  let settingsStore: {
+    relayV3?: {
+      lastEnabled?: { workspacePath: string; workspaceIdentity?: string };
+      endpointOrigin?: string;
+    };
+  };
+
+  beforeEach(async () => {
+    relay = await createFakeRelayV3({ accounts: [phone] });
+    configDir = mkdtempSync(join(tmpdir(), "relay-v3-restore-"));
+    settingsStore = {};
+  });
+
+  afterEach(async () => {
+    await relay.close();
+    rmSync(configDir, { recursive: true, force: true });
+  });
+
+  function createManager(): RelayV3DeviceManager {
+    return new RelayV3DeviceManager({
+      logger: { debug: () => {}, info: () => {}, warn: () => {}, error: () => {} },
+      appVersion: "4.0.4-test",
+      getRelayConfig: () => ({
+        endpointOrigin: relay.httpUrl,
+        staticPageBaseUrl: null,
+      }),
+      settings: {
+        read: () => Promise.resolve({ relayV3: settingsStore.relayV3 } as never),
+        patch: async (patch) => {
+          // 与 settingService.update 一致：relayV3 子对象整体替换，stop() 依赖此语义清掉 lastEnabled。
+          settingsStore.relayV3 = patch.relayV3 as typeof settingsStore.relayV3;
+        },
+      },
+      configDir,
+      hostname: "restore-host",
+      platform: "win32",
+      resolveDeviceMid: () => "mid_restore",
+      attachHostPort: () => {},
+      detachHostPort: () => {},
+      createMessageChannel: createPortPair,
+      broadcastStatus: () => {},
+    });
+  }
+
+  async function signIn(manager: RelayV3DeviceManager): Promise<void> {
+    expect((await manager.sendSmsCode(phone)).ok).toBe(true);
+    expect((await manager.loginWithCode(phone, relay.smsCode(phone)!)).ok).toBe(true);
+  }
+
+  it("启动成功后立即落盘，新进程恢复并自动启动", async () => {
+    const first = createManager();
+    await signIn(first);
+    const ticket = first.authorizeStart(1, { workspacePath: "/w/restore" });
+    expect((await first.startAuthorized(ticket)).accepted).toBe(true);
+    expect(settingsStore.relayV3?.lastEnabled).toEqual({ workspacePath: "/w/restore" });
+    first.dispose();
+
+    const second = createManager();
+    // 测试焦点是启用意图恢复；先建立有效会话，避免 fake relay 的 refresh 轮换噪声。
+    await signIn(second);
+    await second.restoreOnLaunch();
+    // 新进程先于 renderer 快照恢复；收到任意 workspace 快照后就应启动，目标不必在列表中。
+    second.syncWorkspaces(1, []);
+    await waitFor(
+      () => (second.getStatus().phase === "waiting" ? true : null),
+      10_000,
+      "restored device waiting",
+    );
+    second.dispose();
+  }, 30_000);
+
+  it("用户明确停止后，新进程不自动启动", async () => {
+    const first = createManager();
+    await signIn(first);
+    const ticket = first.authorizeStart(1, { workspacePath: "/w/restore" });
+    expect((await first.startAuthorized(ticket)).accepted).toBe(true);
+    await first.stop();
+    expect(settingsStore.relayV3?.lastEnabled).toBeUndefined();
+    first.dispose();
+
+    const second = createManager();
+    await signIn(second);
+    await second.restoreOnLaunch();
+    second.syncWorkspaces(1, []);
+    expect(second.getStatus().phase).toBe("idle");
+    second.dispose();
   }, 30_000);
 });

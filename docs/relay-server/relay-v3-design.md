@@ -145,6 +145,7 @@ sequenceDiagram
     M->>T: disconnect()
 ```
 
+- **启用意图持久化**：`startAuthorized` 在启动被接受后立即写入 `relayV3.lastEnabled`，不能只在进入 `waiting` 时异步写入；用户显式 `stop()` 或切换地址时清除。进程重启后只需账号凭据有效且 renderer 已同步 workspace 快照即可恢复；最后目标只作初始定位，不要求目标仍在当前窗口列表中。
 - **幂等与并发**：归一化后等于当前地址为 no-op（不登出、不写盘）。启动流程在注册等待期间被打断（stop/登出/切换地址）时不再拉起 transport（返回 `stopped`）：其后迟到的注册成功不保留（relay 侧补偿删除，旧 relay 签发的 SID 不得写入已重置的设备身份），迟到的注册失败也不改写状态。
 - **验收**：manager 集成测试 `packages/desktop/test/relayV3DeviceManager.test.ts`（登出请求命中旧地址且早于落盘、设备身份重置、非法地址与 no-op 无副作用）；桌面 E2E `settings/general/settings-remote-control-endpoint.test.ts`（保存后回显与落盘、非法地址就地报错不落盘）。
 

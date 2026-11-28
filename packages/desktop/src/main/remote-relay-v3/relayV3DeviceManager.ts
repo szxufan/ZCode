@@ -135,6 +135,7 @@ export class RelayV3DeviceManager {
   private reregisteredSinceStart = false;
   private starting = false;
   private latestViewState: unknown = null;
+  private hasWorkspaceSnapshot = false;
   private readonly now: () => number;
   private disposed = false;
   /** bridge 重建时递增，供 terminal 区分新旧 attachment。 */
@@ -194,6 +195,7 @@ export class RelayV3DeviceManager {
   // ---------------------------------------------------------------------------
 
   syncWorkspaces(windowId: number, workspaces: RelayV3WorkspaceSyncEntry[]): void {
+    this.hasWorkspaceSnapshot = true;
     this.workspacesByWindowId.set(windowId, workspaces);
     // 启用意图等待 workspace 同步后恢复（新进程必须等 renderer 同步，V2 04）。
     void this.maybeAutoStart();
@@ -281,7 +283,10 @@ export class RelayV3DeviceManager {
       return { accepted: false, reason: "invalid-ticket" };
     }
     this.enabledTarget = entry.target;
-    return this.start();
+    const result = await this.start();
+    // 启用意图必须在接受启动时落盘，不能等到 waiting；否则立即配对或快速退出会丢掉记录。
+    if (result.accepted) await this.persistEnabledIntent();
+    return result;
   }
 
   async start(): Promise<{ accepted: boolean; reason?: string }> {
@@ -477,7 +482,6 @@ export class RelayV3DeviceManager {
         // terminal 断开：释放短生命周期 bridge attachment（Host/remote session 不动）。
         this.disposeAllBridges("terminal-waiting");
         this.setPhase("waiting");
-        void this.persistEnabledIntent();
         return;
       case "matched":
         this.setPhase("active");
@@ -538,12 +542,8 @@ export class RelayV3DeviceManager {
       if (this.phase === "idle") this.setPhase("auth-required");
       return;
     }
-    // 等待目标 workspace 已同步到任一窗口（V2 04：不匹配保持 idle，不另起 runtime）。
-    const key = this.enabledTarget.workspaceIdentity?.trim() || this.enabledTarget.workspacePath;
-    const synced = [...this.workspacesByWindowId.values()].some((entries) =>
-      entries.some((entry) => entry.workspaceKey === key),
-    );
-    if (!synced) {
+    // renderer 快照到达即可恢复；最后目标只作初始定位，不要求它仍在当前窗口列表中。
+    if (!this.hasWorkspaceSnapshot) {
       if (this.phase === "idle") this.setPhase("idle");
       return;
     }
