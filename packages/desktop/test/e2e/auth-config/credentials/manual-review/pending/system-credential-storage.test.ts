@@ -14,7 +14,7 @@ async function readThroughHost() {
   return browser.execute(
     async (id, key) => {
       const element = document.querySelector(
-        `[data-testid="${id}"], [data-testid="onboarding-page"], [data-testid="oauth-login-button"]`,
+        `[data-testid="${id}"], [data-testid="onboarding-page"], [data-testid="relay-v3-login"]`,
       )!;
       let fiber = (element as any)[
         Object.keys(element).find((name) => name.startsWith("__reactFiber"))!
@@ -38,7 +38,7 @@ async function waitForShell() {
         (id) =>
           Boolean(
             document.querySelector(
-              `[data-testid="${id}"], [data-testid="onboarding-page"], [data-testid="oauth-login-button"]`,
+              `[data-testid="${id}"], [data-testid="onboarding-page"], [data-testid="relay-v3-login"]`,
             ),
           ),
         TID_LOGIN_TRIGGER,

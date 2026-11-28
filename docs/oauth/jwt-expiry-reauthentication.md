@@ -2,14 +2,14 @@
 
 ## 状态
 
-- 本文定义桌面端与 Web 端在 `zcodejwttoken` 过期后的认证恢复语义。
+- 本文定义 OAuth 服务 / CLI 在 `zcodejwttoken` 过期后的认证恢复语义；桌面应用登录已改为 relay v3 账号（见 [relay-login.md](../ui/relay-login.md)），不再由 JWT 过期驱动欢迎页。
 - `zcodejwttoken` 的签名与最终有效性仍由服务端负责；客户端只解析 JWT `exp`，用于避免恢复明显过期的本地会话。
 
 ## 问题
 
 旧实现使用缓存的 `user_info` 恢复登录展示态，只检查 `zcodejwttoken` 是否存在，不检查 JWT `exp`。因此 JWT 过期后，UI 仍显示已登录，但余额、模型和其他业务请求会继续携带过期凭据并失败。
 
-旧的 `useTokenRefresh` 只暴露回调，没有实际监听 401；同时 Z.AI / BigModel 当前没有可用于续期 `zcodejwttoken` 的客户端 refresh 实现，所以已确认过期时必须重新登录。
+旧的 `useTokenRefresh` 只暴露回调，没有实际监听 401；同时 Z.AI / BigModel 当前没有可用于续期 `zcodejwttoken` 的客户端 refresh 实现，所以已确认过期时必须由用户在设置页重新连接对应 provider，而不是由应用登录流程跳转到欢迎页。
 
 ## 产品语义
 
@@ -58,20 +58,21 @@ JWT 无法解析或缺少 `exp` 时，客户端不能证明它已经过期，继
         reauthentication-required
                 |
                 v
-        UI 显示“登录已过期，请重新登录”
+        广播 signed-out / reauthentication-required
                 |
                 v
-        用户点击“重新登录” -> Welcome 登录页
+        UI 清理用户展示，显示普通聊天错误横幅
+        （不弹重新登录提示、不打开 Welcome 登录页）
 ```
 
 ## 交互约束
 
 - 认证过期不是用户主动退出，不显示“确认断开连接”或运行中会话二次确认。
-- 清理认证事实发生在提示框显示前；提示框不能成为继续使用旧 JWT 的阻塞点。
-- 用户点击“重新登录”后直接打开现有 Welcome 登录入口，不触发主动退出 telemetry 或 App relaunch。
+- 清理认证事实发生在广播前；清理完成即生效，不等待 UI。
+- Host 侧只清理凭据并广播 `signed-out` / `reauthentication-required`；renderer 不再弹「登录已过期，请重新登录」提示，也不打开 Welcome 登录页。需要重新连接 provider 时由用户在设置页主动操作，不触发 App relaunch。
 - provider 启动门禁只能关闭自己打开的 `startup-provider-required`；不得以 `open=false` 覆盖 JWT 过期流程写入的 `session-expired`。
-- 同一次启动恢复最多显示一次过期提示。
-- 桌面 Root 使用支持中英文和亮暗主题的统一 AlertDialog；Web 登录入口清理过期 localStorage 后直接回到登录页，不恢复伪登录态。
+- 同一次启动恢复最多广播一次过期状态；UI 不维护第二份认证状态。
+- Web 端清理过期 localStorage 后回到普通界面，不恢复伪登录态；relay v3 账号会话不受 OAuth / JWT 过期影响。
 
 ## 进程与多端边界
 
@@ -88,4 +89,4 @@ JWT 无法解析或缺少 `exp` 时，客户端不能证明它已经过期，继
 - 派生 provider 清理失败时仍返回 `reauthentication-required`。
 - 过期恢复与新 OAuth callback 并发时，不得清除新登录或新切换 provider 的凭据。
 - Web localStorage 中的过期 JWT 被清除且不恢复用户。
-- UI 对 `reauthentication-required` 显示一次提示，确认后进入登录页。
+- UI 对 `reauthentication-required` 只清理展示态并显示普通错误横幅，不弹提示、不进入登录页。

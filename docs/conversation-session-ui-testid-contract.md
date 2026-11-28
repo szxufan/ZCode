@@ -76,25 +76,24 @@ V4 formal E2E 读取的是产品协议 materialization，不复用旧 M3/M4 debu
 
 ### 登录和模型前置
 
-会话区 E2E 不能假设空项目可直接使用。MVP compact case 的前置链路必须按用户路径完成：
+会话区 E2E 不能假设空项目可直接使用。应用登录已改为 relay v3 账号（[relay-login.md](./ui/relay-login.md)）：
 
-1. 在欢迎页点击 `TID_LOGIN_USE_API_KEY_BUTTON`，进入 API Key 登录。
-2. 使用 `TID_LOGIN_API_KEY_INPUT` 填入测试 API Key，点击 `TID_LOGIN_API_KEY_CONTINUE_BUTTON`。
-3. 进入工作区后，在模型供应商设置中配置 DeepSeek API Key。
-4. 回到会话区后切换到 `deepseek-v4-flash`。
+1. 冷启动未登录时欢迎页展示 relay 手机号 + 验证码登录；E2E 优先通过 wdio 冷启动播种已登录账号，需要走真实 UI 时使用 `ensureRelayLoggedIn()`。
+2. 欢迎页可填写 `relay-v3-endpoint-input` 并保存 relay 服务器地址；未保存草稿时登录操作被拦截。
+3. 验证码登录后进入工作区，在模型供应商设置中用「连接派 / linkpi」模板填写测试 API Key。
+4. 回到会话区后切换到目标模型。
 
 这条前置链路本身也属于产品协议：测试不得通过直接写入登录态来绕过欢迎页，除非该 case 的目标明确是非 UI 层服务验证。
 
-| 建议常量                             | 元素                         | 必需属性                   |
-| ------------------------------------ | ---------------------------- | -------------------------- |
-| `TID_LOGIN_USE_API_KEY_BUTTON`       | 欢迎页 API Key 登录入口      | `disabled`                 |
-| `TID_LOGIN_API_KEY_PROVIDER_TRIGGER` | API Key 登录 provider 选择器 | 当前 provider value        |
-| `TID_LOGIN_API_KEY_PROVIDER_ITEM`    | API Key 登录 provider 选项   | 动态后缀为 provider choice |
-| `TID_LOGIN_API_KEY_INPUT`            | API Key 输入框               | value                      |
-| `TID_LOGIN_API_KEY_CONTINUE_BUTTON`  | API Key 登录继续按钮         | `disabled`                 |
-| `TID_LOGIN_API_KEY_CANCEL_BUTTON`    | API Key 登录取消按钮         | `disabled`                 |
-| `TID_LOGIN_API_KEY_SKIP_BUTTON`      | API Key 登录暂时跳过按钮     | `disabled`                 |
-| `TID_LOGIN_API_KEY_ERROR`            | API Key 登录错误提示         | normalized text            |
+| 建议常量 / test id             | 元素                         | 必需属性       |
+| ------------------------------ | ---------------------------- | -------------- |
+| `relay-v3-endpoint-input`      | 欢迎页 relay 服务器地址输入  | value          |
+| `relay-v3-endpoint-save`       | 保存服务器地址               | `disabled`     |
+| `relay-v3-phone`               | 手机号输入框                 | value          |
+| `relay-v3-code`                | 短信验证码输入框             | value          |
+| `relay-v3-send-code`           | 发送验证码（含 60s 冷却）    | `disabled`     |
+| `relay-v3-login`               | relay 账号登录按钮           | `disabled`     |
+| `relay-v3-notice`              | 登录失败/未保存地址提示      | normalized text |
 
 模型供应商设置里的 `TID_MODEL_PROVIDER_NAV_ITEM` 必须暴露 `aria-selected` 和 `data-state`。E2E 选择 DeepSeek、GLM 等 provider 时只能读取 `aria-selected="true"` 或 `data-state="selected"`，不能通过 `border-*` / `bg-*` 等 CSS class 判断选中态。
 

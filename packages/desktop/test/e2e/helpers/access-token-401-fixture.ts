@@ -7,16 +7,10 @@ export async function prepareAccessToken401Fixture(options: {
   credentialsFile: string;
   settingsFile: string;
 }): Promise<(() => Promise<void>) | null> {
-  const sharedJwt = options.specs.some((spec) => spec.endsWith("jwt-401-auto-logout.test.ts"));
   const projectRecovery = options.specs.some((spec) =>
     spec.endsWith("project-location-decrypt-recovery.test.ts"),
   );
-  if (
-    !sharedJwt &&
-    !projectRecovery &&
-    !options.specs.some((spec) => spec.endsWith("access-token-401-auto-logout.test.ts"))
-  )
-    return null;
+  if (!projectRecovery) return null;
 
   const pending: ServerResponse[] = [];
   let businessRequestCount = 0;
@@ -37,9 +31,7 @@ export async function prepareAccessToken401Fixture(options: {
   let loginCompletions = 0;
   let locationUnavailable = false;
   const provider =
-    sharedJwt || preserveSession || process.env.ZCODE_E2E_AUTH_EXPIRY_PROVIDER === "zai"
-      ? "zai"
-      : "bigmodel";
+    preserveSession || process.env.ZCODE_E2E_AUTH_EXPIRY_PROVIDER === "zai" ? "zai" : "bigmodel";
   const rejectResponse = (response: ServerResponse) => {
     response.writeHead(rejectionStatus);
     response.end(emptyRejection ? "" : '{"code":401,"msg":"登录状态已过期","success":false}');
@@ -200,29 +192,15 @@ export async function prepareAccessToken401Fixture(options: {
       response.end("");
       return;
     }
-    if (
-      (sharedJwt && path === "/api/v1/zcode-plan/billing/balance") ||
-      (!sharedJwt && path === "/api/biz/customer/getCustomerInfo")
-    ) {
+    if (path === "/api/biz/customer/getCustomerInfo") {
       // 只记录是否匹配合成登录凭据，避免 token 原文进入测试产物。
       if (
-        request.headers.authorization?.replace(/^Bearer\s+/i, "") ===
-        (sharedJwt ? "e2e-distinct-zcode-jwt" : "e2e-business-access-token")
+        request.headers.authorization?.replace(/^Bearer\s+/i, "") === "e2e-business-access-token"
       )
         businessRequestCount++;
       if (rejected) {
         rejectResponse(response);
       } else pending.push(response);
-      return;
-    }
-    if (sharedJwt && path === "/api/biz/customer/getCustomerInfo") {
-      response.end(
-        JSON.stringify({
-          code: 200,
-          success: true,
-          data: { user_id: "e2e-user", customerNumber: "e2e-user", name: "Fixture User" },
-        }),
-      );
       return;
     }
     // 其它控制面始终 200，保证失效提示只能来自上面的目标凭据请求。

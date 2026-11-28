@@ -56,7 +56,6 @@ interface QuickPickCommandHandlers {
   openCommunity: () => void | Promise<void>;
   openProductDocs: () => void | Promise<void>;
   login?: () => void | Promise<void>;
-  logout?: () => void | Promise<void>;
   toggleSidebar: () => void;
   toggleTerminal: () => void;
   togglePreview: () => void;
@@ -73,7 +72,6 @@ interface CreateQuickPickCommandsOptions {
   allowOpenWorkspace: boolean;
   canOpenCommunity: boolean;
   isSidebarVisible: boolean;
-  isLoggedIn: boolean;
   supportsEmbeddedBrowser?: boolean;
   supportsTerminal?: boolean;
   supportsReview?: boolean;
@@ -91,7 +89,6 @@ export function createQuickPickCommands({
   allowOpenWorkspace,
   canOpenCommunity,
   isSidebarVisible,
-  isLoggedIn,
   supportsEmbeddedBrowser = true,
   supportsTerminal = true,
   supportsReview = true,
@@ -275,22 +272,15 @@ export function createQuickPickCommands({
     run: handlers.openProductDocs,
   });
 
-  if (isLoggedIn && handlers.logout) {
-    commands.push({
-      id: "logout",
-      sectionId: "app",
-      titleId: "quickPick.command.logout",
-      icon: "logout",
-      keywords: ["disconnect", "logout", "sign out", "断开连接", "登出"],
-      run: handlers.logout,
-    });
-  } else if (!isLoggedIn && handlers.login) {
+  // relay v3 账号登录没有 store 登录态，账号入口固定展示；点击打开 relay 欢迎页。
+  // 退出登录命令已随 OAuth 账号态移除。
+  if (handlers.login) {
     commands.push({
       id: "login",
       sectionId: "app",
       titleId: "quickPick.command.login",
       icon: "login",
-      // 命令面板的账号动作对用户表达为“连接/断开连接”，搜索词也要同步。
+      // 命令面板的账号动作用“连接/登录”表达，搜索词同步。
       keywords: ["connect", "login", "sign in", "连接", "登录"],
       run: handlers.login,
     });

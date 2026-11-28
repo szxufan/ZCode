@@ -19,7 +19,6 @@ import type {
   IntegratedTerminalShellOption,
   IntegratedTerminalShellSelection,
   UsageEntitlementSnapshot,
-  UserInfo,
   ZCodeInteractionBehavior,
 } from "@zcode/shared";
 import { BUILTIN_MODEL_PROVIDER_IDS, isLocale } from "@zcode/shared";
@@ -316,8 +315,6 @@ export function SettingsPage({
   onOpenRemoteWorkspace,
   allowOpenWorkspace = true,
   onLogin,
-  onLogout,
-  user,
 }: {
   isDesktop?: boolean;
   isWindowsDesktop?: boolean;
@@ -332,8 +329,6 @@ export function SettingsPage({
   /** 远程设备卡「新任务」：激活该设备已打开的 tab 并开新草稿（Root 注入）。 */
   allowOpenWorkspace?: boolean;
   onLogin?: () => void;
-  onLogout?: () => void;
-  user?: UserInfo | null;
 }) {
   const { intl, localePreference, setLocalePreference } = useZCodeIntl();
   const { settingsSectionGroups, settingsSections } = useMemo(
@@ -1716,9 +1711,7 @@ export function SettingsPage({
                   onUsageClick={handleOpenUsageSettings}
                   onUpgradeClick={handleOpenCodingPlanUpgradeSettings}
                   onLogin={onLogin}
-                  onLogout={onLogout}
                   settingsButtonMode="back"
-                  user={user}
                   // 头像菜单是 WorkspaceSidebarFooter 的共享菜单，Settings 场景不能丢失桌面平台能力。
                   // 之前这里没透传 isDesktop，导致同一个头像菜单在设置页缺少界面缩放入口。
                   isDesktop={isDesktop}

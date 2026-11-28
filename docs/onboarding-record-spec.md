@@ -3,6 +3,11 @@
 > 分支：`prototype/onboarding-suggestions`
 > 状态：已实现（本地存储阶段；服务端上传接口待定，预留 `uploadState`）
 
+> relay v3 账号成为桌面应用登录后（见 [relay-login.md](./ui/relay-login.md)），应用登录不再产出
+> OAuth user id：当前 onboarding 身份一律为匿名（`userId: null`），不再有「登录 OAuth 账号后
+> 认领匿名记录」的用户切换场景。下文多 `userId` 与 `claimAnonymousRecord` 语义仅用于兼容历史
+> OAuth 会话或其它仍提供 user id 的入口。
+
 ## 1. 背景与目标
 
 新用户引导（OccupationOnboarding，三步向导：职业 / 模式 / 偏好）目前只在完成后把偏好写入
@@ -23,7 +28,7 @@ Schema 定义在 `packages/shared/src/onboardingRecord.ts`（类型 + zod，独�
 
 ```ts
 interface OnboardingRecordEntry {
-  userId: string | null; // OAuth user_id；apikey/未登录为 null
+  userId: string | null; // 历史 OAuth user_id；relay v3 登录后应用登录身份为 null
   occupation: string; // developer | ... | other（非空字符串，向前兼容）
   interfaceMode: "coding" | "office";
   memoryEnabled: boolean;
@@ -73,7 +78,7 @@ v1 文件不做启动迁移：读取时视为 `decisions: []`，下一次业务�
 - `deviceMid` 由 renderer 经 `platform.getDeviceId()`（desktop 为 userData 路径 SHA-256，
   稳定）传入 service；落盘后以**文件内的值**为权威，重复写入不改变。
 - `userId` 由 service 内部经 `oauthCredentialRepo.loadActiveUserProfile()?.id ?? null`
-  补全，UI 不直接触碰 OAuth 层。
+  补全（历史 OAuth 会话仍可得到 id；relay v3 账号登录后为 null），UI 不直接触碰 OAuth 层。
 
 ## 3.5 登录认领（claimAnonymousRecord）
 

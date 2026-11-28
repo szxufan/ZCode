@@ -46,6 +46,8 @@ export type RelayV3DesktopFailureKind =
 /** renderer 可见的远控状态投影；不含 token、私钥与完整手机号。 */
 export interface RelayV3DesktopStatus {
   phase: RelayV3DesktopPhase;
+  /** main 已完成启动时凭据恢复；renderer 只有在此值为 true 后才能据 account 判断登录门禁。 */
+  restored: boolean;
   failure?: { kind: RelayV3DesktopFailureKind; message?: string };
   /** 已登录的 relay 账号摘要（未登录为 null）。 */
   account: { phoneMasked: string } | null;

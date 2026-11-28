@@ -38,21 +38,10 @@ async function selectRecoveryLocale(locale: string) {
 }
 
 /**
- * 单入口登录按区域选择渠道：中文默认国内 zai_cn，其轮询只受夹具 cn-ready 控制。
- * 恢复用例依赖 hold-poll / enable-poll 挂起与放行旧流程，因此登录前显式选全球区 zai。
+ * relay v3 应用登录已是唯一登录入口：恢复后只验证欢迎页可达，不再有 OAuth 区域切换。
  */
-async function selectGlobalLoginRegion() {
-  // 切换区域会同时切换界面语言并重渲染，每次从 DOM 重新读取，避免持有失效节点。
-  const readRegion = () =>
-    browser.execute(
-      () => document.querySelector('[data-testid="login-region-switch"]')?.textContent ?? "",
-    );
-  await waitForTestIdByDom("login-region-switch", { timeout: 30000 });
-  if ((await readRegion()).includes("Global")) await clickTestIdByDom("login-region-switch");
-  let text = "";
-  await browser.waitUntil(async () => (text = await readRegion()).includes("中国"), {
-    timeoutMsg: `登录区域未切到全球区，当前开关文案：${text}`,
-  });
+async function waitForRelayLoginEntry(timeout = 30000) {
+  await waitForTestIdByDom("relay-v3-login", { timeout });
 }
 
 describe("凭据容器确认恢复", () => {
@@ -163,15 +152,9 @@ describe("凭据容器确认恢复", () => {
       join(process.env.ZCODE_E2E_ARTIFACT_DIR!, "credential-recovered.png"),
     );
     await clickTestIdByDom("credential-store-recovery-reload");
-    await waitForTestIdByDom("oauth-login-button", { timeout: 30000 });
+    await waitForRelayLoginEntry();
     expect(await readFile(`${file}.recovery-generation`, "utf8")).toBe(generation);
-    await selectGlobalLoginRegion();
-    await clickTestIdByDom("oauth-login-button");
-    // 主 JWT 与渠道无关；写入即证明恢复后的空库可以重新完成 OAuth 登录。
-    await browser.waitUntil(
-      async () => Boolean(JSON.parse(await readFile(file, "utf8"))["zcodejwttoken"]),
-      { timeout: 15000, timeoutMsg: "空库恢复后未能重新 OAuth 登录并保存凭据" },
-    );
+    // 恢复后的空库可以重新进入 relay 登录页；具体登录链路由 relay-login.test.ts 覆盖。
     await writeFile(
       join(process.env.ZCODE_E2E_ARTIFACT_DIR!, "credential-recovery.json"),
       JSON.stringify({
@@ -219,7 +202,7 @@ describe("凭据容器确认恢复", () => {
     expect(await readFile(file, "utf8")).toBe(valid);
     expect(await readFile(`${file}.recovery-generation`, "utf8")).toBe(generation);
     await clickTestIdByDom("credential-store-recovery-reload");
-    await waitForTestIdByDom("oauth-login-button", { timeout: 30000 });
+    await waitForRelayLoginEntry();
     expect(await browser.$('[data-testid="credential-store-recovery"]').isExisting()).toBe(false);
   });
   it("两个 Host 的重复确认不能覆盖恢复后保存的凭据", async () => {
@@ -247,37 +230,6 @@ describe("凭据容器确认恢复", () => {
       expect(await readE2ECredentialValue("bot:new")).toBe("new-credential");
       expect(await readFile(`${file}.recovery-generation`, "utf8")).toBe(generation);
     } finally {
-      await browser.electron.execute(
-        (electron, id) => electron.BrowserWindow.fromId(id)?.close(),
-        second.windowId,
-      );
-      await browser.switchToWindow(main);
-    }
-  });
-  it("另一 Host 恢复后，旧 OAuth 响应不得重新写入凭据", async () => {
-    const file = getE2EAppDataPaths().credentialsFile;
-    const baseUrl = process.env.ZCODE_E2E_OAUTH_RACE_URL!;
-    await writeFile(file, "{}");
-    await browser.refresh();
-    await waitForTestIdByDom("oauth-login-button", { timeout: 30000 });
-    await selectGlobalLoginRegion();
-    await fetch(`${baseUrl}/__e2e/hold-poll`, { method: "POST" });
-    await clickTestIdByDom("oauth-login-button");
-    await waitForTestIdByDom("oauth-cancel");
-    const main = await browser.getWindowHandle();
-    await writeFile(file, '{"unfinished":');
-    const second = await openSubagentHostWindow();
-    try {
-      await waitForTestIdByDom("credential-store-recovery", { timeout: 30000 });
-      await clickTestIdByDom("credential-store-recovery-open");
-      await clickTestIdByDom("credential-store-recovery-confirm");
-      await waitForTestIdByDom("credential-store-recovery-reload");
-      await fetch(`${baseUrl}/__e2e/enable-poll`, { method: "POST" });
-      await browser.switchToWindow(main);
-      await waitForTestIdByDom("oauth-error", { timeout: 15000 });
-      expect(JSON.parse(await readFile(file, "utf8"))).toEqual({});
-    } finally {
-      await fetch(`${baseUrl}/__e2e/enable-poll`, { method: "POST" });
       await browser.electron.execute(
         (electron, id) => electron.BrowserWindow.fromId(id)?.close(),
         second.windowId,
@@ -350,7 +302,7 @@ describe("凭据容器确认恢复", () => {
       }
       await rm(file);
       await browser.refresh();
-      await waitForTestIdByDom("oauth-login-button", { timeout: 30000 });
+      await waitForRelayLoginEntry();
       expect(await browser.$('[data-testid="credential-store-recovery"]').isExisting()).toBe(false);
       await mkdir(file);
       const logDir = await browser.electron.execute(() => process.env.ZCODE_E2E_RUNTIME_LOG_DIR!);

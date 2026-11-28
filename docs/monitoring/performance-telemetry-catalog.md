@@ -200,7 +200,7 @@ renderer 侧埋点，全采（100%）。
 | `perf_ui_session_open_result`         | `total_ms`   | `status` / `session_open_id` / `session_id` / Host/CLI/Renderer 阶段耗时与首帧计数字段           |
 | `perf_ui_session_directory_settled`   | `settled_ms` | `directory_status` / `session_open_id` / `session_id` / `loaded_row_count` / `total_row_count`   |
 
-哨兵：任一段为负（跨进程时钟偏移）或总时长 > **300000ms**（`LAUNCH_TO_INPUT_SANITY_MAX_MS`）→ **整批丢弃**。未登录（WelcomeScreen）不上报。旧 `perf_ui_first_screen` 已废弃，语义并入 `perf_ui_launch_react_commit_ms`。
+哨兵：任一段为负（跨进程时钟偏移）或总时长 > **300000ms**（`LAUNCH_TO_INPUT_SANITY_MAX_MS`）→ **整批丢弃**。旧 `perf_ui_first_screen` 已废弃，语义并入 `perf_ui_launch_react_commit_ms`。
 
 ### 4.3 消息链路（镜像自 `/report` 的 `message_completion`，不新增计时）
 

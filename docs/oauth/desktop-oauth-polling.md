@@ -1,8 +1,13 @@
 # Desktop OAuth 轮询登录
 
+> **已废弃（桌面应用登录）：** 桌面应用登录已改为 relay v3 账号（手机号 + 短信验证码，
+> 见 [relay-login.md](../ui/relay-login.md)），欢迎页不再轮询 OAuth。本文描述的 OAuth flow
+> 轮询只服务 `packages/services/src/oauth/**` 与 CLI 登录等 provider 运行时链路；下文出现的
+> Desktop App / Root / Renderer 均指这些遗留链路，不代表当前桌面 UI 登录流程。
+
 ## 目标
 
-Z.AI 与 BigModel Desktop 登录不再把 `zcode://oauth/callback` 作为唯一完成路径。App 使用 ZCode
+Z.AI 与 BigModel 的 OAuth 服务 / CLI 登录不再把 `zcode://oauth/callback` 作为唯一完成路径。App 使用 ZCode
 后端已有的短期 OAuth flow，在浏览器完成授权后轮询 flow 状态；deep link 仍保留为兼容路径。
 轮询接口的 `provider` 使用 `zai` 或 `bigmodel`，两者共享 flow 生命周期，但 `ready` 凭据字段按 provider 区分。
 BigModel 创建 flow 后，App 把授权地址中的回调改为官网旧中转页
@@ -60,7 +65,7 @@ App                  init A                  init B                  Host pendin
 - `init` 返回的 `flow_id`、`expires_at`、`server_time` 和 `poll_interval_sec` 只保存在 Host 内存。
 - App 只接受 HTTPS `authorize_url`、按服务端时钟尚未到期的 `expires_at`，以及至少 1 秒且小于
   flow 剩余寿命的 `poll_interval_sec`；异常服务端响应直接终止，不打开外部地址。
-- Root 常驻层查询 Host 中的 pending flow；没有 pending flow 时不得产生网络请求。
+- CLI / OAuth 服务侧查询 Host 中的 pending flow；没有 pending flow 时不得产生网络请求。
 - 只有 `zai`、`bigmodel` 使用 polling；扩展 provider 仍走原 deep link 流程，不启动 Root 空轮询。
 - BigModel 的浏览器回调使用官网 `/app/oauth/login?redirect=zcode://oauth/callback`，不得直接展示
   `/oauth/cli/callback/bigmodel` 的成功或失败页面；修改回调地址不取消 Host polling。
@@ -138,7 +143,7 @@ init 响应 data：expires_at + server_time（同一服务端时钟，Unix 秒�
 
 ### 回调取消与错误归属
 
-- 已接收的回调因取消或新 flow 而失效时返回 `null`；Root 静默忽略，不更新用户、成功状态或错误提示。
+- 已接收的回调因取消或新 flow 而失效时返回 `null`；调用方静默忽略，不更新用户、成功状态或错误提示。
 - 两条路径均失败时，各调用方收到自己路径的原始错误；等待备用路径不能覆盖首条路径的诊断信息。
 - 成功后的 30 秒去重窗口按回调进入服务的时间判断。pending 期间已接收或窗口内接收的回调，
   不因排队超过窗口而丢失归因；窗口结束后新收到的回调仍拒绝。取消、新 flow 的隔离优先于此规则。
@@ -146,5 +151,5 @@ init 响应 data：expires_at + server_time（同一服务端时钟，Unix 秒�
 ```text
 窗口内收到回调 → 入队 → 等待超过 30 秒 → 仍保存归因
 窗口结束后收到新回调                  → 拒绝
-取消 / 新 flow → 旧回调返回 null → Root 忽略
+取消 / 新 flow → 旧回调返回 null → 调用方忽略
 ```

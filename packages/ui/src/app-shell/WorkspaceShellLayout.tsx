@@ -266,9 +266,7 @@ const WorkspaceShellLayoutContent = memo(function WorkspaceShellLayoutComponent(
   onSelectRemoteProject,
   onCancelRemoteProject,
   onReconnectRemoteWorkspace,
-  onLogout,
   onLogin,
-  user,
   reconnectingRemoteWorkspaceKeys,
   remoteWorkspaceRecoveryByWorkspaceKey = EMPTY_REMOTE_WORKSPACE_RECOVERY_BY_WORKSPACE_KEY,
   remoteWorkspaceErrorByWorkspaceKey,
@@ -1852,9 +1850,7 @@ const WorkspaceShellLayoutContent = memo(function WorkspaceShellLayoutComponent(
       reconnectingRemoteWorkspaceKeys={reconnectingRemoteWorkspaceKeys}
       remoteWorkspaceRecoveryByWorkspaceKey={remoteWorkspaceRecoveryByWorkspaceKey}
       remoteWorkspaceErrorByWorkspaceKey={remoteWorkspaceErrorByWorkspaceKey}
-      onLogout={onLogout}
       onLogin={onLogin}
-      user={user}
       isDesktop={isDesktop}
       isMacDesktop={isMacDesktop}
       isWindowsDesktop={isWindowsDesktop}
@@ -2056,7 +2052,6 @@ const WorkspaceShellLayoutContent = memo(function WorkspaceShellLayoutComponent(
                             activeTaskChangeSummary={activeTaskChangeSummary}
                             hasUpdateReady={hasUpdateStatusButton}
                             activeTaskId={activeTaskId}
-                            user={user}
                             activeTraceId={activeTraceId}
                             activeSessionId={activeSessionId}
                             activeTaskProvider={activeTaskProvider}

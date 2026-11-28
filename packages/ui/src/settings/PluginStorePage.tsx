@@ -5,9 +5,6 @@ import { reportAppTelemetryEvent } from "@/lib/appTelemetry.js";
 /* eslint-disable max-lines -- 插件商店容器统一编排列表/详情、市场源对话框、卸载确认、试用跳转与技能刷新收尾，集中维护保证交互一致。 */
 import { PluginAddMenu } from "@/conversation-workspace-target/PluginAddMenu.js";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { useStore } from "zustand";
-import { useOptionalTabStore } from "@/store/TabStoreProvider.js";
-import { isWorkspaceTab } from "@/store/tabStore.js";
 import { ArrowLeft, RefreshCw, Store } from "lucide-react";
 import { ControlHintTooltip } from "@/ControlHintTooltip.js";
 import { Button } from "@/components/ui/button.js";
@@ -49,9 +46,11 @@ import {
   type PluginLoginRegion,
   type StorePluginItem,
 } from "@/settings/pluginStoreListing.js";
-import { ZCODE_OFFICIAL_PLUGIN_MARKETPLACE_ID } from "@zcode/shared";
-import { useOAuth } from "@/hooks/useOAuth.js";
-import { useZCodeStore } from "@/store/StoreProvider.js";
+import {
+  ZCODE_OFFICIAL_PLUGIN_MARKETPLACE_ID,
+  ZAI_CN_PROVIDER_ID,
+  ZAI_PROVIDER_ID,
+} from "@zcode/shared";
 import { PluginUninstallConfirmDialog } from "@/settings/PluginUninstallConfirmDialog.js";
 import { usePluginUninstall } from "@/settings/usePluginUninstall.js";
 import { claimMarketplaceAutoRefresh } from "@/settings/officialMarketplaceAutoRefresh.js";
@@ -207,7 +206,9 @@ export function PluginStorePage({
     }
   }, [marketplaces, pluginManagementService, updateMarketplace]);
 
-  const { region: loginRegion } = usePluginLoginRegion();
+  // 区域只影响商店条目过滤；relay v3 账号登录不再提供 OAuth activeProvider，
+  // 改由界面 locale 推导：zh-CN 为国内，其余为海外。locale 变化即同步重算，不需要轮询或登录信号。
+  const loginRegion = resolvePluginLocaleRegion(locale);
   // 商店浏览（分段、Featured、分类、UI 专区、搜索、详情定位）只看当前登录区域可见的条目；
   // 已安装条目在 isPluginVisibleForLoginRegion 里保留，管理已安装视图用自己的全集不受影响。
   const items = useMemo(
@@ -848,31 +849,14 @@ export function PluginStorePage({
 }
 
 /**
- * 插件商店的登录区域（docs/plugin-marketplace-ui-ux.md「按登录区域定向展示」）。
- *
- * 区域只从 useOAuth 的读取状态（activeProvider、loadingProviders、activeProviderReadFailed）派生，
- * 不另外缓存；读取中或失败为 unknown。useOAuth 只在挂载时读一次
- * activeProvider；商店页常驻时用户可能退出、换号或换入口，所以订阅 store 里现成的登录信号
- * （用户身份与 OAuth 成功序号），变化时重新读取。不用超时或轮询。
+ * 插件商店按界面 locale 推导登录区域（docs/plugin-marketplace-ui-ux.md「按登录区域定向展示」）。
+ * relay v3 账号登录没有 OAuth activeProvider 可供读取；国内界面按 cn 定向，其他语言按 global 定向。
+ * 沿用 resolvePluginLoginRegion 保持区域过滤与 unknown 语义一致，读取中/失败的状态不再存在。
  */
-function usePluginLoginRegion(): { region: PluginLoginRegion } {
-  const { activeProvider, activeProviderReadFailed, loadingProviders, refreshProviders } =
-    useOAuth();
-  const userId = useZCodeStore((state) => state.user?.id ?? null);
-  const oauthSuccessSeq = useZCodeStore((state) => state.oauthSuccessSeq);
-  // 挂载时 useOAuth 已经读过一次，这里只响应之后的登录状态变化。
-  const observedRef = useRef({ userId, oauthSuccessSeq });
-  useEffect(() => {
-    const observed = observedRef.current;
-    if (observed.userId === userId && observed.oauthSuccessSeq === oauthSuccessSeq) return;
-    observedRef.current = { userId, oauthSuccessSeq };
-    void refreshProviders();
-  }, [oauthSuccessSeq, refreshProviders, userId]);
-  return {
-    region: resolvePluginLoginRegion({
-      activeProvider,
-      loading: loadingProviders,
-      readFailed: activeProviderReadFailed,
-    }),
-  };
+function resolvePluginLocaleRegion(locale: string): PluginLoginRegion {
+  return resolvePluginLoginRegion({
+    activeProvider: locale === "zh-CN" ? ZAI_CN_PROVIDER_ID : ZAI_PROVIDER_ID,
+    loading: false,
+    readFailed: false,
+  });
 }

@@ -8,7 +8,6 @@ import type {
 import type { IUsageStatsService } from "@zcode/services";
 import { useOptionalBaseWorkspaceServices } from "@/hooks/useWorkspaceServices.js";
 import { useStableAccountAccess } from "@/hooks/useStableAccountAccess.js";
-import { useZCodeStoreWithDefault } from "@/store/StoreProvider.js";
 import { logger } from "@/logger.js";
 import {
   readCachedUsageEntitlementSnapshot,
@@ -168,15 +167,12 @@ export function useUsageEntitlementWithService(
   const allowDisabledPreferredProvider = options.allowDisabledPreferredProvider === true;
   const requirePreferredProvider = options.requirePreferredProvider === true;
   const allowEnvApiKey = options.allowEnvApiKey;
-  const authScope = useZCodeStoreWithDefault(
-    (store) => (store.user ? `${store.user.id}:${store.authSessionSeq}` : "signed-out"),
-    "unscoped",
-  );
-  const enabled =
-    (options.enabled ?? true) && Boolean(usageStatsService) && authScope !== "signed-out";
+  // 应用登录改为 relay 账号后不再有 ZCode user 身份；用量查询依赖本地 provider API Key，
+  // 因此使用固定的匿名 scope，缓存仍按 scope 隔离，不因缺失 OAuth 用户而禁用。
+  const authScope = "anonymous";
+  const enabled = (options.enabled ?? true) && Boolean(usageStatsService);
   const suppliedCacheKey = options.cacheKey?.trim() ?? "";
-  const freshnessCacheKey =
-    authScope === "unscoped" ? suppliedCacheKey : `${suppliedCacheKey}:auth:${authScope}`;
+  const freshnessCacheKey = `${suppliedCacheKey}:auth:${authScope}`;
   // 保留空 cacheKey 的不落盘合同；账号隔离仍适用于共享请求和快照。
   const cacheKey = suppliedCacheKey ? freshnessCacheKey : "";
   const refreshOnMount = options.refreshOnMount ?? false;

@@ -1,5 +1,4 @@
 interface RootStartupGateState {
-  isResolvingStartupAuthState: boolean;
   isResolvingProviderStartupState: boolean;
   isRestoring: boolean;
   isBootstrappingInitialWorkspace: boolean;
@@ -20,14 +19,8 @@ interface ProviderStartupSyncState {
   modelSelectionViewHydrated: boolean;
 }
 
-interface ProviderStartupResolutionState {
-  providerStartupSyncPending: boolean;
-  providerAvailabilityStartupCheckCompleted: boolean;
-}
-
 export function shouldBlockRootRender(state: RootStartupGateState): boolean {
   return (
-    state.isResolvingStartupAuthState ||
     state.isResolvingProviderStartupState ||
     state.isRestoring ||
     state.isBootstrappingInitialWorkspace
@@ -37,19 +30,9 @@ export function shouldBlockRootRender(state: RootStartupGateState): boolean {
 export function shouldShowRootStartupLoading(
   state: RootStartupLoadingVisibilityState,
 ): boolean {
-  // 修复原因：登录入口是启动门禁的结果，不是可继续被门禁遮挡的后台状态。
-  // 如果 WelcomeScreen 已经打开，继续返回启动 loading 会把未登录用户卡在黑屏 logo。
+  // relay 登录欢迎页是门禁的结果，不是可继续被门禁遮挡的后台状态。
+  // 欢迎页已打开时继续返回启动 loading 会把用户卡在黑屏 logo。
   return Boolean(state.isDesktop) && !state.welcomeScreenOpen && shouldBlockRootRender(state);
-}
-
-export function shouldEnableProviderAvailabilityLoginEntryGuard(): boolean {
-  return true;
-}
-
-export function shouldResolveProviderStartupState(
-  state: ProviderStartupResolutionState,
-): boolean {
-  return state.providerStartupSyncPending || !state.providerAvailabilityStartupCheckCompleted;
 }
 
 export function shouldOpenFallbackWorkspaceAfterCreate(

@@ -1,7 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import { useProviderSettingsView } from "@/hooks/useProviderSettingsView.js";
 import { useServices } from "@/hooks/useServices.js";
-import { useZCodeStore } from "@/store/StoreProvider.js";
 import { useCodingPlanEntitlements } from "@/settings/model-provider-section/useCodingPlanEntitlements.js";
 import { BUILTIN_MODEL_PROVIDER_IDS, type EnterpriseCodingPlanPricingProduct } from "@zcode/shared";
 import { buildOwnedEntryPlanList } from "@/lib/codingPlanOwnedEntryPlans.js";
@@ -14,12 +13,15 @@ export interface CodingPlanEntryInventory {
   retry: () => void;
 }
 
+// relay v3 账号登录不再写入 store.user；套餐入口缓存改用固定匿名身份，
+// 账号维度的隔离仍由下方 getAccountAvailability 的 identity 负责。
+const ANONYMOUS_CACHE_IDENTITY = "anonymous";
+
 export function useCodingPlanEntryPlanList(): CodingPlanEntryInventory {
   const { state, reload } = useProviderSettingsView();
   const providerSettingsView = state.status === "ready" ? state.view : null;
   const loading = state.status === "loading";
   const { oauthService, codingPlanSubscriptionService } = useServices();
-  const user = useZCodeStore((state) => state.user);
   // 不传当前选中的团队上下文，四种 Start/个人连接分别使用已有权益缓存。
   const { entitlements, refresh } = useCodingPlanEntitlements({
     providerSettingsView,
@@ -31,7 +33,7 @@ export function useCodingPlanEntryPlanList(): CodingPlanEntryInventory {
     setGeneration((value) => value + 1);
   }, [state.status, reload]);
   const [teams, setTeams] = useState<{
-    user: typeof user;
+    identity: string;
     view: typeof providerSettingsView;
     sources: { identity: string | null; products: EnterpriseCodingPlanPricingProduct[] | null }[];
     generation: number;
@@ -70,7 +72,7 @@ export function useCodingPlanEntryPlanList(): CodingPlanEntryInventory {
     ]).then(([, sources]) => {
       if (!cancelled)
         setTeams((previous) => ({
-          user,
+          identity: ANONYMOUS_CACHE_IDENTITY,
           view: providerSettingsView,
           generation,
           sources: sources.map((source, index) => {
@@ -78,7 +80,7 @@ export function useCodingPlanEntryPlanList(): CodingPlanEntryInventory {
             const cached = previous?.sources[index];
             return source.products === null &&
               source.identity &&
-              previous?.user === user &&
+              previous?.identity === ANONYMOUS_CACHE_IDENTITY &&
               cached?.identity === source.identity
               ? { ...source, products: cached.products }
               : source;
@@ -91,13 +93,13 @@ export function useCodingPlanEntryPlanList(): CodingPlanEntryInventory {
   }, [
     oauthService,
     codingPlanSubscriptionService,
-    user,
     providerSettingsView,
     generation,
     loading,
     refresh,
   ]);
-  const sameIdentity = teams?.user === user && teams.view === providerSettingsView;
+  const sameIdentity =
+    teams?.identity === ANONYMOUS_CACHE_IDENTITY && teams.view === providerSettingsView;
   const current = sameIdentity && teams.generation === generation;
   const usableTeams = sameIdentity && teams.sources.every((source) => source.products !== null);
   const planIds: readonly string[] = [

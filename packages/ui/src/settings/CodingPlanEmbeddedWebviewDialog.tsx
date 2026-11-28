@@ -87,7 +87,6 @@ export function CodingPlanEmbeddedWebviewDialog({
   const authGeneration = useRef(0);
   const platform = usePlatform();
   const theme = useZCodeStoreWithDefault((state) => state.theme, "zai-dark");
-  const userId = useZCodeStoreWithDefault((state) => state.user?.id ?? null, null);
   const webviewRef = useRef<ElectronWebviewTag | null>(null);
   const onOpenResultRef = useRef(onOpenResult);
   onOpenResultRef.current = onOpenResult;
@@ -171,6 +170,7 @@ export function CodingPlanEmbeddedWebviewDialog({
           return;
         }
         // 持久分区先撤销旧会话，再等待 Host 的原子快照，避免多个单键读取拼接账号。
+        // relay v3 账号登录不再提供 store.user，注入所需凭据统一从 oauthService.getWebsiteSession() 读取。
         await webview.executeJavaScript(createCodingPlanCredentialClearScript(), true);
         const [session, deviceMid] = await Promise.all([
           oauthService.getWebsiteSession(),
@@ -237,7 +237,7 @@ export function CodingPlanEmbeddedWebviewDialog({
         });
       }
     },
-    [oauthService, embeddedTheme, funnelContext, platform, provider, userId, webviewLocale],
+    [oauthService, embeddedTheme, funnelContext, platform, provider, webviewLocale],
   );
 
   // App locale 运行时变化时，对已 dom-ready 的 webview 注入 lang 更新脚本，

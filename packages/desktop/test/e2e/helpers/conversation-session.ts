@@ -7,9 +7,6 @@ import {
   TID_CHAT_STOP_BUTTON,
   TID_CHAT_USER_MESSAGE,
   TID_CHAT_VIEW,
-  TID_LOGIN_API_KEY_CONTINUE_BUTTON,
-  TID_LOGIN_API_KEY_INPUT,
-  TID_LOGIN_USE_API_KEY_BUTTON,
   TID_TASK_ITEM,
   TID_TASK_NEW_BUTTON,
   TID_V4_COMPOSER_INPUT,
@@ -26,6 +23,7 @@ import {
   setInputValueByTestIdDom,
   waitForDefaultWorkspaceReady,
 } from "./desktop-app.js";
+import { ensureRelayLoggedIn, isRelayWelcomeVisible } from "./relay-login.js";
 import { ensureUpstreamProviderForE2E } from "./upstream-provider.js";
 import { getQueueItems as readQueueItemsForDiagnostics } from "./conversation-session-queue.js";
 import { getTaskStoreSnapshot as readTaskStoreSnapshotForDiagnostics } from "./conversation-session-store.js";
@@ -48,7 +46,6 @@ type LexicalInputE2EElement = HTMLElement & {
 };
 
 export const E2E_REPLY_TOKEN = "upstream-e2e-ok";
-export const LOGIN_API_KEY = "e2e-login-api-key";
 
 export {
   E2E_READONLY_TOOL_FILE_CONTENT,
@@ -176,41 +173,20 @@ async function ensureConversationShellReady() {
     await waitForDefaultWorkspaceReady(30000);
     return;
   } catch (error) {
-    if (!(await hasApiKeyLoginButton())) {
+    if (!(await isRelayWelcomeVisible())) {
       throw error;
     }
 
     // 修复原因：renderer target 切换失败时曾被登录兜底吞掉，误报成
-    // “欢迎页没有出现 API Key 登录入口”。只有确认当前页面真是欢迎页时才回退登录。
-    await loginWithApiKey();
+    // “欢迎页没有出现 relay 登录入口”。只有确认当前页面真是欢迎页时才回退登录。
+    await ensureRelayLoggedIn();
     await waitForDefaultWorkspaceReady(30000);
   }
 }
 
-async function hasApiKeyLoginButton() {
-  const exists = await browser
-    .execute(
-      (currentTestId) => Boolean(document.querySelector(`[data-testid="${currentTestId}"]`)),
-      TID_LOGIN_USE_API_KEY_BUTTON,
-    )
-    .catch(() => false);
-  return Boolean(exists);
-}
-
+/** 兼容旧调用点：OAuth/API Key 登录已移除，实际走 relay v3 手机号 + 验证码。 */
 export async function loginWithApiKey() {
-  await clickTestIdByDom(TID_LOGIN_USE_API_KEY_BUTTON, {
-    timeout: 30000,
-    timeoutMsg: "欢迎页没有出现 API Key 登录入口",
-  });
-  await setInputValueByTestIdDom(TID_LOGIN_API_KEY_INPUT, LOGIN_API_KEY, {
-    timeout: 15000,
-    timeoutMsg: "API Key 登录输入框没有出现",
-  });
-  await waitForApiKeyContinueEnabled();
-  await clickTestIdByDom(TID_LOGIN_API_KEY_CONTINUE_BUTTON, {
-    timeout: 15000,
-    timeoutMsg: "API Key 登录继续按钮没有出现或不可点击",
-  });
+  await ensureRelayLoggedIn();
 }
 
 export async function startNewTask() {
@@ -857,21 +833,5 @@ export function getMessages(role?: "assistant" | "user"): Promise<MessageSnapsho
     TID_CHAT_ASSISTANT_MESSAGE,
     role,
     TID_V4_TIMELINE,
-  );
-}
-
-async function waitForApiKeyContinueEnabled() {
-  await browser.waitUntil(
-    async () =>
-      browser.execute((continueButtonTestId) => {
-        const button = document.querySelector<HTMLElement>(
-          `[data-testid="${continueButtonTestId}"]`,
-        );
-        return button instanceof HTMLButtonElement && !button.disabled;
-      }, TID_LOGIN_API_KEY_CONTINUE_BUTTON),
-    {
-      timeout: 15000,
-      timeoutMsg: "API Key 登录继续按钮没有变为可用",
-    },
   );
 }

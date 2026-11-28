@@ -80,7 +80,6 @@ import {
   composerConnectionKey,
   chooseConnectionModel,
 } from "@/lib/composerPlanGroups.js";
-import { useZCodeStoreWithDefault } from "@/store/StoreProvider.js";
 import { useSettings } from "@/hooks/useSettingService.js";
 import {
   useUsageEntitlement,
@@ -575,10 +574,9 @@ function V4ComposerModelControlsImpl({
     resolveModelProviderFamilySpecByProviderId(effectiveConfig?.provider ?? "")?.id ??
     sharedSettings?.providerFamilyDomain ??
     "bigmodel";
-  const user = useZCodeStoreWithDefault((state) => state.user, undefined);
-  const connectionAuthenticated =
-    user !== null &&
-    Boolean(
+  // relay v3 账号登录不再写入 store.user；账号态只从 provider settings 的有效配置派生，
+  // 团队产品查询由 provider/service 状态驱动，不再被 OAuth 登录态拦截。
+  const connectionAuthenticated = Boolean(
       providerSettingsView?.providers.some(
         (p) =>
           p.effectiveConfig.access?.type === "zhipu-account" &&
@@ -604,11 +602,8 @@ function V4ComposerModelControlsImpl({
         : undefined) ?? [],
     [connectionAuthenticated, enterpriseProducts.snapshot?.productList],
   );
-  const authSessionSeq = useZCodeStoreWithDefault((state) => state.authSessionSeq, 0);
-  const teamUsageScope = useMemo(
-    () => ({}),
-    [baseServices, connectionFamily, user?.id, authSessionSeq],
-  );
+  // 应用登录改为 relay 后没有 ZCode user 会话；团队额度缓存按当前 provider/服务身份隔离。
+  const teamUsageScope = useMemo(() => ({}), [baseServices, connectionFamily]);
   const contextTeamUsageSourceCacheRef = useRef<{
     scope: object;
     sources: CodingPlanUsageSource[];

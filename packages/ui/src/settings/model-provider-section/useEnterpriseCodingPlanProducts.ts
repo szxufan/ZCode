@@ -7,7 +7,6 @@ import {
 } from "@zcode/shared";
 import { useOptionalServices } from "@/hooks/useServices.js";
 import { isRemoteWorkspaceDisconnectedError } from "@/lib/remoteWorkspaceServiceError.js";
-import { useZCodeStoreWithDefault } from "@/store/StoreProvider.js";
 import { logger } from "@/logger.js";
 import {
   resolveEnterpriseCodingPlanProductList,
@@ -99,10 +98,9 @@ export function useEnterpriseCodingPlanProducts({
 }) {
   const services = useOptionalServices();
   const service = services?.codingPlanSubscriptionService;
-  const authScope = useZCodeStoreWithDefault(
-    (state) => (state.user ? state.user.id + ":" + state.authSessionSeq : "signed-out"),
-    "unscoped",
-  );
+  // relay v3 账号登录不再写入 store.user，鉴权身份改由 authScope 参数与 service 表达；
+  // 固定作用域避免把已退出的 OAuth 用户态带进企业目录缓存。
+  const authScope = "signed-out";
   // 原因：鉴权布尔值不能区分两个账号或同账号重新登录，旧目录必须按完整身份隔离。
   const scope = useMemo(() => ({}), [service, family, authenticated, authScope, staticOnly]);
   const owner = useRef({ scope, enabled, mounted: true });

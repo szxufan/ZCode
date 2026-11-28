@@ -15,7 +15,7 @@ const KEY = "bot:e2e:data-root";
 const VALUE = "E2E_DATA_ROOT_SYNTHETIC_VALUE";
 const RELOGIN_KEY = "bot:e2e:data-root-relogin";
 const RELOGIN_VALUE = "E2E_DATA_ROOT_RELOGIN_VALUE";
-const SHELL_SELECTOR_IDS = ["onboarding-page", "oauth-login-button"] as const;
+const SHELL_SELECTOR_IDS = ["onboarding-page", "relay-v3-login"] as const;
 const CASE_TIMEOUT_MS = 240_000;
 
 type HostServiceName = "credentialService" | "settingService";

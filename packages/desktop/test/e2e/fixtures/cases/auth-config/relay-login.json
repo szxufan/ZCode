@@ -1,0 +1,11 @@
+{
+  "version": 1,
+  "caseName": "relay-login",
+  "spec": "./test/e2e/auth-config/login/relay-login.test.ts",
+  "providerFixtures": ["./test/e2e/fixtures/upstream/common.json"],
+  "fileFixtures": [],
+  "providerRequestPolicy": "none",
+  "noProviderRequests": true,
+  "providerRequestReason": "验证 relay v3 应用登录页的门禁、地址保存、验证码登录与手动入口，不发送模型请求。",
+  "requests": []
+}

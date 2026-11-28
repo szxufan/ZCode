@@ -47,7 +47,6 @@
 
 | 组件 | testid 覆盖情况 |
 |------|--------------|
-| `WelcomeScreen.tsx` | 完整：form、username、password、button、error |
 | `Terminal.tsx` | 完整：容器、关闭按钮 |
 | `SSHDialog.tsx` | 完整：触发按钮、弹窗容器、所有输入框、确认/取消 |
 | `FileTree.tsx` | 完整：根容器、每个 item（动态后缀） |

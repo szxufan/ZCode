@@ -4,7 +4,6 @@ import { dirname, join } from "node:path";
 import { NodePersonalProviderConfigRepository } from "@zcode/provider-node";
 import { ZCODE_CUA_OFFICIAL_PLUGIN_ID } from "@zcode/shared";
 import {
-  TID_LOGIN_USE_API_KEY_BUTTON,
   TID_TASK_SETTINGS_BUTTON,
   TID_CHAT_MODEL_SELECT_TRIGGER,
 } from "@zcode/shared/test-ids";
@@ -18,10 +17,13 @@ import {
 import { UPSTREAM_PROVIDER_ID, UPSTREAM_SECONDARY_MODEL } from "#e2e/helpers/upstream-provider";
 import {
   prepareV4ConversationE2E,
-  loginWithApiKey,
   switchV4Model,
   switchV4Mode,
 } from "#e2e/helpers/v4-conversation";
+import {
+  TID_RELAY_LOGIN,
+  ensureRelayLoggedIn,
+} from "#e2e/helpers/relay-login";
 import { restartIntoWorkspacePreservingProfile } from "#e2e/helpers/model-provider-restart-runtime";
 
 import { skipOccupationOnboardingIfPresent } from "#e2e/helpers/occupation-onboarding";
@@ -162,13 +164,12 @@ describe("Composer 五档压缩", () => {
                 `[data-testid="${login}"], [data-testid="${settings}"], [data-testid="onboarding-page"]`,
               ),
             ),
-          TID_LOGIN_USE_API_KEY_BUTTON,
+          TID_RELAY_LOGIN,
           TID_TASK_SETTINGS_BUTTON,
         ),
       { timeout: 30000 },
     );
-    if (await $(`[data-testid="${TID_LOGIN_USE_API_KEY_BUTTON}"]`).isExisting())
-      await loginWithApiKey();
+    await ensureRelayLoggedIn();
     await skipOccupationOnboardingIfPresent();
   });
   after(async () => {

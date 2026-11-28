@@ -83,7 +83,9 @@ OpenBitFun（`C:\Users\xufan\Trae\OpenBitFun`）证明了替代形态可行：re
 
 - 账号 = 手机号（E.164，唯一）。首次验证码登录成功即建号（与 OpenBitFun 一致）；可后置设置密码作为短信不可用时的登录方式（`relay-admin set-password` 或登录后设置）。桌面与手机 Web 的共享 HTTP 客户端接受恰好 11 位且以 1 开头的大陆裸手机号，在发送验证码和验证码登录请求前统一归一化为 `+86` 前缀；服务端存储与协议仍只使用 E.164。
 - `RELAY_LOCAL_REGISTRATION=open|closed`：closed 时新手机号不可自注册，仅 `relay-admin add-user --phone <number>` 预建账号。
-- 账号与桌面模型供应商账号（Z.AI/BigModel OAuth）**完全无关**。桌面远控弹窗新增 relay 登录区（手机号+验证码表单），不触碰 OAuth credential；`auth-required` 语义改为"远控等待 relay 账号登录"，复用现有 manager 状态机。
+- 账号与桌面模型供应商账号（Z.AI/BigModel OAuth）**完全无关**。桌面欢迎页与设置节使用同一套 relay 登录区（手机号+验证码表单），不触碰 OAuth credential；`auth-required` 语义为"远控等待 relay 账号登录"，复用现有 manager 状态机。
+- **应用级登录替换**：relay 账号同时承担桌面应用登录，替换原 Z.AI/BigModel OAuth 应用登录；欢迎页与侧边栏账号菜单里的 relay 登录入口改为 relay 登录（原「连接使用」），OAuth 登录与欢迎页 API Key 表单移除。模型凭证改由用户用 fork 自有「连接派 / linkpi」模板在设置页填写。契约与验收见 [relay-login.md](../ui/relay-login.md)。
+- 应用启动门禁只依据 `RelayV3DesktopStatus.restored` 与 `account`，不依据 `phase`（`idle` 无法区分首次安装/已登出/恢复前）；main 在 `restoreOnLaunch()` 的 finally 中广播恢复完成态。
 - 无 GUI 设备（R4 起的 source-server daemon）不走短信登录，经 §5.5 设备授权由同账号已认证设备批准接入。
 
 ### 3.2 短信验证码
@@ -429,7 +431,7 @@ V3 交付后的目标架构：远端 source-server daemon 经 §5.5 设备授权
 
 1. **公钥替换 MITM**：headless 设备授权在批准界面强制公钥指纹核对（§5.5）；手机扫码连接强制比较二维码指纹与目录公钥指纹；直接选择设备的界面展示目录指纹并支持用户输入带外指纹后强制比对。
 2. **短信成本**：自部署者需自备 Aliyun 凭据；closed-registration + `relay-admin` 预建账号是默认兜底，是否够用待观察。
-3. **桌面 relay 账号与 OAuth 账号并存**的设置页信息架构（两个"登录"概念需要 UI 区分），P1 前与设计对齐。
+3. ~~桌面 relay 账号与 OAuth 账号并存的设置页信息架构（两个"登录"概念需要 UI 区分），P1 前与设计对齐。~~ **已决定（应用登录替换）**：relay 账号成为唯一应用级登录，OAuth 应用登录移除；OAuth 服务仅保留给 provider 运行时、Coding Plan webview 与 CLI。详见 [relay-login.md](../ui/relay-login.md)。
 4. **多实例扩展**：单进程假设（内存 owner）上限约 256 连接；若需扩容，路径是把 owner/token 迁到 Redis 并引入 sticky 路由，本期不做、接口设计不预设阻碍。
 5. **JWT 算法**：单实例 HS256 + 环境变量密钥已够；若未来多实例，换 EdDSA 并公钥化校验。
 6. **多 terminal 并发**：第一版单 active terminal（后到者优先，§5.2）。家庭/团队"多人同时看一台电脑"需要设备侧维护多份会话密钥与扇出广播，涉及被控端 transport 较大改动；若 P4 后有真实需求再立项。

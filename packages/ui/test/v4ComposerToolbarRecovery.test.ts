@@ -1367,7 +1367,7 @@ it("展示失败后允许重试当前连接，不再被已选 key 提前返回",
   expect(mocks.selectConnection).toHaveBeenCalledTimes(1);
 });
 
-it("团队用量已缓存后只清空 user，Provider 仍旧 ready 时立即隐藏旧来源并禁用请求", async () => {
+it("团队用量已缓存后清空 user 不再影响展示：relay 登录后用量继续由 Provider 决定", async () => {
   const { useUsageEntitlement } = await import("@/hooks/useUsageEntitlement.js");
   const provider = BUILTIN_MODEL_PROVIDER_IDS.bigmodelTeamCodingPlan;
   addAccountProviderAccess(provider, { accountType: "bigmodel", mode: "team-coding-plan" });
@@ -1442,9 +1442,10 @@ it("团队用量已缓存后只清空 user，Provider 仍旧 ready 时立即隐�
         createElement(V4ComposerModelControls, { ...props, config: { ...props.config } }),
       ),
     );
-    expect(latestUsageProps().codingPlanUsageRemaining).toBeUndefined();
+    // 应用登录改为 relay 账号后不再有 ZCode user；用量来源只由本地 provider 就绪态决定。
+    expect(latestUsageProps().codingPlanUsageRemaining).toBeDefined();
     expect(useUsageEntitlement).toHaveBeenLastCalledWith(
-      expect.objectContaining({ enabled: false, accountAccess: undefined }),
+      expect.objectContaining({ enabled: true }),
     );
   } finally {
     await act(async () => root.unmount());

@@ -256,7 +256,7 @@ renderer(UI)侧埋点,经 `reportArmsCustomEvent` → IPC → `armsRum.sendCusto
 
 ### 说明与边界
 
-- **启动分阶段**:7 段每进程冷启动各上报一次,`value` 为各段 ms(`Math.max(0,...)` 钳非负)。锚点 `process.getCreationTime()`,main 的 T0-T3 经主窗口 loadURL query(`zcodeLaunchMarks`)注入 renderer,在启动门禁清除(`isStartupRenderBlocked` 翻 false)时统一计算上报。未登录(WelcomeScreen)不上报;总时长 >300000ms 哨兵丢弃。`session_id` 关联同次启动各段。旧 `perf_ui_first_screen` 已废弃,语义并入 `perf_ui_launch_react_commit_ms`。
+- **启动分阶段**:7 段每进程冷启动各上报一次,`value` 为各段 ms(`Math.max(0,...)` 钳非负)。锚点 `process.getCreationTime()`,main 的 T0-T3 经主窗口 loadURL query(`zcodeLaunchMarks`)注入 renderer,在启动门禁清除(`isStartupRenderBlocked` 翻 false)时统一计算上报;总时长 >300000ms 哨兵丢弃。`session_id` 关联同次启动各段。旧 `perf_ui_first_screen` 已废弃,语义并入 `perf_ui_launch_react_commit_ms`。
 - **session 首次打开**:`perf_ui_session_open_start` / `perf_ui_session_open_result` 每个逻辑打开最多两条，阶段 timing 通过 `v4/conversation/subscribe` ACK 携带，不按阶段拆分 ARMS 事件；Web/mobile reporter 为空。完整字段与边界见 [Session 首次打开 ARMS 埋点](./session-open-telemetry.md)。
 - **首 token / 消息耗时**：V4 supervisor 复用 `messageTelemetry` builder，时间锚点仍是 renderer receipt clock；initial/recovery 不补报。
 - **工具终态细分**:`perf_ui_tool_call_detail` 只在工具完成/失败/拒绝且 `raw.result.perf` 存在时上报。Bash 带 `command_run_ms` / `first_output_ms` / `no_output_ms` / `timed_out` / `command_category` 等；Edit/Write 带 `fs_read_ms` / `fs_write_ms` / `patch_match_ms` / 文件大小等。subagent mirror 子工具额外带 `parent_tool_call_id` / `child_tool_call_id` / `child_session_id` / `agent_id` / `agent_type`,用于从父 `Agent` step 下钻到子工具耗时。

@@ -116,6 +116,12 @@ import {
 } from "./test/e2e/helpers/official-plugin-cache-prewarm.js";
 import { getE2EProviderEndpointEnv } from "#e2e/helpers/e2e-provider-endpoint";
 import { prepareOAuthCompletionRaceFixture } from "./test/e2e/helpers/oauth-completion-race-fixture.js";
+import {
+  applyRelayV3FixtureEnv,
+  clearRelayV3FixtureEnv,
+  startRelayV3SignedInFixture,
+  type RelayV3SignedInFixture,
+} from "./test/e2e/helpers/relay-login.js";
 import { prepareAccessToken401Fixture } from "./test/e2e/helpers/access-token-401-fixture.js";
 import { prepareVoiceInputFixture } from "./test/e2e/helpers/asr-mock-server.js";
 import { prepareOfficialMcpAuthRoutingFixture } from "#e2e/helpers/mcp-official-auth-routing-fixture";
@@ -327,8 +333,6 @@ const TURN_STEER_PROBE_SPEC =
   "./test/e2e/conversation-session/execution/conversation-session-turn-steer-probe.test.ts";
 const PLUGIN_NO_GIT_GITHUB_ARCHIVE_SPEC = "plugin-no-git-github-archive.test.ts";
 const GIT_COMMIT_DIALOG_UI_FLOW_SPEC = "git-commit-dialog-ui-flow.test.ts";
-const OAUTH_CREDENTIAL_RECOVERY_SPEC = "oauth-credential-recovery.test.ts";
-const JWT_EXPIRY_REAUTHENTICATION_SPEC = "jwt-expiry-reauthentication.test.ts";
 const AGENT_ALWAYS_BACKGROUND_SPEC = "conversation-session-agent-always-background.test.ts";
 const SUBAGENT_CODING_PLAN_LOGIN_CATALOG_STALE_SPEC =
   "subagent-coding-plan-login-catalog-stale.test.ts";
@@ -676,6 +680,7 @@ let codingPlanUpgradeMockServer: CodingPlanUpgradeMockServer | null = null;
 let modelContextBudgetConfigMockServer: ModelContextBudgetConfigMockServer | null = null;
 let dynamicWorkflowConfigMockServer: DynamicWorkflowConfigMockServer | null = null;
 let stopOAuthCompletionRaceFixture: (() => Promise<void>) | null = null;
+let relayV3SignedInFixture: RelayV3SignedInFixture | null = null;
 let stopAccessToken401Fixture: (() => Promise<void>) | null = null;
 let stopVoiceInputFixture: (() => Promise<void>) | null = null;
 let stopOfficialMcpAuthRoutingFixture: (() => Promise<void>) | null = null;
@@ -3299,6 +3304,11 @@ function forceFinalizeE2ERunnerFromGuard() {
       await stopRequestSecurityFixture();
       await stopModelContextBudgetConfigE2EMock();
       await stopDynamicWorkflowConfigE2EMock();
+      if (relayV3SignedInFixture) {
+        await relayV3SignedInFixture.stop();
+        relayV3SignedInFixture = null;
+        clearRelayV3FixtureEnv();
+      }
       await stopPluginCdnZipFixture();
       await cleanupE2EElectronProcesses("finalization-guard");
       // 失败保留诊断现场（同 onComplete-home 条件）：guard 路径本身就是失败收尾。
@@ -3327,6 +3337,18 @@ async function resetE2EHome(specs: string[] = []) {
     homeDir: E2E_HOME_DIR,
     templateHome: E2E_OFFICIAL_PLUGIN_CACHE_TEMPLATE_HOME,
   });
+  if (relayV3SignedInFixture) {
+    await relayV3SignedInFixture.stop();
+    relayV3SignedInFixture = null;
+    clearRelayV3FixtureEnv();
+  }
+  if (shouldSeedRelaySignedIn(specs)) {
+    // 冷启动播种：fake relay 签发 refresh → 预置 main 的账号文件；endpoint 在
+    // seedE2EStartupState 里写入 settings。main.restoreOnLaunch() 旋转后广播
+    // restored=true + account，欢迎页门禁放行（无需 OAuth/API Key skip）。
+    relayV3SignedInFixture = await startRelayV3SignedInFixture({ configDir: E2E_APP_CONFIG_DIR });
+    applyRelayV3FixtureEnv(relayV3SignedInFixture);
+  }
   seedE2EStartupState(specs);
   await seedRemoteOnboardingFixture({
     enabled: process.env.ZCODE_E2E_REMOTE_PROFILE === "1",
@@ -3575,7 +3597,6 @@ function seedE2EStartupState(specs: string[] = []) {
   const codingPlanTeamSpec = shouldUseCodingPlanTeamMock(specs);
   const codingPlanUpgradeE2E = isCodingPlanUpgradeE2E(specs);
   const oauthCredentialRecoverySpec = isOAuthCredentialRecoverySpec(specs);
-  const jwtExpiryReauthenticationSpec = isJwtExpiryReauthenticationSpec(specs);
   const subagentLoginCatalogStaleSpec = isSubagentCodingPlanLoginCatalogStaleSpec(specs);
   const builtInSubagentModelOverridesSpec = isBuiltInSubagentModelSelectionOverridesSpec(specs);
   const providerReadinessColdStartFixture = usesProviderReadinessColdStartFixture(specs);
@@ -3588,6 +3609,11 @@ function seedE2EStartupState(specs: string[] = []) {
         providerFamilyDomain: shouldUseBigmodelAuth ? "bigmodel" : "zai",
         providerFamilyDomainMigrated: true,
         providerFamilyDomainUpdatedAt: now,
+        // 缺省 endpoint 表示“未配置”；只有播种了 fake relay 的 worker 才写入地址。
+        // lastEnabled 保持缺省，避免无关用例意外启动远控 runtime。
+        ...(relayV3SignedInFixture
+          ? { relayV3: { endpointOrigin: relayV3SignedInFixture.httpUrl } }
+          : {}),
         ...(defaultPlusDormantWorkspacesFixture
           ? {
               recentProjects: [legacyDefaultProjectPath, ...passiveWorkspacePaths],
@@ -3655,9 +3681,9 @@ function seedE2EStartupState(specs: string[] = []) {
   writeFileSync(
     E2E_APP_CREDENTIALS_FILE,
     JSON.stringify(
-      // 原因：匿名回调失败用例不需要假 JWT；401 过期确认层会遮挡被测登录入口。
-      providerReadinessColdStartFixture ||
-        workerSpecsContain(specs, "oauth-login-failure-cancel.test.ts")
+      // provider-readiness 冷启动只校验 workspace/agent 就绪；relay 账号态由独立
+      // 凭据文件播种，无需注入会访问真实控制面的假 OAuth 身份。
+      providerReadinessColdStartFixture
         ? {}
         : // Bug 根因：I20 不验证账号登录，却播种假 ZCode JWT；带账号身份的旁路请求
           // 会把它发往真实控制面，401 随后弹出登录过期对话框并遮挡目标交互。
@@ -3668,23 +3694,21 @@ function seedE2EStartupState(specs: string[] = []) {
             ? {}
             : oauthCredentialRecoverySpec
               ? createCorruptOAuthCredentialSeed(authProviderId)
-              : jwtExpiryReauthenticationSpec
-                ? createExpiredJwtOAuthCredentialSeed(authProviderId)
-                : createE2EStartupCredentialSeed({
-                    specs,
-                    accountMock: codingPlanTeamSpec || codingPlanUpgradeE2E,
-                    remoteProfile: process.env.ZCODE_E2E_REMOTE_PROFILE === "1",
-                    legacyAuthToken: E2E_AUTH_TOKEN,
-                    restoredOAuthCredentials: {
-                      "oauth:active_provider": authProviderId,
-                      // 账号 mock 只覆盖选定族；夹带另一个假账号会访问未接管的真实控制面。
-                      [`oauth:${authProviderId}:access_token`]: shouldUseBigmodelAuth
-                        ? "e2e-bigmodel-oauth-token"
-                        : E2E_AUTH_TOKEN,
-                      [`oauth:${authProviderId}:user_info`]: JSON.stringify(E2E_USER_PROFILE),
-                      zcodejwttoken: E2E_AUTH_TOKEN,
-                    },
-                  }),
+              : createE2EStartupCredentialSeed({
+                  specs,
+                  accountMock: codingPlanTeamSpec || codingPlanUpgradeE2E,
+                  remoteProfile: process.env.ZCODE_E2E_REMOTE_PROFILE === "1",
+                  legacyAuthToken: E2E_AUTH_TOKEN,
+                  restoredOAuthCredentials: {
+                    "oauth:active_provider": authProviderId,
+                    // 账号 mock 只覆盖选定族；夹带另一个假账号会访问未接管的真实控制面。
+                    [`oauth:${authProviderId}:access_token`]: shouldUseBigmodelAuth
+                      ? "e2e-bigmodel-oauth-token"
+                      : E2E_AUTH_TOKEN,
+                    [`oauth:${authProviderId}:user_info`]: JSON.stringify(E2E_USER_PROFILE),
+                    zcodejwttoken: E2E_AUTH_TOKEN,
+                  },
+                }),
       null,
       2,
     ),
@@ -3697,14 +3721,30 @@ function seedE2EStartupState(specs: string[] = []) {
 }
 
 function isOAuthCredentialRecoverySpec(specs: string[] = []) {
-  return (
-    workerSpecsContain(specs, OAUTH_CREDENTIAL_RECOVERY_SPEC) ||
-    workerSpecsContain(specs, "credential-store-recovery.test.ts")
-  );
+  // OAuth 应用登录专项已随 relay v3 应用登录移除；凭据容器恢复专项仍需要损坏种子。
+  return workerSpecsContain(specs, "credential-store-recovery.test.ts");
 }
 
-function isJwtExpiryReauthenticationSpec(specs: string[] = []) {
-  return workerSpecsContain(specs, JWT_EXPIRY_REAUTHENTICATION_SPEC);
+/**
+ * Relay v3 登录已是应用级门禁：只有真正验证“冷启动未登录”的用例不播种，其余 worker
+ * 都在冷启动前播种已登录账号，避免无关用例先落到欢迎页。
+ * - relay-login：验证欢迎页门禁与完整登录链路，必须保持未登录冷启动。
+ * - settings-remote-control-endpoint：验证未保存地址门禁，且切换 origin 会登出，必须自行控制。
+ * provider-readiness 冷启动 fixture 也走这里：它只关心 workspace/agent 就绪，
+ * 不应再依赖已删除的 OAuth API Key skip 按钮。
+ */
+function shouldSeedRelaySignedIn(specs: string[] = []) {
+  if (specs.length === 0) return false;
+  return !specs.some((spec) => {
+    const normalized = spec.replaceAll("\\", "/");
+    return (
+      normalized.endsWith("/auth-config/login/relay-login.test.ts") ||
+      normalized.endsWith(
+        "/auth-config/credentials/manual-review/pending/credential-store-recovery.test.ts",
+      ) ||
+      normalized.endsWith("/settings-remote-control-endpoint.test.ts")
+    );
+  });
 }
 
 function isSubagentCodingPlanLoginCatalogStaleSpec(specs: string[] = []) {
@@ -3783,18 +3823,6 @@ function createCorruptOAuthCredentialSeed(authProviderId: string): Record<string
     [`oauth:${BIGMODEL_PROVIDER_ID}:user_info`]: JSON.stringify(E2E_USER_PROFILE),
     zcodejwttoken: "stale-zcode-jwt-token",
     "bot:e2e:credential": "e2e-independent-bot-token",
-  };
-}
-
-function createExpiredJwtOAuthCredentialSeed(authProviderId: string): Record<string, string> {
-  return {
-    "oauth:active_provider": authProviderId,
-    [`oauth:${authProviderId}:access_token`]: "expired-session-access-token",
-    [`oauth:${authProviderId}:refresh_token`]: "expired-session-refresh-token",
-    [`oauth:${authProviderId}:user_info`]: JSON.stringify(E2E_USER_PROFILE),
-    // Bug 回归 fixture：exp=1 明确早于任意测试运行时间；客户端只解析 exp，
-    // 不验证这枚本地测试 JWT 的签名。
-    zcodejwttoken: "eyJhbGciOiJub25lIiwidHlwIjoiSldUIn0.eyJleHAiOjF9.e2e",
   };
 }
 
@@ -5533,6 +5561,11 @@ export const config: WebdriverIO.Config = {
           currentE2EElectronAppPid = null;
           await stopOAuthCompletionRaceFixture?.();
           stopOAuthCompletionRaceFixture = null;
+          if (relayV3SignedInFixture) {
+            await relayV3SignedInFixture.stop();
+            relayV3SignedInFixture = null;
+            clearRelayV3FixtureEnv();
+          }
           await stopAccessToken401Fixture?.();
           stopAccessToken401Fixture = null;
           await stopVoiceInputFixture?.();
@@ -5623,6 +5656,11 @@ export const config: WebdriverIO.Config = {
           await stopDynamicWorkflowConfigE2EMock();
           await stopOAuthCompletionRaceFixture?.();
           stopOAuthCompletionRaceFixture = null;
+          if (relayV3SignedInFixture) {
+            await relayV3SignedInFixture.stop();
+            relayV3SignedInFixture = null;
+            clearRelayV3FixtureEnv();
+          }
           await stopAccessToken401Fixture?.();
           stopAccessToken401Fixture = null;
           await stopVoiceInputFixture?.();

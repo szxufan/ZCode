@@ -18,6 +18,8 @@ export interface UseRelayV3RemoteControlResult {
   /** 平台实现是否提供服务器地址配置命令；不提供时（非桌面平台）不渲染地址行。 */
   endpointSupported: boolean;
   status: RelayV3DesktopStatus | null;
+  /** 首次状态查询失败；应用启动门禁据此放弃等待，避免 IPC 异常把启动卡死。 */
+  statusQueryFailed: boolean;
   sendCode: (phone: string) => Promise<RelayV3AccountActionResult>;
   login: (phone: string, code: string) => Promise<RelayV3AccountActionResult>;
   logout: () => Promise<RelayV3AccountActionResult>;
@@ -37,6 +39,7 @@ export function useRelayV3RemoteControl(): UseRelayV3RemoteControlResult {
     typeof platform.relayV3AuthorizeStart === "function";
   const endpointSupported = typeof platform.relayV3ConfigureEndpoint === "function";
   const [status, setStatus] = useState<RelayV3DesktopStatus | null>(null);
+  const [statusQueryFailed, setStatusQueryFailed] = useState(false);
   const [cooldownUntil, setCooldownUntil] = useState(0);
   const [cooldownRemainingMs, setCooldownRemainingMs] = useState(0);
   const mountedRef = useRef(true);
@@ -54,11 +57,18 @@ export function useRelayV3RemoteControl(): UseRelayV3RemoteControlResult {
     platform
       .relayV3GetStatus?.()
       .then((value) => {
-        if (!disposed) setStatus(value);
+        if (!disposed) {
+          setStatus(value);
+          setStatusQueryFailed(false);
+        }
       })
-      .catch((error) => logger.warn("relay-v3 status query failed", { error }));
+      .catch((error) => {
+        if (!disposed) setStatusQueryFailed(true);
+        logger.warn("relay-v3 status query failed", { error });
+      });
     const disposeSubscription = platform.onRelayV3StatusChanged?.((next) => {
       setStatus(next);
+      setStatusQueryFailed(false);
     });
     return () => {
       disposed = true;
@@ -147,6 +157,7 @@ export function useRelayV3RemoteControl(): UseRelayV3RemoteControlResult {
     supported,
     endpointSupported,
     status,
+    statusQueryFailed,
     sendCode,
     login,
     logout,

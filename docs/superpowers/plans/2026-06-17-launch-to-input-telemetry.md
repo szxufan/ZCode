@@ -15,7 +15,6 @@
 - 埋点失败绝不阻塞启动主流程：所有上报内部 try/catch，仅 `logger.warn`。
 - 总时长 `> LAUNCH_TO_INPUT_SANITY_MAX_MS`（300000）整批丢弃，不上报。
 - 锚点缺失（`getCreationTime()` 返回 null / query 未解析出 marks）整批跳过。
-- 未登录（WelcomeScreen）的启动不上报总链路（前提「能输入」不成立）。
 - 每个 renderer 进程冷启动仅上报一次。
 - loadURL query 参数名前缀常量 `LAUNCH_MARKS_QUERY_KEY = "zcodeLaunchMarks"`。
 - 测试运行：单测用 `pnpm exec vitest run <file>`；类型检查 `pnpm typecheck`。
@@ -614,7 +613,7 @@ git commit -m "feat(desktop): renderer 解析 launch marks 并记 T4/T5"
 **Interfaces:**
 - Consumes: `reportUiLaunchToInput`、`LaunchMarks`（Task 2）
 - Produces:
-  - `shouldReportLaunchToInput(state: { isStartupRenderBlocked: boolean; welcomeScreenOpen: boolean; alreadyReported: boolean }): boolean`
+  - `shouldReportLaunchToInput(state: { isStartupRenderBlocked: boolean; alreadyReported: boolean }): boolean`
   - `readRendererLaunchTimings(): { marks: LaunchMarks | null; rendererStart: number; reactCommit: number } | null`（从 window 读 T4/T5/marks）
 
 - [ ] **Step 1: Write the failing test**
@@ -625,11 +624,10 @@ import { describe, expect, it } from "vitest";
 import { shouldReportLaunchToInput } from "@/lib/launchToInputReport.js";
 
 describe("shouldReportLaunchToInput", () => {
-  it("门禁已清除、非 welcome、未上报过 → 上报", () => {
+  it("门禁已清除、未上报过 → 上报", () => {
     expect(
       shouldReportLaunchToInput({
         isStartupRenderBlocked: false,
-        welcomeScreenOpen: false,
         alreadyReported: false,
       }),
     ).toBe(true);
@@ -639,17 +637,6 @@ describe("shouldReportLaunchToInput", () => {
     expect(
       shouldReportLaunchToInput({
         isStartupRenderBlocked: true,
-        welcomeScreenOpen: false,
-        alreadyReported: false,
-      }),
-    ).toBe(false);
-  });
-
-  it("WelcomeScreen 打开(未登录,无输入框) → 不上报", () => {
-    expect(
-      shouldReportLaunchToInput({
-        isStartupRenderBlocked: false,
-        welcomeScreenOpen: true,
         alreadyReported: false,
       }),
     ).toBe(false);
@@ -659,7 +646,6 @@ describe("shouldReportLaunchToInput", () => {
     expect(
       shouldReportLaunchToInput({
         isStartupRenderBlocked: false,
-        welcomeScreenOpen: false,
         alreadyReported: true,
       }),
     ).toBe(false);
@@ -680,13 +666,9 @@ import type { LaunchMarks } from "@zcode/shared";
 
 export function shouldReportLaunchToInput(state: {
   isStartupRenderBlocked: boolean;
-  welcomeScreenOpen: boolean;
   alreadyReported: boolean;
 }): boolean {
-  // 门禁清除 = RootStartupLoading 退场、输入框挂载;welcome 时虽门禁清除但显示登录页、无输入框,不算"能输入"。
-  return (
-    !state.alreadyReported && !state.isStartupRenderBlocked && !state.welcomeScreenOpen
-  );
+  return !state.alreadyReported && !state.isStartupRenderBlocked;
 }
 
 export function readRendererLaunchTimings(): {
@@ -734,7 +716,6 @@ import { useRef } from "react"; // 若已 import react hooks，合并
     if (
       !shouldReportLaunchToInput({
         isStartupRenderBlocked,
-        welcomeScreenOpen: Boolean(welcomeScreenOpenReason),
         alreadyReported: launchReportedRef.current,
       })
     ) {
@@ -752,7 +733,7 @@ import { useRef } from "react"; // 若已 import react hooks，合并
       inputReady: Date.now(), // T6
       sessionId: `launch-${timings.marks.createdAt}`,
     });
-  }, [isStartupRenderBlocked, welcomeScreenOpenReason]);
+  }, [isStartupRenderBlocked]);
 ```
 
 - [ ] **Step 6: Run full ui telemetry + report tests**
@@ -796,7 +777,7 @@ git commit -m "feat(ui): 启动门禁清除时上报 launch_to_input"
 在第 176 行附近补一条：
 
 ```markdown
-- **启动分阶段**:7 段每进程冷启动各上报一次,`value` 为各段 ms(`Math.max(0,...)` 钳非负)。锚点 `process.getCreationTime()`,main 的 T0-T3 经主窗口 loadURL query(`zcodeLaunchMarks`)注入 renderer,在启动门禁清除(`isStartupRenderBlocked` 翻 false)时统一计算上报。未登录(WelcomeScreen)不上报;总时长 >300000ms 哨兵丢弃。`session_id` 关联同次启动各段。旧 `perf_ui_first_screen` 已废弃,语义并入 `perf_ui_launch_react_commit_ms`。
+- **启动分阶段**:7 段每进程冷启动各上报一次,`value` 为各段 ms(`Math.max(0,...)` 钳非负)。锚点 `process.getCreationTime()`,main 的 T0-T3 经主窗口 loadURL query(`zcodeLaunchMarks`)注入 renderer,在启动门禁清除(`isStartupRenderBlocked` 翻 false)时统一计算上报;总时长 >300000ms 哨兵丢弃。`session_id` 关联同次启动各段。旧 `perf_ui_first_screen` 已废弃,语义并入 `perf_ui_launch_react_commit_ms`。
 ```
 
 - [ ] **Step 3: 全量单测回归**
@@ -809,7 +790,6 @@ Expected: PASS
 参照 memory「桌面版 dev 启动」用国内镜像启动桌面 dev：
 - 冷启动登录态 → main 日志 `beforeReport` 依次出现 7 条 `custom:perf_ui_launch_*`，`perf_ui_launch_to_input` ≈ 其余 6 段之和。
 - `perf_ui_launch_react_commit_ms` 应接近旧 first_screen 的 ~75ms（sanity）。
-- 未登录冷启动（WelcomeScreen）→ 不出现 `perf_ui_launch_to_input`。
 - 回归：`perf_ui_first_token` / `perf_ui_message_complete` / `perf_ui_stream_stall` 仍正常。
 
 - [ ] **Step 5: Commit**

@@ -4,6 +4,12 @@ import {
   TID_TASK_SETTINGS_BUTTON,
   testId,
 } from "@zcode/shared/test-ids";
+import {
+  applyRelayV3FixtureEnv,
+  clearRelayV3FixtureEnv,
+  startRelayV3TestServer,
+  type RelayV3TestFixture,
+} from "#e2e/helpers/relay-login";
 import { clearAppData, clickTestIdByDom, readSettings } from "#e2e/helpers/desktop-app";
 import { prepareV4ConversationE2E } from "#e2e/helpers/v4-conversation";
 
@@ -12,8 +18,12 @@ import { prepareV4ConversationE2E } from "#e2e/helpers/v4-conversation";
 // 已登录/运行中切换地址的善后（登出、重置设备身份、断开控制端）由
 // packages/desktop/test/relayV3DeviceManager.test.ts 覆盖。
 
-const ENDPOINT = "https://relay.e2e.example.com";
+// relay v3 切换不同 origin 会登出并回到欢迎页；用例必须使用 fixture 自身的地址，
+// 否则 RCE03 的设置搜索会在欢迎页上找不到入口（这是产品行为，不是 UI 缺陷）。
+let ENDPOINT = "";
 const SEARCH_ID = "settings.remoteControl.server.address";
+
+let relayFixture: RelayV3TestFixture | undefined;
 
 const input = () => $('[data-testid="relay-v3-endpoint-input"]');
 const saveButton = () => $('[data-testid="relay-v3-endpoint-save"]');
@@ -21,6 +31,11 @@ const inputError = () => $('[data-testid="relay-v3-endpoint-error"]');
 
 describe("设置 → 远程控制：Relay 服务器地址", () => {
   before(async () => {
+    // 本专项被 wdio 排除在 relay 冷启动播种之外；prepare 的 shell-ready 会走 UI 登录兜底，
+    // 因此必须在 worker 内先启动 fake relay 并把地址传给 helper。
+    relayFixture = await startRelayV3TestServer({});
+    ENDPOINT = relayFixture.httpUrl;
+    applyRelayV3FixtureEnv(relayFixture);
     await prepareV4ConversationE2E({ skipProvider: true });
     await clickTestIdByDom(TID_TASK_SETTINGS_BUTTON);
     await $(`[data-testid="${TID_SETTINGS_PAGE}"]`).waitForDisplayed();
@@ -29,8 +44,13 @@ describe("设置 → 远程控制：Relay 服务器地址", () => {
   });
 
   after(async () => {
-    await browser.electron.restoreAllMocks();
-    await clearAppData();
+    try {
+      await browser.electron.restoreAllMocks();
+      await clearAppData();
+    } finally {
+      clearRelayV3FixtureEnv();
+      await relayFixture?.stop();
+    }
   });
 
   it("RCE01：保存后回显归一化地址并落盘；未修改时保存不可点", async () => {

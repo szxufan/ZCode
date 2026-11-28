@@ -197,10 +197,10 @@ describe("desktop e2e startup credentials", () => {
     ).toEqual({});
   });
 
-  it("JWT 401 自动退出专项 spec 保留完整 restored OAuth fixture", () => {
+  it("语音输入 spec 保留完整 restored OAuth fixture（ticket 请求带 JWT）", () => {
     expect(
       createE2EStartupCredentialSeed({
-        specs: ["/repo/packages/desktop/test/e2e/auth-config/session/jwt-401-auto-logout.test.ts"],
+        specs: ["/repo/packages/desktop/test/e2e/ui-shell/composer/composer-voice-input.test.ts"],
         legacyAuthToken: "fake-auth-token",
         restoredOAuthCredentials,
       }),
@@ -210,10 +210,10 @@ describe("desktop e2e startup credentials", () => {
     });
   });
 
-  it("Start Plan 手动领取 spec 保留调用 claim API 所需的 zcode JWT", () => {
+  it("本地 Start 余额 spec 保留完整 restored OAuth fixture", () => {
     expect(
       createE2EStartupCredentialSeed({
-        specs: ["start-plan-manual-claim-experience.test.ts"],
+        specs: ["coding-plan-upgrade-webview-refresh-provider.test.ts"],
         legacyAuthToken: "fake-auth-token",
         restoredOAuthCredentials,
       }),

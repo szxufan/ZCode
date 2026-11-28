@@ -96,7 +96,6 @@ renderer 进程
 ## 终点 T6 的判定与边界
 
 - **T6 定义**：`Root.tsx` 的 `isStartupRenderBlocked`（L547，由 `shouldShowRootStartupLoading` 计算）由 `true→false` 翻转的那一刻——此时 `RootStartupLoading` 退场、`LexicalChatInput` 挂载并可编辑。在 Root 加一个 `useEffect` 监听该布尔翻转，翻到 `false` 时记 `T6` 并触发上报（用 ref 保证每进程仅触发一次）。
-- **未登录 / WelcomeScreen 边界**：`shouldShowRootStartupLoading` 在 `welcomeScreenOpen` 时返回 `false`（`rootStartupGate.ts:47`），即门禁「清除」但显示的是登录页、**没有输入框**。该启动**不上报** `perf_ui_launch_to_input` 总链路（前提「能输入」不成立），避免污染分布。判定方式：T6 触发时若处于 WelcomeScreen 状态则整批跳过。已登录正常进入工作区的启动才上报。
 - **reporter 注入时序**：与旧 `perf_ui_first_screen` 不同，T6 发生在 Root mount 之后、门禁清除时，reporter 早已由 `setUiPerfArmsReporter` 注入，**无需** `pendingFirstScreenPayload` 暂存补发逻辑（该逻辑随旧事件一并删除）。
 
 ## 时钟健壮性
@@ -123,9 +122,9 @@ renderer 进程
 | `packages/desktop/src/main/desktopWindowLifecycle.ts` | `loadURL` 前记 `T3`；把 `{T0,T1,T2,T3}` 注入主窗口 `additionalArguments` |
 | `packages/desktop/src/preload/index.ts` 或 renderer 入口 | 从 `process.argv` 解析 launch marks，暴露给 renderer |
 | `packages/desktop/src/renderer/src/main.tsx` | 记 `T4`；`zcode-react-startup-ready` 里记 `T5`（移除旧 `reportUiFirstScreen` 调用） |
-| `packages/ui/src/Root.tsx` | `useEffect` 监听 `isStartupRenderBlocked` 翻转记 `T6`，组装 marks 调 `reportUiLaunchStages`（含 WelcomeScreen 跳过判定） |
+| `packages/ui/src/Root.tsx` | `useEffect` 监听 `isStartupRenderBlocked` 翻转记 `T6`，组装 marks 调 `reportUiLaunchStages` |
 | `packages/ui/src/lib/uiPerfArmsTelemetry.ts` | 新增 `reportUiLaunchStages(marks)` 发 7 条；删除 `reportUiFirstScreen` 及暂存逻辑；新增常量 |
-| `packages/ui/src/lib/uiPerfArmsTelemetry.test.ts` | 删旧 first_screen 用例；新增：7 段 payload 正确、负值钳为 0、哨兵丢弃、WelcomeScreen 跳过、reporter 未注入吞错 |
+| `packages/ui/src/lib/uiPerfArmsTelemetry.test.ts` | 删旧 first_screen 用例；新增：7 段 payload 正确、负值钳为 0、哨兵丢弃、reporter 未注入吞错 |
 | `docs/monitoring/performance-monitoring.md` | 事件一览替换 `perf_ui_first_screen` 为 7 个 `perf_ui_launch_*` |
 
 ## 常量
@@ -149,12 +148,10 @@ renderer 进程
   - 给定 `{T0..T6}`，7 条 payload 的 name/group/value 正确，相邻差计算正确。
   - 某段为负（时钟回拨）→ 该段 value 钳为 0，其余正常。
   - 总时长 > 哨兵阈值 → 整批不发。
-  - WelcomeScreen 标志为真 → 整批不发。
   - reporter 未注入 / reporter 抛错 → 不抛、不阻塞。
 - **本地验证**（`arms_env=local`）：
   - 冷启动登录态 → main 日志 `beforeReport` 依次出现 7 条 `custom:perf_ui_launch_*`，total ≈ 各段之和。
   - 各段数量级 sanity：`react_commit` 应接近旧 first_screen 的 ~75ms。
-  - 未登录冷启动 → 不出现 `perf_ui_launch_to_input`。
   - 回归：`perf_ui_first_token` / `perf_ui_message_complete` / `perf_ui_stream_stall` 不受影响。
 
 ## 未来可调整项（非本期）

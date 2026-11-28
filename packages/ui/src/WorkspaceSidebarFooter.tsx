@@ -1,20 +1,16 @@
 import { useSetInterfaceModeWithTelemetry } from "@/lib/appTelemetry.js";
-import { SidebarNativeTooltip, ControlHintTooltip } from "@/ControlHintTooltip.js";
+import { ControlHintTooltip } from "@/ControlHintTooltip.js";
 /* oxlint-disable eslint(max-lines) -- footer 聚合账户、主题、模式和快捷键菜单。 */
-import type { Locale, UserInfo } from "@zcode/shared";
+import type { Locale } from "@zcode/shared";
 import { memo, useCallback, useEffect, useState, type ReactNode } from "react";
 import { DesktopCommandIds, LOCALE_NATIVE_NAMES, SUPPORTED_LOCALES } from "@zcode/shared";
 import {
   TID_LOGIN_MENU_ITEM,
   TID_LOGIN_TRIGGER,
-  TID_LOGOUT_BUTTON,
   TID_TASK_SETTINGS_BUTTON,
 } from "@zcode/shared/test-ids";
-import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar.js";
 import { cn } from "@/components/lib/utils.js";
 import { Button } from "@/components/ui/button.js";
-import { toast } from "@/components/ui/toast.js";
-import { Badge } from "@/components/ui/badge.js";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -29,16 +25,12 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu.js";
 import {
-  Copy,
-  PencilRuler,
   Globe,
-  LoaderCircle,
   LogInIcon,
-  LogOut,
   Maximize,
   Palette,
+  PencilRuler,
   Settings,
-  User,
   ZoomIn,
   ZoomOut,
 } from "lucide-react";
@@ -49,43 +41,12 @@ import { useZCodeStore } from "@/store/StoreProvider.js";
 import { normalizeInterfaceMode } from "@/lib/interfaceMode.js";
 import type { Theme } from "@/useTheme.js";
 import {
-  WorkspaceSidebarFooterPlanBadge,
   WorkspaceSidebarFooterUsageSummaryContent,
   useWorkspaceSidebarFooterUsageSummaryState,
 } from "@/WorkspaceSidebarFooterUsageSummary.js";
 
 const DESKTOP_ZOOM_MIN_LEVEL = -3;
 const DESKTOP_ZOOM_MAX_LEVEL = 5;
-
-function getSidebarProfileName(user?: UserInfo | null): string {
-  const displayName = user?.displayName?.trim();
-  if (displayName) {
-    return displayName;
-  }
-
-  const username = user?.username?.trim();
-  if (username) {
-    return username;
-  }
-
-  return "ZCode";
-}
-
-function getSidebarProfileBadge(
-  user: UserInfo | null | undefined,
-  formatMessage: ReturnType<typeof useZCodeIntl>["intl"]["formatMessage"],
-): string {
-  if (user) {
-    return getSidebarProfileName(user);
-  }
-
-  return formatMessage({ id: "sidebar.profile.notLoggedIn" });
-}
-
-function getAvatarFallbackText(user: UserInfo | null | undefined): string {
-  const source = user?.displayName?.trim() || user?.username?.trim() || "Z";
-  return source[0]?.toUpperCase() ?? "Z";
-}
 
 export const WorkspaceSidebarFooter = memo(function WorkspaceSidebarFooterComponent({
   theme,
@@ -96,13 +57,11 @@ export const WorkspaceSidebarFooter = memo(function WorkspaceSidebarFooterCompon
   onUsageClick,
   onUpgradeClick,
   onLogin,
-  onLogout,
   settingsButtonMode = "settings",
-  user,
   workspacePath,
   workspaceIdentity,
-  workspaceRemoteSessionId,
-  activeTaskId,
+  workspaceRemoteSessionId: _workspaceRemoteSessionId,
+  activeTaskId: _activeTaskId,
   isDesktop = false,
   banner,
   className,
@@ -117,9 +76,7 @@ export const WorkspaceSidebarFooter = memo(function WorkspaceSidebarFooterCompon
     typeof WorkspaceSidebarFooterUsageSummaryContent
   >[0]["onUpgradeClick"];
   onLogin?: () => void;
-  onLogout?: () => void;
   settingsButtonMode?: "settings" | "back";
-  user?: UserInfo | null;
   workspacePath?: string;
   workspaceIdentity?: string;
   workspaceRemoteSessionId?: string;
@@ -135,52 +92,22 @@ export const WorkspaceSidebarFooter = memo(function WorkspaceSidebarFooterCompon
   const zoomInShortcutLabel = useShortcutCommandLabel("zoomIn");
   const zoomOutShortcutLabel = useShortcutCommandLabel("zoomOut");
   const resetZoomShortcutLabel = useShortcutCommandLabel("resetZoom");
-  const isRestoringOAuthSession = useZCodeStore((state) => state.isRestoringOAuthSession);
-  const profileBadge = getSidebarProfileBadge(user, intl.formatMessage);
-  const avatarFallbackText = getAvatarFallbackText(user);
-  const avatarKey = user?.avatarUrl ?? user?.id ?? "guest";
-  const showAuthRestoreLoading = !user && isRestoringOAuthSession;
+  // relay v3 账号登录状态不在 renderer store；头像入口固定作为设置/登录菜单锚点，
+  // 文案用中性的“设置”，避免已登录用户仍看到“连接远控账号”被误导。
+  const profileLabel = intl.formatMessage({ id: "settings.title" });
   const usageSummaryState = useWorkspaceSidebarFooterUsageSummaryState({
     enabled: true,
     workspaceIdentity,
     workspacePath,
   });
-  const copyUserId = async () => {
-    if (!user?.id) return;
-    try {
-      await navigator.clipboard.writeText(user.id);
-      toast(intl.formatMessage({ id: "sidebar.profile.userIdCopied" }));
-    } catch {
-      toast(intl.formatMessage({ id: "sidebar.profile.userIdCopyFailed" }));
-    }
-  };
   const profileContent = (
     <>
-      <Avatar key={avatarKey} size="default">
-        {user?.avatarUrl ? <AvatarImage src={user.avatarUrl} alt={profileBadge} /> : null}
-        <AvatarFallback className="bg-background text-foreground">
-          {user ? (
-            avatarFallbackText
-          ) : showAuthRestoreLoading ? (
-            <>
-              {/* Bugfix: OAuth 启动恢复未落定前，footer 之前会直接显示未登录头像，
-                  用户很容易把“还在校验”误判成“已经退出”。
-                  这里用 loading 图标明确表达“状态确认中”，等恢复成功或失败后再展示最终状态。 */}
-              <LoaderCircle className="size-4 animate-spin" />
-              <span className="sr-only">{intl.formatMessage({ id: "common.loading" })}</span>
-            </>
-          ) : (
-            <User className="size-4" />
-          )}
-        </AvatarFallback>
-      </Avatar>
-      <div className="min-w-0 flex-1 overflow-hidden text-left">
-        <div className="flex min-w-0 items-center gap-1.5">
-          <span className="min-w-0 truncate text-ui-base font-semibold text-foreground">
-            {profileBadge}
-          </span>
-        </div>
-      </div>
+      <span className="flex size-8 shrink-0 items-center justify-center rounded-full border border-border bg-surface text-ui-base font-semibold text-foreground">
+        Z
+      </span>
+      <span className="min-w-0 flex-1 truncate text-left text-ui-base font-semibold text-foreground">
+        {profileLabel}
+      </span>
     </>
   );
   const settingsButtonLabel =
@@ -233,18 +160,16 @@ export const WorkspaceSidebarFooter = memo(function WorkspaceSidebarFooterCompon
       <div className="flex min-w-0 gap-2">
         <DropdownMenu open={profileMenuOpen} onOpenChange={setProfileMenuOpen}>
           <DropdownMenuTrigger asChild>
-            {/* Bugfix: 头像和 Login 之前直接绑定到登录动作，导致用户无法从这里打开偏好设置。
-              现在把这一块改成统一的设置菜单入口，登录/退出留在菜单项里，交互职责更清晰。 */}
+            {/* relay v3 账号登录没有 store.user；头像按钮只作为设置/登录菜单锚点，不再承载账号信息。 */}
             <Button
               type="button"
               variant="ghost"
               size={"lg"}
               className="min-w-0 flex-1 justify-start gap-2 overflow-hidden rounded-tl-2xl rounded-bl-2xl border-0 pl-0"
               data-testid={TID_LOGIN_TRIGGER}
-              aria-label={profileBadge}
+              aria-label={intl.formatMessage({ id: "settings.title" })}
             >
-              {/* Bugfix: Button 默认 shrink-0 且带 whitespace-nowrap，超长用户名会把 footer 撑出 sidebar。
-                这里让触发按钮和文本列都允许收缩，并只在用户名自身做单行截断。 */}
+              {/* Button 默认 shrink-0 且带 whitespace-nowrap，长文案会撑出 sidebar；这里允许收缩并单行截断。 */}
               {profileContent}
             </Button>
           </DropdownMenuTrigger>
@@ -254,69 +179,6 @@ export const WorkspaceSidebarFooter = memo(function WorkspaceSidebarFooterCompon
             className="w-max min-w-50 max-w-[calc(100vw-2rem)]"
             forceMount
           >
-            {user ? (
-              <>
-                <div
-                  data-testid="profile-menu-header"
-                  className="flex max-w-80 items-center gap-2 px-2 py-1.5"
-                >
-                  <Avatar key={avatarKey} size="default">
-                    {user.avatarUrl ? (
-                      <AvatarImage src={user.avatarUrl} alt={profileBadge} />
-                    ) : null}
-                    <AvatarFallback className="bg-background text-foreground">
-                      {avatarFallbackText}
-                    </AvatarFallback>
-                  </Avatar>
-                  <div className="flex min-w-0 flex-1 flex-col">
-                    <div className="flex min-w-0 items-center gap-1.5">
-                      <span
-                        data-testid="profile-menu-name"
-                        className="truncate text-ui-base font-medium"
-                      >
-                        {profileBadge}
-                      </span>
-                      <span
-                        data-testid="profile-menu-plan"
-                        className="flex shrink-0 [&>span]:border-border/50 [&>span]:bg-transparent [&>span]:font-normal"
-                      >
-                        <WorkspaceSidebarFooterPlanBadge state={usageSummaryState} />
-                      </span>
-                    </div>
-                    {user.id ? (
-                      <div className="flex min-w-0 items-center gap-1 text-ui-sm text-foreground-subtle">
-                        <span data-testid="profile-menu-id" className="min-w-0 truncate">
-                          {intl.formatMessage({ id: "sidebar.profile.accountId" }, { id: user.id })}
-                        </span>
-                        <DropdownMenuItem
-                          asChild
-                          className="data-[highlighted]:bg-transparent data-[highlighted]:hover:bg-menu-hover data-[highlighted]:focus-visible:bg-menu-hover"
-                          onSelect={(event) => {
-                            event.preventDefault();
-                            void copyUserId();
-                          }}
-                        >
-                          <SidebarNativeTooltip>
-                            <Button
-                              type="button"
-                              variant="ghost"
-                              size="icon-xs"
-                              data-testid="copy-user-id"
-                              className="min-h-0 p-0 text-foreground-subtle"
-                              aria-label={intl.formatMessage({ id: "sidebar.profile.copyUserId" })}
-                              title={intl.formatMessage({ id: "sidebar.profile.copyUserId" })}
-                            >
-                              <Copy className="size-3" />
-                            </Button>
-                          </SidebarNativeTooltip>
-                        </DropdownMenuItem>
-                      </div>
-                    ) : null}
-                  </div>
-                </div>
-                <DropdownMenuSeparator />
-              </>
-            ) : null}
             <DropdownMenuSub>
               <DropdownMenuSubTrigger>
                 <Globe className="size-4" />
@@ -384,7 +246,7 @@ export const WorkspaceSidebarFooter = memo(function WorkspaceSidebarFooterCompon
             </DropdownMenuSub>
             {/* 快捷键设置（a58fdef 一系）：缩放子菜单 label 读生效表，设置页改绑后即时跟随 */}
             {/* Bugfix: ecc6952 收口重复缩放子菜单时误留了语言之后的那份，导致菜单顺序变成
-                语言→缩放→主题；账户菜单分组顺序固定为 语言→主题→界面模式→缩放→用量→登录/登出，
+                语言→缩放→主题；账户菜单分组顺序固定为 语言→主题→界面模式→缩放→用量→登录，
                 这里把唯一一份（读生效表）挪回用量摘要之前。
                 staging 的 1d3179cb83 独立做过同一处移动（位置一致、缺本注释与 JSX 缩进），
                 合并时保留本版本，不要再补第二份缩放子菜单。 */}
@@ -428,7 +290,8 @@ export const WorkspaceSidebarFooter = memo(function WorkspaceSidebarFooterCompon
               onUsageClick={usageButtonClick}
               onUpgradeClick={onUpgradeClick}
             />
-            {onLogin && !user ? (
+            {/* relay v3 账号登录入口常驻：点击打开欢迎页；账号态不再来自 store.user，故无登录态条件。 */}
+            {onLogin ? (
               <>
                 <DropdownMenuSeparator />
                 <DropdownMenuItem onSelect={onLogin} data-testid={TID_LOGIN_MENU_ITEM}>
@@ -436,13 +299,6 @@ export const WorkspaceSidebarFooter = memo(function WorkspaceSidebarFooterCompon
                   {intl.formatMessage({ id: "app.login" })}
                 </DropdownMenuItem>
               </>
-            ) : null}
-            {onLogout ? <DropdownMenuSeparator /> : null}
-            {onLogout ? (
-              <DropdownMenuItem onSelect={onLogout} data-testid={TID_LOGOUT_BUTTON}>
-                <LogOut className="size-4" />
-                {intl.formatMessage({ id: "app.logout" })}
-              </DropdownMenuItem>
             ) : null}
           </DropdownMenuContent>
         </DropdownMenu>

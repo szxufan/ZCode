@@ -33,9 +33,7 @@ interface RootWorkspaceContentProps {
   remoteWorkspaceSessions: NonNullable<AppProps["remoteWorkspaceSessions"]>;
   allowRemoteWorkspace: NonNullable<RootProps["allowRemoteWorkspace"]>;
   handleBackFromSettings: () => void;
-  handleLogout?: () => void;
   onLogin?: () => void;
-  user: AppProps["user"];
   reconnectingRemoteWorkspaceKeys: AppProps["reconnectingRemoteWorkspaceKeys"];
   remoteWorkspaceRecoveryByWorkspaceKey: AppProps["remoteWorkspaceRecoveryByWorkspaceKey"];
   remoteWorkspaceErrorByWorkspaceKey: AppProps["remoteWorkspaceErrorByWorkspaceKey"];
@@ -71,9 +69,7 @@ export function RootWorkspaceContent({
   remoteWorkspaceSessions,
   allowRemoteWorkspace,
   handleBackFromSettings,
-  handleLogout,
   onLogin,
-  user,
   reconnectingRemoteWorkspaceKeys,
   remoteWorkspaceRecoveryByWorkspaceKey,
   remoteWorkspaceErrorByWorkspaceKey,
@@ -143,9 +139,7 @@ export function RootWorkspaceContent({
                 onSelectRemoteProject={handleSelectRemoteProject}
                 onCancelRemoteProject={handleCancelRemoteProject}
                 onReconnectRemoteWorkspace={handleReconnectRemoteWorkspace}
-                onLogout={handleLogout}
                 onLogin={onLogin}
-                user={user}
                 reconnectingRemoteWorkspaceKeys={reconnectingRemoteWorkspaceKeys}
                 remoteWorkspaceRecoveryByWorkspaceKey={remoteWorkspaceRecoveryByWorkspaceKey}
                 remoteWorkspaceErrorByWorkspaceKey={remoteWorkspaceErrorByWorkspaceKey}
@@ -196,8 +190,6 @@ export function RootWorkspaceContent({
             onOpenRemoteWorkspace={handleOpenRemoteWorkspace}
             allowOpenWorkspace={allowOpenWorkspace}
             onLogin={onLogin}
-            onLogout={handleLogout}
-            user={user}
           />
         </ScopedErrorBoundary>
       ) : null}

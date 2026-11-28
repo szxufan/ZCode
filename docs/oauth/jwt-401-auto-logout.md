@@ -38,7 +38,7 @@
 
 ## 2026-10-12：业务凭据撤销恢复
 
-BigModel/ZAI 当前 active provider 的业务 access_token 被明确拒绝时，复用 OAuthService 的条件退出、派生凭据清理和 Host 广播；Renderer 清除用户展示，显示现有“登录已过期”提示，确认后直接进入 Welcome 登录入口，不重启 App 或刷新 Web。
+BigModel/ZAI 当前 active provider 的业务 access_token 被明确拒绝时，复用 OAuthService 的条件退出、派生凭据清理和 Host 广播；Renderer 清除用户展示，不再显示“登录已过期”重新登录提示，也不打开 Welcome 登录入口（桌面应用登录已改为 relay v3 账号，见 [relay-login.md](../ui/relay-login.md)）。用户只看到普通聊天错误横幅；需要重新登录时从侧边栏「连接使用」或设置页主动进入，不重启 App 或刷新 Web。
 
 启动缓存恢复同时检查共享 JWT 和当前业务 access_token 的 JWT exp；任一明确过期都在原会话队列内复核并返回 reauthentication-required。业务 token 无 exp/不可解析时不据此退出，远端撤销由后续请求确认；不新增启动网络请求或定时到期检查。
 
@@ -65,14 +65,14 @@ flowchart LR
   C -->|正常或证据不足| E[保留登录，原请求错误]
   D -->|仍匹配| F[清理并广播]
   D -->|已换凭据| G[忽略旧结果]
-  F --> H[过期提示，确认进入登录页]
+  F --> H[清理凭据并广播 signed-out，UI 仅显示普通错误横幅]
 ```
 
-状态 owner 仍为 Local Host OAuthService，核验不持有第二份会话状态。手机 shared-host 继续消费既有广播与当前登录入口；不新增 Host、RPC、定时轮询或自动换 token。不修改网站和 OAuth 签发端的会话生命周期。
+状态 owner 仍为 Local Host OAuthService，核验不持有第二份会话状态。手机 shared-host 继续消费既有广播，不再因过期事件弹出重新登录入口；不新增 Host、RPC、定时轮询或自动换 token。不修改网站和 OAuth 签发端的会话生命周期。
 
-Renderer 在显示提示和提示结束时读取 owner 的 active provider；如果新的登录已经提交，则忽略旧过期事件，不清除新头像或再次打开登录页。提示只保留本组件的在途标记用于去重，不维护第二份认证状态。
+Renderer 收到过期广播后只清理展示态并显示普通聊天错误横幅；如果新的 relay 会话已经建立，则忽略旧过期事件，不清除账号摘要或打开登录页。UI 不维护第二份认证状态。
 
-验收：BigModel/ZAI 业务接口/PAT 签发明确 401 均清理并提示；BigModel 网站注销产生的空响应经身份核验进入相同流程；正常身份的空业务响应/权限 403不登出；ZAI 不凭空响应判断失效；并发核验只执行一次，旧结果不清新会话；Electron 覆盖两平台明确失效与 BigModel 空200，确认后看到登录入口且不发 RelaunchApp。
+验收：BigModel/ZAI 业务接口/PAT 签发明确 401 均清理凭据；BigModel 网站注销产生的空响应经身份核验进入相同流程；正常身份的空业务响应/权限 403不登出；ZAI 不凭空响应判断失效；并发核验只执行一次，旧结果不清新会话；Electron 覆盖两平台明确失效与 BigModel 空200，只显示聊天错误横幅、不弹重新登录提示、不发 RelaunchApp。
 
 ## 兼容边界与历史原因
 
@@ -99,7 +99,7 @@ HTTP 401 -> 初步分类 -> 请求凭据进入 OAuthService 会话变更队列
 
 refreshToken 的网络交换保持在队列外，写回进入同一队列，并校验交换前的会话 generation、provider 和 access token；过期刷新不得在退出后复活凭据或覆盖新登录。不新增刷新能力，当前 BigModel/ZAI adapter 不提供 refreshToken 交换。
 
-状态 owner 仍是当前 Host 的 OAuthService；该队列串行化本实例的登录、退出和刷新写回，不引入跨进程事务或变更 credentials.json 格式。跨 Host/CLI 的并发文件操作继续遵守原凭据存储边界。桌面 continuous / 手机 replayable 的 attachment 与广播边界不变；当前提示确认后进入登录入口。
+状态 owner 仍是当前 Host 的 OAuthService；该队列串行化本实例的登录、退出和刷新写回，不引入跨进程事务或变更 credentials.json 格式。跨 Host/CLI 的并发文件操作继续遵守原凭据存储边界。桌面 continuous / 手机 replayable 的 attachment 与广播边界不变；UI 不再因过期广播打开登录入口。
 
 ### Todo103 整合约束：保留退出账号身份
 
@@ -109,7 +109,7 @@ refreshToken 的网络交换保持在队列外，写回进入同一队列，并�
 不因此重做账号状态同步或跨 Host 事务。需覆盖 BigModel/ZAI 两端身份传递、手动退出
 错误语义、并发重复 401 和旧请求在新登录/刷新后返回不误清理的回归。
 
-回归：分类器读旧 token 后同平台换新 token；候选入队前同平台重新登录；失效核对期间新的会话写入等待；刷新结果在退出后返回；正常当前 token 401 仍只触发原清理与提示。通过隔离服务层受控时序测试证明队列边界，Electron AUTH-06 复核正常 401 链路；旧 token 的竞态不广播由服务层受控测试覆盖。
+回归：分类器读旧 token 后同平台换新 token；候选入队前同平台重新登录；失效核对期间新的会话写入等待；刷新结果在退出后返回；正常当前 token 401 仍只触发原清理与广播。通过隔离服务层受控时序测试证明队列边界，Electron AUTH-06 复核正常 401 链路；旧 token 的竞态不广播由服务层受控测试覆盖。
 
 ## CR-01：隔离 URL 配置异常（2026-09-09）
 

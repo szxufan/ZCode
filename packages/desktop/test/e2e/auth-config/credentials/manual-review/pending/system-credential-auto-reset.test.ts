@@ -12,7 +12,7 @@ const KEY = "bot:e2e:auto-reset";
 const OLD_VALUE = "E2E_AUTO_RESET_OLD_SYNTHETIC_VALUE";
 const NEW_VALUE = "E2E_AUTO_RESET_NEW_SYNTHETIC_VALUE";
 const SERVICE = "ZCode Credential Encryption";
-const SHELL_SELECTOR = `[data-testid="${TID_LOGIN_TRIGGER}"], [data-testid="onboarding-page"], [data-testid="oauth-login-button"]`;
+const SHELL_SELECTOR = `[data-testid="${TID_LOGIN_TRIGGER}"], [data-testid="onboarding-page"], [data-testid="relay-v3-login"]`;
 
 type HostResult = { ok: true; value: string | null } | { ok: false; message: string };
 

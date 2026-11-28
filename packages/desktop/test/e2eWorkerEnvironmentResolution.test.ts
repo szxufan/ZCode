@@ -73,7 +73,8 @@ it("prepares the macOS keychain link only for native credential storage specs", 
   );
   // owner 专项使用原生 API 边界替身，不访问开发者钥匙串。
   expect(isNativeKeychainCredentialSpec(`${pending}/system-credential-owner.test.ts`)).toBe(false);
-  expect(isNativeKeychainCredentialSpec("/auth-config/login/oauth-completion-race.test.ts")).toBe(
+  // 登录 provisioning 用例使用合成凭据，不访问开发者钥匙串。
+  expect(isNativeKeychainCredentialSpec("/auth-config/login/oauth-provisioning.test.ts")).toBe(
     false,
   );
 });

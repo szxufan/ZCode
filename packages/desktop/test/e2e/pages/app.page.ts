@@ -3,7 +3,6 @@ import {
   TID_APP_HEADER,
   TID_LOCALE_TOGGLE,
   TID_THEME_TOGGLE,
-  TID_LOGOUT_BUTTON,
   TID_TERMINAL_TOGGLE,
   TID_TERMINAL_CLOSE_BUTTON,
   TID_BROWSER_TOGGLE,
@@ -55,9 +54,6 @@ class AppPage {
   }
   get localeToggle(): ChainablePromiseElement {
     return $(sel(TID_LOCALE_TOGGLE));
-  }
-  get logoutButton(): ChainablePromiseElement {
-    return $(sel(TID_LOGOUT_BUTTON));
   }
 
   // ── Sidebar ──

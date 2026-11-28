@@ -2,12 +2,15 @@ import { rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { getLatestUpstreamToolResultByToolCallId } from "#e2e/helpers/conversation-session-network";
 import { reloadElectronSessionSafely } from "#e2e/helpers/e2e-electron-reload";
-import { TID_LOGIN_USE_API_KEY_BUTTON, TID_TASK_ITEM, testId } from "@zcode/shared/test-ids";
+import { TID_TASK_ITEM, testId } from "@zcode/shared/test-ids";
 import { DEFAULT_WORKSPACE, clearAppData, pinE2ELocale } from "#e2e/helpers/desktop-app";
+import {
+  ensureRelayLoggedIn,
+  isRelayWelcomeVisible,
+} from "#e2e/helpers/relay-login";
 import {
   approveV4Permission,
   getV4PaneSnapshot,
-  loginWithApiKey,
   prepareV4ConversationE2E,
   selectV4TaskById,
   sendV4Prompt,
@@ -173,13 +176,15 @@ async function readCompletedSurfaces(runId: string): Promise<CompletedSurfaces> 
 /** renderer 重载：Host 与 CLI 不动，只换一份新的 renderer。 */
 async function reloadRenderer(sessionId: string) {
   await browser.refresh();
-  const login = $(`[data-testid="${TID_LOGIN_USE_API_KEY_BUTTON}"]`);
   const task = $(`[data-testid="${testId(TID_TASK_ITEM, sessionId)}"]`);
-  await browser.waitUntil(async () => (await login.isDisplayed()) || (await task.isExisting()), {
-    timeout: 60_000,
-    timeoutMsg: "renderer 重载后既没有登录页也没有任务项",
-  });
-  if (await login.isDisplayed()) await loginWithApiKey();
+  await browser.waitUntil(
+    async () => (await isRelayWelcomeVisible()) || (await task.isExisting()),
+    {
+      timeout: 60_000,
+      timeoutMsg: "renderer 重载后既没有 relay 登录页也没有任务项",
+    },
+  );
+  await ensureRelayLoggedIn();
   // 语言固定只在内存里；新 renderer 要重新固定。
   await pinE2ELocale("zh-CN");
   await reopenSession(sessionId);

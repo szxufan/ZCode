@@ -1,12 +1,15 @@
 import { TID_CHAT_WORKFLOW_RUN_DIGEST } from "@zcode/shared";
-import { TID_LOGIN_USE_API_KEY_BUTTON, TID_TASK_ITEM, testId } from "@zcode/shared/test-ids";
+import { TID_TASK_ITEM, testId } from "@zcode/shared/test-ids";
 import { getLatestUpstreamToolResultByToolCallId } from "#e2e/helpers/conversation-session-network";
 import { clearAppData, pinE2ELocale } from "#e2e/helpers/desktop-app";
+import {
+  ensureRelayLoggedIn,
+  isRelayWelcomeVisible,
+} from "#e2e/helpers/relay-login";
 import { releaseControlledReplay } from "#e2e/helpers/controlled-replay";
 import {
   approveV4Permission,
   getV4PaneSnapshot,
-  loginWithApiKey,
   prepareV4ConversationE2E,
   selectV4TaskById,
   sendV4Prompt,
@@ -169,13 +172,15 @@ async function openScriptTranscript() {
 /** renderer 重载：Host 与 CLI 不动，只换一份新的 renderer（取正文的缓存随之清空）。 */
 async function reloadRenderer() {
   await browser.refresh();
-  const login = $(`[data-testid="${TID_LOGIN_USE_API_KEY_BUTTON}"]`);
   const task = $(`[data-testid="${testId(TID_TASK_ITEM, sessionId)}"]`);
-  await browser.waitUntil(async () => (await login.isDisplayed()) || (await task.isExisting()), {
-    timeout: 60000,
-    timeoutMsg: "renderer 重载后既没有登录页也没有任务项",
-  });
-  if (await login.isDisplayed()) await loginWithApiKey();
+  await browser.waitUntil(
+    async () => (await isRelayWelcomeVisible()) || (await task.isExisting()),
+    {
+      timeout: 60000,
+      timeoutMsg: "renderer 重载后既没有 relay 登录页也没有任务项",
+    },
+  );
+  await ensureRelayLoggedIn();
   // 语言固定只在内存里；新 renderer 要重新固定。
   await pinE2ELocale("zh-CN");
   if ((await getV4PaneSnapshot()).sessionId !== sessionId) {

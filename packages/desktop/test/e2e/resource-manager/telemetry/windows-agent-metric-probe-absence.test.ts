@@ -1,14 +1,11 @@
 import { readdir, readFile } from "node:fs/promises";
 import { join } from "node:path";
 import {
-  TID_LOGIN_API_KEY_SKIP_BUTTON,
-  TID_LOGIN_USE_API_KEY_BUTTON,
   TID_TASK_ITEM,
   testId,
 } from "@zcode/shared/test-ids";
 import {
   clearAppData,
-  clickTestIdByDom,
   waitForDefaultWorkspaceReady,
   waitForTestIdByDom,
 } from "#e2e/helpers/desktop-app";
@@ -38,15 +35,7 @@ windowsDescribe("Windows Agent 指标采集 main process 门禁", () => {
   it("PERF-RES-01: 真实 Agent 注册后的资源采样日志只记录 skipped，不启动外部 probe", async function () {
     this.timeout(90000);
 
-    await waitForTestIdByDom(TID_LOGIN_USE_API_KEY_BUTTON, {
-      timeout: 30000,
-      timeoutMsg: "空 auth/provider 冷启动后没有展示 API Key 配置入口",
-    });
-    await clickTestIdByDom(TID_LOGIN_USE_API_KEY_BUTTON);
-    await clickTestIdByDom(TID_LOGIN_API_KEY_SKIP_BUTTON, {
-      timeout: 15000,
-      timeoutMsg: "API Key 登录页没有可用的暂时跳过入口",
-    });
+    // relay 账号由 wdio 冷启动播种；provider 可用性不再作为应用登录门禁。
     await waitForDefaultWorkspaceReady(30000);
     await waitForSeededHistory();
 

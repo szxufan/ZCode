@@ -1,5 +1,6 @@
 import { TID_LOGIN_TRIGGER } from "@zcode/shared/test-ids";
 import { DEFAULT_WORKSPACE, waitForDefaultWorkspaceReady } from "./desktop-app.js";
+import { ensureRelayLoggedIn } from "./relay-login.js";
 import { sel } from "./selectors.js";
 
 const TID_CODING_PLAN_PURCHASE_PERSONAL_PLAN_BUTTON = "coding-plan-purchase-personal-plan-button";
@@ -34,6 +35,8 @@ async function openCodingPlanPersonalUpgradePanel({
   supplierKey: string;
   beforeClick?: () => Promise<void>;
 }) {
+  // 头像菜单只在越过 relay 登录门禁后存在；这里不做 OAuth 登录，只保证账号态就绪。
+  await ensureRelayLoggedIn();
   await waitForDefaultWorkspaceReady(30000);
   await selectCodingPlanRuntime(supplierKey);
   const profileTrigger = await $(sel(TID_LOGIN_TRIGGER));

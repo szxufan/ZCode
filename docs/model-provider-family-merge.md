@@ -218,7 +218,7 @@ derived directly from `oauth:active_provider`.
 
 ```txt
 No providerFamilyDomain
-├─ WelcomeScreen shows Z.ai and BigModel
+├─ Settings shows Z.ai and BigModel
 └─ The user can connect either provider with OAuth or API Key
 
 providerFamilyDomain = zai
@@ -285,8 +285,9 @@ The selected runtime domain is persisted separately:
 }
 ```
 
-`providerFamilyDomain` is written only after a WelcomeScreen OAuth or API Key
-connection succeeds. Logout, unlink, or removing the last usable credential in
+`providerFamilyDomain` is no longer written by desktop app login (relay v3 account);
+it is updated only after a provider connection succeeds in Settings (OAuth or saved API Key
+through the fork's linkpi template). Logout, unlink, or removing the last usable credential in
 the selected domain clears it and updates `providerFamilyDomainUpdatedAt`.
 
 This field is intentionally not part of `ModelProviderConfig` and does not

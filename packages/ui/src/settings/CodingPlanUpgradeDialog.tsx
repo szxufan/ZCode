@@ -6,19 +6,11 @@ import { type CodingPlanProviderId } from "@/settings/model-provider-section/con
 import { resolveCodingPlanUpgradeProductsProviderId } from "@/settings/model-provider-section/codingPlanPricingCards.js";
 import { normalizeCodingPlanProviderId } from "@/settings/model-provider-section/codingPlanPurchaseAuth.js";
 import { useCodingPlanEntitlements } from "@/settings/model-provider-section/useCodingPlanEntitlements.js";
-import {
-  beginCodingPlanUpgradeLogin,
-  resolvePendingCodingPlanUpgradeAfterLogin,
-  type CodingPlanUpgradeDialogTarget,
-} from "@/settings/codingPlanUpgradeLoginRecovery.js";
+import { type CodingPlanUpgradeDialogTarget } from "@/settings/codingPlanUpgradeLoginRecovery.js";
 import { CodingPlanEmbeddedWebviewDialog } from "@/settings/CodingPlanEmbeddedWebviewDialog.js";
 import { logger } from "@/logger.js";
 
 export { isCodingPlanPurchaseAuthPending } from "@/settings/model-provider-section/codingPlanPurchaseAuth.js";
-export {
-  beginCodingPlanUpgradeLogin,
-  resolvePendingCodingPlanUpgradeAfterLogin,
-} from "@/settings/codingPlanUpgradeLoginRecovery.js";
 export type { CodingPlanUpgradeDialogTarget } from "@/settings/codingPlanUpgradeLoginRecovery.js";
 
 interface CodingPlanUpgradeDialogProps {

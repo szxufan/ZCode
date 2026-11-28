@@ -1,10 +1,6 @@
 import { join } from "node:path";
 import { PlatformChannels } from "@zcode/shared";
 import {
-  TID_LOGIN_TRIGGER,
-  TID_LOGIN_MENU_ITEM,
-  TID_LOGIN_USE_API_KEY_BUTTON,
-  TID_LOGIN_API_KEY_SKIP_BUTTON,
   TID_SIDE_PANE_TOGGLE,
 } from "@zcode/shared/test-ids";
 import { clearAppData, DEFAULT_WORKSPACE, waitForWorkspaceApp } from "#e2e/helpers/desktop-app";
@@ -29,15 +25,12 @@ declare global {
     | undefined;
 }
 
-async function remountThroughLogin(taskId: string): Promise<void> {
-  await $(`[data-testid="${TID_LOGIN_TRIGGER}"]`).click();
-  await $(`[data-testid="${TID_LOGIN_MENU_ITEM}"]`).waitForClickable();
-  await $(`[data-testid="${TID_LOGIN_MENU_ITEM}"]`).click();
-  await $(`[data-testid="${TID_LOGIN_USE_API_KEY_BUTTON}"]`).waitForDisplayed();
-  await $(`[data-testid="${TID_LOGIN_USE_API_KEY_BUTTON}"]`).click();
-  await $(`[data-testid="${TID_LOGIN_API_KEY_SKIP_BUTTON}"]`).click();
+// relay v3 应用登录不再提供 API Key 跳过入口；用 renderer reload 复现同一进程内的
+// Root 重挂载（main 进程与 PTY 保持不变），语义更直接且不依赖登录页生命周期。
+async function remountThroughReload(taskId: string): Promise<void> {
+  await browser.refresh();
   await waitForWorkspaceApp(DEFAULT_WORKSPACE, 30_000);
-  // 登录返回可能恢复另一草稿；显式回到原任务，避免将 scope 隐藏误判为标签丢失。
+  // 刷新后可能恢复另一草稿；显式回到原任务，避免将 scope 隐藏误判为标签丢失。
   await selectV4TaskById(taskId);
 }
 
@@ -121,7 +114,7 @@ describe("侧栏迟到关闭与 App 重挂", () => {
     await browser.waitUntil(() =>
       browser.electron.execute(() => Boolean(globalThis.__sidePaneLateClose?.held)),
     );
-    await remountThroughLogin(taskId);
+    await remountThroughReload(taskId);
     await $("[data-side-pane-add-tab-trigger]").waitForClickable();
     await $("[data-side-pane-add-tab-trigger]").click();
     await $('[data-side-pane-open-tab-item="terminal"]').waitForClickable();
@@ -139,7 +132,7 @@ describe("侧栏迟到关闭与 App 重挂", () => {
     await browser.waitUntil(() =>
       browser.electron.execute(() => Boolean(globalThis.__sidePaneLateClose?.completed)),
     );
-    await remountThroughLogin(taskId);
+    await remountThroughReload(taskId);
     // 不对父版本已有的浏览器壳同步问题作断言；只验证新标签及其真实 PTY。
     await $(`[data-side-pane-tab-id="${terminalId}"]`).waitForDisplayed();
     await $(`[data-side-pane-tab-id="${terminalId}"]`).click();

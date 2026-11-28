@@ -23,7 +23,6 @@ import { useOptionalBaseWorkspaceServices } from "@/hooks/useWorkspaceServices.j
 import { useZCodeIntl } from "@/i18n/IntlProvider.js";
 import type { LexicalChatInputHandle } from "@/LexicalChatInput.js";
 import { logger } from "@/logger.js";
-import { useZCodeStoreWithDefault } from "@/store/StoreProvider.js";
 import { toast } from "@/components/ui/toast.js";
 import type {
   ComposerVoiceInput,
@@ -71,10 +70,10 @@ export function useComposerVoiceInput(options: {
   const microphone = platform?.microphone;
   // 语音输入把缺失的服务视为不可用；用可选访问器避免无 ServiceProvider 的宿主/单测直接抛错。
   const { voiceInputService } = useOptionalBaseWorkspaceServices() ?? {};
-  // 无 StoreProvider 的宿主/单测按未登录处理；语音输入本身已按服务/麦克风缺席降级。
-  const isLoggedIn = useZCodeStoreWithDefault((state) => state.user !== null, false);
+  // relay v3 账号登录不提供 zcodejwttoken，不再以 OAuth 登录态作为开关；
+  // 语音输入按麦克风、服务和调用方 enabled 降级，服务不可用时入口自然消失。
   const { intl, locale } = useZCodeIntl();
-  const available = Boolean(options.enabled && microphone && voiceInputService && isLoggedIn);
+  const available = Boolean(options.enabled && microphone && voiceInputService);
   const permissionGuide = useMicrophonePermissionGuide();
   const showPermissionGuide = permissionGuide.show;
 
@@ -318,7 +317,7 @@ export function useComposerVoiceInput(options: {
     [finish],
   );
 
-  // 会话切换、退出登录、组件卸载都停止当前识别，语音文字随草稿保留。
+  // 会话切换、组件卸载都停止当前识别，语音文字随草稿保留。
   useEffect(() => () => stopAttempt("session-change"), [stopAttempt, sessionId, available]);
 
   // 修复原因：审批/问答卡片出现时 Composer 只是被 display:none 隐藏，录音曾在用户看不到任何提示的情况下继续；

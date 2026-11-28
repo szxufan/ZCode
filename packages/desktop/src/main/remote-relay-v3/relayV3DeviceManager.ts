@@ -37,8 +37,7 @@ import { RelayV3DeviceTransport } from "./relayV3DeviceTransport.js";
 import { buildRelayV3StatusQrUrl } from "./relayV3Qr.js";
 import { findRelayV3Workspace, flattenRelayV3Workspaces } from "./relayV3Workspaces.js";
 // Relay V3 device manager（P1）：桌面被控端运行态的唯一 owner。
-// 职责（V2 webRemoteControlManager 语义在 V3 的重建，见
-// docs/web-remote-control/web-remote-control-architecture.md §Desktop Main）：
+// 职责（V2 webRemoteControlManager 语义在 V3 的重建，见 docs/web-remote-control/web-remote-control-architecture.md §Desktop Main）：
 //   1. relay 账号会话（auth-required = 等待 relay 账号登录，不注册不建连）；
 //   2. 设备身份与注册（携带公钥；重注册换新密钥对，AUTH_FAILED 同次启动最多恢复一次）；
 //   3. transport 生命周期与状态投影（idle/starting/connecting/waiting/active/error）；
@@ -129,6 +128,7 @@ export class RelayV3DeviceManager {
   private transport: RelayV3DeviceTransport | null = null;
   private identity: { keyPair: RelayV3KeyPair; deviceSid: string | null } | null = null;
   private phase: RelayV3DesktopPhase = "idle";
+  private restored = false; // 恢复完成前 account 不作为应用登录门禁依据。
   private failure: RelayV3DesktopStatus["failure"] | undefined;
   private enabledTarget: { workspacePath: string; workspaceIdentity?: string } | null = null;
   /** 同次启动内 AUTH_FAILED 后的重注册只允许一次（V2 03）。 */
@@ -166,6 +166,7 @@ export class RelayV3DeviceManager {
     const baseUrl = staticPageBaseUrl ?? endpointOrigin;
     return {
       phase: this.phase,
+      restored: this.restored,
       ...(this.failure ? { failure: this.failure } : {}),
       account: this.account.getSession(),
       deviceSid,
@@ -254,12 +255,17 @@ export class RelayV3DeviceManager {
   }
 
   async restoreOnLaunch(): Promise<void> {
-    await this.account.restoreFromDisk();
-    const settings = await this.options.settings.read();
-    const lastEnabled = settings?.relayV3?.lastEnabled;
-    if (lastEnabled) {
-      this.enabledTarget = lastEnabled;
-      await this.maybeAutoStart();
+    try {
+      await this.account.restoreFromDisk();
+      const lastEnabled = (await this.options.settings.read())?.relayV3?.lastEnabled;
+      if (lastEnabled) {
+        this.enabledTarget = lastEnabled;
+        await this.maybeAutoStart();
+      }
+    } finally {
+      // 恢复完成必须广播：renderer 门禁不能在 restored 前据 account=null 误判未登录。
+      this.restored = true;
+      this.options.broadcastStatus?.(this.getStatus());
     }
   }
 
@@ -294,15 +300,11 @@ export class RelayV3DeviceManager {
     if (this.starting) return { accepted: true };
     const { endpointOrigin } = this.options.getRelayConfig();
     if (!endpointOrigin) {
-      this.setPhase("error", {
-        kind: "relay-unavailable",
-        message: "relay endpoint not configured",
-      });
+      this.setPhase("error", { kind: "relay-unavailable", message: "relay endpoint not configured" });
       return { accepted: false, reason: "no-endpoint" };
     }
     if (!this.account.isSignedIn()) {
-      // auth-required：不注册、不建连（V2 04 登录门禁）。
-      this.setPhase("auth-required");
+      this.setPhase("auth-required"); // 不注册、不建连（V2 04 登录门禁）。
       return { accepted: false, reason: "auth-required" };
     }
     this.starting = true;
@@ -312,14 +314,12 @@ export class RelayV3DeviceManager {
     try {
       await this.ensureRegisteredDevice(() => !this.starting);
       registered = true;
-      // 注册等待期间被 stop/登出/切换服务器地址打断（stopTransportOnly 已复位 starting）：
-      // 启动意图作废，不再拉起 transport，否则"停止"之后远控仍会晚到上线。
+      // 注册期间被 stop/登出/切换地址打断后启动意图作废，不再拉起 transport。
       if (!this.starting) return { accepted: false, reason: "stopped" };
       this.launchTransport();
       return { accepted: true };
     } catch (error) {
-      // 同一次打断若落在注册等待中、且注册随后失败（如登出后取不到 access），这次启动同样
-      // 已作废：不改写 phase，否则"停止/切换地址"之后界面会停在这条迟到的失败上。
+      // 打断落在注册等待且注册失败时不改写 phase，避免迟到失败覆盖停止/切换后的状态。
       if (!registered && !this.starting) return { accepted: false, reason: "stopped" };
       this.starting = false;
       const message = error instanceof Error ? error.message : String(error);

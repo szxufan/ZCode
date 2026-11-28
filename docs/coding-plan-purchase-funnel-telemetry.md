@@ -1,7 +1,8 @@
 # Coding Plan 购买漏斗埋点设计
 
-> 当前入口归属以 [购买埋点](./coding-plan-purchase-telemetry.md) 的 2026-09-09 规则为准：
-> App 显式入口点击上报一次；下文原生面板打开及 OAuth 恢复时上报的描述为历史语义。
+> 历史草案：本文描述的购买漏斗埋点与闲时任务（off-peak）升级入口在本 fork 已移除，购买由
+> WebView 承载（见 [coding-plan-webview-bridge.md](./coding-plan-webview-bridge.md)）。下文
+> OAuth 登录连续性与原生面板埋点描述均为上游历史语义，不再适用。
 
 日期：2026-06-29
 状态：草案
@@ -63,12 +64,6 @@ purchase_funnel_id
 
 - 能直接打开购买面板的入口点击时创建 pending UUID；购买面板确认打开后，
   该 UUID 才成为本次 `purchase_funnel_id`，并上报 `coding_plan_upgrade_ck`。
-- 未连接时个人/团队入口当前只发起 OAuth，不会自动打开购买面板；该点击不创建
-  `purchase_funnel_id`，也不上报 `coding_plan_upgrade_ck`。用户登录后再次打开购买面板时
-  再开始新的 funnel。
-- 已经先打开购买面板、再由面板内套餐选择触发 OAuth 的入口（包括闲时任务 Upgrade）在面板
-  打开时开始 funnel。OAuth 登录期间必须保留原 `purchase_funnel_id`、`upgrade_source` 和
-  入口套餐快照；登录成功后恢复套餐选择并继续原 funnel，禁止重新生成 ID 或把来源改写为登录入口。
 - 三个新增事件及已有 `purchase_pay_ck`、`purchase_result` 使用同一个 ID。
 - 用户进入 `app.purchase` 后，本次购买流程只生成一个 `purchase_funnel_id`。在流程内返回
   上一步、重新选择并再次进入后续页面时继续沿用，不得因子页面卸载或重新挂载而生成新 ID。
@@ -159,7 +154,6 @@ V4 conversation 使用同一事件契约，但入口由 V4 session quota banner 
 触发规则：
 
 - 只在用户点击后购买面板实际打开时上报。
-- 未连接时只触发 OAuth 的个人/团队入口不报；继续使用现有登录事件。
 - disabled、自动打开、关闭购买面板不报。
 - Settings 的个人/团队入口分别填写 `purchase_audience`。
 - 闲时任务入口默认打开个人套餐页，`coding_plan_upgrade_ck.purchase_audience=personal`；
@@ -363,7 +357,7 @@ packages/ui/src/lib/codingPlanFunnelTelemetry.ts
 ```
 
 该 intent 只服务“点击后直接打开购买面板”的跨页面入口。购买面板消费 intent 并确认
-`open=true` 后上报 `coding_plan_upgrade_ck`；OAuth-only 入口不写入该 intent。
+`open=true` 后上报 `coding_plan_upgrade_ck`。
 
 ### 7.4 贯通已有支付事件
 
@@ -403,49 +397,11 @@ packages/ui/src/lib/codingPlanFunnelTelemetry.ts
   `purchase_attempt_id` 只串联一次支付点击及其结果。
 - 现有支付状态、商品和错误字段不变。
 
-### 7.5 闲时任务入口与登录连续性
-
-New task 首页和 Automations 闲时任务资格提示统一创建：
-
-```json
-{
-  "eventRegion": "app.session",
-  "elementName": "coding_plan_upgrade_ck",
-  "eventText": "升级",
-  "eventExtraDetail": {
-    "upgrade_source": "session_idle_time",
-    "purchase_audience": "personal"
-  }
-}
-```
-
-英文界面 `eventText` 使用用户实际看到的 `Upgrade`。Provider、渠道、入口套餐状态和
-`purchase_funnel_id` 继续由 `codingPlanFunnelTelemetry` 的统一逻辑填充。
-
-```text
-闲时 Upgrade 点击
-  -> 创建一次 funnel context
-  -> 全局 CodingPlanUpgradeDialog target 持有 context
-  -> 购买面板打开并上报 coding_plan_upgrade_ck
-  -> 未登录用户选择套餐
-  -> OAuth / WelcomeScreen
-  -> callback 只刷新购买凭据，target/context 不变
-  -> 恢复原套餐选择
-  -> product -> cycle -> pay -> result 继续复用同一 context
-  -> 用户关闭购买面板后结束 funnel
-```
-
-登录成功、用户状态刷新和购买 token 刷新都只能更新鉴权/商品状态，不得替换 dialog target。
-`purchase_product_select_ck`、`purchase_billing_cycle_select_ck`、`purchase_pay_ck` 和
-`purchase_result` 必须从该 target 中继续读取原 `purchase_funnel_id` 与
-`upgrade_source=session_idle_time`。
-
 ## 8. 验证
 
 自动测试：
 
 - 三个事件的名称、`eventText` 和字段枚举。
-- 未连接 OAuth-only 点击不生成 funnel，也不报 `coding_plan_upgrade_ck`。
 - 购买面板实际打开后才上报一次 `coding_plan_upgrade_ck`。
 - `coding_plan_upgrade_ck` 使用实际入口区域；`purchase_product_select_ck`、
   `purchase_billing_cycle_select_ck`、`purchase_pay_ck` 的 `eventRegion` 均为
@@ -458,14 +414,6 @@ New task 首页和 Automations 闲时任务资格提示统一创建：
 - 团队只在“继续支付”时上报最终配置。
 - 三个新增事件、`purchase_pay_ck`、`purchase_result` 五个事件复用同一个
   `purchase_funnel_id`。
-- 闲时任务两个 Upgrade 入口均固定上报
-  `eventRegion=app.session`、`upgrade_source=session_idle_time`，并使用本地化
-  `eventText`。
-- 闲时任务入口的 provider registry 套餐判定覆盖
-  `coding_plan` / `start_plan` / `no_plan` / `unknown`，不把 selected-connection
-  失败误报为 `no_plan`。
-- OAuth 登录前后的 dialog target 保留同一个 funnel context；登录成功后恢复套餐选择时，
-  `purchase_funnel_id` 和 `upgrade_source` 不变。
 - 在 `app.purchase` 内返回上一步并重新进入后续页面时，继续复用原
   `purchase_funnel_id`，不生成新 ID。
 - `purchase_pay_ck` 和对应 `purchase_result` 同时复用

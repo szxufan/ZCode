@@ -13,7 +13,6 @@ import type {
   SourceServerUpdateTarget,
   RemoteWorkspaceSessionEntry,
   UpdateStatePayload,
-  UserInfo,
 } from "@zcode/shared";
 import type { IServiceAccessor } from "@zcode/services";
 import type { SavedWorkflowsOpenTarget } from "@/settings/saved-workflows/SavedWorkflowsSection.js";
@@ -166,9 +165,7 @@ export interface AppProps {
   ) => Promise<void>;
   onCancelRemoteProject: (sessionId: string) => Promise<void>;
   onReconnectRemoteWorkspace: (workspaceKey: string) => Promise<void>;
-  onLogout?: () => void;
   onLogin?: () => void;
-  user?: UserInfo | null;
   reconnectingRemoteWorkspaceKeys: string[];
   remoteWorkspaceRecoveryByWorkspaceKey?: Record<string, RemoteWorkspaceRecoveryStatus>;
   remoteWorkspaceErrorByWorkspaceKey: Record<string, string>;

@@ -11,7 +11,7 @@ describe("System credential owner", () => {
           browser.execute(() =>
             Boolean(
               document.querySelector(
-                '[data-testid="login-trigger"], [data-testid="onboarding-page"], [data-testid="oauth-login-button"]',
+                '[data-testid="login-trigger"], [data-testid="onboarding-page"], [data-testid="relay-v3-login"]',
               ),
             ),
           ),
@@ -25,7 +25,7 @@ describe("System credential owner", () => {
       );
       const results = await browser.execute(async () => {
         const element = document.querySelector(
-          '[data-testid="login-trigger"], [data-testid="onboarding-page"], [data-testid="oauth-login-button"]',
+          '[data-testid="login-trigger"], [data-testid="onboarding-page"], [data-testid="relay-v3-login"]',
         )!;
         let fiber = (element as any)[
           Object.keys(element).find((key) => key.startsWith("__reactFiber"))!
@@ -46,7 +46,7 @@ describe("System credential owner", () => {
       // 大 profile 加密后会膨胀；回复必须可接收，超限失败也不能卡住后续读写。
       const boundary = await browser.execute(async () => {
         const element = document.querySelector(
-          '[data-testid="login-trigger"], [data-testid="onboarding-page"], [data-testid="oauth-login-button"]',
+          '[data-testid="login-trigger"], [data-testid="onboarding-page"], [data-testid="relay-v3-login"]',
         )!;
         let fiber = (element as any)[
           Object.keys(element).find((key) => key.startsWith("__reactFiber"))!

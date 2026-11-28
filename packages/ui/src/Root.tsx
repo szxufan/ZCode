@@ -44,26 +44,19 @@ import {
   useRemoteWorkspaceConnectionGate,
 } from "@/project-sidebar/index.js";
 import { useTabPersistence, type WorkspacePersistenceGate } from "@/hooks/useTabPersistence.js";
-import { useTokenRefresh } from "@/hooks/useTokenRefresh.js";
 import { useWorkspaceServices } from "@/hooks/useWorkspaceServices.js";
 import { useZCodeIntl } from "@/i18n/IntlProvider.js";
 import { SSHDialog } from "@/SSHDialog.js";
 import { SettingsPage } from "@/SettingsPage.js";
 import { setPendingSettingsSectionIntent } from "@/lib/settingsNavigation.js";
 import { CodingPlanUpgradeDialogProvider } from "@/settings/CodingPlanUpgradeDialogProvider.js";
-import {
-  CredentialStoreRecovery,
-  WelcomeScreen,
-  type LoginCompleteReason,
-} from "@/WelcomeScreen.js";
+import { CredentialStoreRecovery, WelcomeScreen } from "@/WelcomeScreen.js";
 import { useCredentialStoreRecovery } from "@/hooks/useCredentials.js";
 import { setDefaultFileDisplayBasePath } from "@/lib/fileDisplay.js";
 import { readRendererLaunchTimings, shouldReportLaunchToInput } from "@/lib/launchToInputReport.js";
 import { reportUiLaunchToInput } from "@/lib/uiPerfArmsTelemetry.js";
 import {
   isProviderStartupSyncPending,
-  shouldEnableProviderAvailabilityLoginEntryGuard,
-  shouldResolveProviderStartupState,
   shouldBlockRootRender,
   shouldShowRootStartupLoading,
   shouldOpenFallbackWorkspaceAfterCreate,
@@ -86,8 +79,6 @@ import { RemoteWorkspaceControllerProvider } from "@/remote/useRemoteWorkspaceCo
 import { useRootProviderStateRefresh } from "@/root/useRootProviderStateRefresh.js";
 import { useModelSelectionServiceView } from "@/hooks/useModelSelectionView.js";
 import { useRootProviderSettingsSnapshot } from "@/root/useRootProviderSettingsSnapshot.js";
-import { useRootOAuthEffects } from "@/root/useRootOAuthEffects.js";
-import { consumeZcodeJwtInvalidRestartMarker } from "@/root/zcodeJwtInvalidRestartMarker.js";
 import { useDesktopNativeThemeSync } from "@/root/useDesktopNativeThemeSync.js";
 import { useRootPlatformEffects } from "@/root/useRootPlatformEffects.js";
 import { useRootWorkspaceActions } from "@/root/useRootWorkspaceActions.js";
@@ -109,9 +100,8 @@ import { setUiPerfArmsReporter } from "@/lib/uiPerfArmsTelemetry.js";
 import { setSessionOpenArmsReporter } from "@/lib/sessionOpenArmsTelemetry.js";
 import { setSendFunnelArmsReporter } from "@/lib/sendFunnelArmsTelemetry.js";
 import { RootStartupLoading } from "@/root/RootStartupLoading.js";
-import { resolveProviderAvailabilityState } from "@/lib/modelProviderAvailability.js";
-import { useProviderAvailabilityLoginEntryGuard } from "@/root/useProviderAvailabilityLoginEntryGuard.js";
 import { ensureProviderFamilyDomainMigration } from "@/lib/providerFamilyDomainMigration.js";
+import { useRelayV3RemoteControl } from "@/remote-relay-v3/useRelayV3RemoteControl.js";
 import { useSettings } from "@/hooks/useSettingService.js";
 import { CLOSE_ACTIVE_CONTEXT_REQUEST_EVENT } from "@/lib/closeActiveContext.js";
 import { AssistantCodeCommentFeatureProvider } from "@/AssistantCodeCommentFeatureProvider.js";
@@ -127,13 +117,6 @@ import type {
   RemoteConnectionOpenPreference,
 } from "@/app-shell/types.js";
 import { DEFAULT_LUCIDE_STROKE_WIDTH } from "@/components/icons/windowIcons.js";
-
-type WelcomeScreenOpenReason =
-  | "startup-provider-required"
-  | "manual-login"
-  | "provider-request"
-  | "logout-provider-required"
-  | "session-expired";
 
 /**
  * Root —— 应用根组件
@@ -159,10 +142,7 @@ export function Root(props: RootProps) {
           composerClientNamespace={props.composerClientNamespace}
         >
           <PlatformProvider platform={props.platform}>
-            <StoreProvider
-              broadcastService={props.services.broadcastService}
-              initialIsRestoringOAuthSession
-            >
+            <StoreProvider broadcastService={props.services.broadcastService}>
               <TabStoreProvider>
                 <ProjectDirectoryProvider isDesktop={props.isDesktop}>
                   <DiffsWorkerPoolProvider>
@@ -255,14 +235,6 @@ function RootInner({
     management: services.sourceServerManagementService,
   });
   const theme = useZCodeStore((state) => state.theme);
-  const user = useZCodeStore((state) => state.user);
-  const isRestoringOAuthSession = useZCodeStore((state) => state.isRestoringOAuthSession);
-  const setUser = useZCodeStore((state) => state.setUser);
-  const setIsRestoringOAuthSession = useZCodeStore((state) => state.setIsRestoringOAuthSession);
-  const setOAuthError = useZCodeStore((state) => state.setOAuthError);
-  const oauthPollingActive = useZCodeStore((state) => state.oauthPollingActive);
-  const setOAuthPollingActive = useZCodeStore((state) => state.setOAuthPollingActive);
-  const markOAuthSuccess = useZCodeStore((state) => state.markOAuthSuccess);
   const {
     settings: appSettings,
     refresh: refreshAppSettings,
@@ -276,13 +248,23 @@ function RootInner({
     zcodeAgentService: services.zcodeAgentService,
     codingPlanSubscriptionService: services.codingPlanSubscriptionService,
   });
-  const [welcomeScreenOpenReason, setWelcomeScreenOpenReason] =
-    useState<WelcomeScreenOpenReason | null>(() =>
-      consumeZcodeJwtInvalidRestartMarker() ? "session-expired" : null,
-    );
+  // relay 账号是应用级登录；门禁只依据 main 广播的 restored 与 account，不依据 phase。
+  // idle 无法区分首次安装、已登出与恢复前状态（docs/ui/relay-login.md）。
+  const relayRemote = useRelayV3RemoteControl();
+  const relayStatus = relayRemote.status;
+  const relayGateResolved =
+    !relayRemote.supported ||
+    relayRemote.statusQueryFailed ||
+    (relayStatus !== null && relayStatus.restored);
+  const relayLoginRequired =
+    relayRemote.supported &&
+    relayStatus !== null &&
+    relayStatus.restored &&
+    relayStatus.account === null;
+  const [manualLoginOpen, setManualLoginOpen] = useState(false);
+  const welcomeScreenOpen = manualLoginOpen || relayLoginRequired;
   const [providerFamilyDomainMigrationComplete, setProviderFamilyDomainMigrationComplete] =
     useState(false);
-  const loginEntryRequest = useZCodeStore((state) => state.loginEntryRequest);
   const rootModelSelectionRead = useModelSelectionServiceView(services.modelSelectionService);
   const rootModelSelectionView =
     rootModelSelectionRead.state.status === "ready" ? rootModelSelectionRead.state.view : null;
@@ -298,10 +280,6 @@ function RootInner({
         </Button>
       </div>
     ) : null;
-  const readRootModelSelectionView = useCallback(
-    () => services.modelSelectionService.getView(),
-    [services.modelSelectionService],
-  );
   const [remoteConnectionDialogOpen, setRemoteConnectionDialogOpen] = useState(false);
   const [remoteConnectionOpenPreference, setRemoteConnectionOpenPreference] =
     useState<RemoteConnectionOpenPreference | null>(null);
@@ -558,53 +536,16 @@ function RootInner({
 
   const shouldPreferDirectoryBrowser = Boolean(preferDirectoryBrowser);
   const supportsEmbeddedBrowser = explicitSupportsEmbeddedBrowser ?? Boolean(isDesktop);
-  const isResolvingStartupAuthState = isRestoringOAuthSession;
-  const rootProviderAvailability = resolveProviderAvailabilityState({
-    modelSelectionView: rootModelSelectionView,
-  });
   const providerStartupSyncPending = isProviderStartupSyncPending({
     providerFamilyDomainMigrationComplete,
     modelSelectionViewHydrated:
-      rootProviderAvailability.hydrated || rootModelSelectionRead.state.status === "error",
+      rootModelSelectionView !== null || rootModelSelectionRead.state.status === "error",
   });
-  const providerAvailabilityLoginEntryGuardEnabled =
-    shouldEnableProviderAvailabilityLoginEntryGuard();
-  const { startupCheckCompleted: providerAvailabilityStartupCheckCompleted } =
-    useProviderAvailabilityLoginEntryGuard({
-      enabled: providerAvailabilityLoginEntryGuardEnabled,
-      user,
-      isRestoringOAuthSession: isResolvingStartupAuthState || providerStartupSyncPending,
-      providerFamilyDomain: appSettings?.providerFamilyDomain,
-      modelSelectionView: rootModelSelectionView,
-      modelSelectionError:
-        rootModelSelectionRead.state.status === "error"
-          ? rootModelSelectionRead.state.error
-          : undefined,
-      refreshProviderState,
-      readModelSelectionView: readRootModelSelectionView,
-      setLoginEntryOpen: (open) => {
-        setWelcomeScreenOpenReason((currentReason) => {
-          if (open) {
-            return "startup-provider-required";
-          }
-          // JWT 过期提示确认后会先写入 session-expired，随后 provider
-          // 启动门禁以 open=false 收尾。这里若无条件清空，会覆盖重新登录页并回到工作区。
-          // 门禁只能关闭自己拥有的启动登录态，不能清理其它交互来源的 reason。
-          return currentReason === "startup-provider-required" ? null : currentReason;
-        });
-      },
-    });
-  const isResolvingProviderStartupState = shouldResolveProviderStartupState({
-    providerStartupSyncPending,
-    providerAvailabilityStartupCheckCompleted,
-  });
-  const isStartupProviderLoginEntryOpen = welcomeScreenOpenReason === "startup-provider-required";
-  // 首次安装时 provider 登录入口判定晚于 workspace 注入，ChatView 会先 mount 并触发草稿预热。
-  // 这里把 provider 启动检查纳入 workspace 恢复门禁，避免未连接账号前启动 ZCode session。
+  const isResolvingProviderStartupState = providerStartupSyncPending;
+  // relay 门禁未确认或未登录前不恢复 workspace，避免 ChatView 在欢迎页背后 mount 并预热草稿
+  // （原 provider 登录门禁语义由 relay 登录门禁替代，见 docs/ui/relay-login.md）。
   const canRestoreWorkspaceSession =
-    !isResolvingStartupAuthState &&
-    !isResolvingProviderStartupState &&
-    !isStartupProviderLoginEntryOpen;
+    relayGateResolved && !relayLoginRequired && !isResolvingProviderStartupState;
   const workspacePersistenceGate = useMemo<WorkspacePersistenceGate>(
     () => ({ canPersist: false, restoreFailed: false }),
     [],
@@ -661,20 +602,13 @@ function RootInner({
   const handleOpenDirectoryBrowser = useCallback(() => {
     setDirectoryBrowserOpen(true);
   }, []);
-  // 桌面端退出流程露出登录入口前到 App 重启为 true；期间只渲染启动画面，不暴露登录入口。
-  const [isLogoutRelaunchPending, setIsLogoutRelaunchPending] = useState(false);
-  const handleReauthenticationRequired = useCallback(() => {
-    setWelcomeScreenOpenReason("session-expired");
-  }, []);
   const {
     setWorkspaceActionError,
     startDraftInWorkspace,
     startNewTaskFromActiveWorkspace,
-    handleLogout,
     handleSelectProject,
     handleSelectConversationWorkspace,
     handleResolveConversationWorkspace,
-    handleEnsureConversationWorkspace,
     handleCreateConversationTask,
     handleOpenWorkspace,
     handleOpenFolderFromWorkspaceMenu,
@@ -694,13 +628,6 @@ function RootInner({
     openDirectoryBrowser: handleOpenDirectoryBrowser,
     refreshProviderState,
     updateAppSettings,
-    setOAuthError,
-    setUser,
-    onProviderFamilyDomainClearedAfterLogout: () => {
-      setWelcomeScreenOpenReason("logout-provider-required");
-    },
-    setLogoutRelaunchPending: setIsLogoutRelaunchPending,
-    userId: user?.id,
     onOpenRemoteConnection: allowRemoteWorkspace ? handleOpenRemoteConnection : undefined,
     openRemoteProjectWorkspace: openPreparedRemoteProjectWorkspace,
     workbenchGroupClientMode: "desktop-continuous",
@@ -891,8 +818,7 @@ function RootInner({
 
   const { isRestoring, hasCompletedInitialRestore, hasCompletedFullRestore } = useTabPersistence({
     settingService: supportsSettings ? services.settingService : undefined,
-    // 首次安装未连接账号时，provider 登录入口判定会晚于 workspace 恢复。
-    // 如果这里先恢复 workspace，ChatView mount 会触发草稿 session 预热并在登录页背后报错。
+    // relay 登录门禁未确认时先不恢复 workspace，避免 ChatView mount 触发草稿预热。
     restoreSession: restoreSession && canRestoreWorkspaceSession,
     persistSession: restoreSession && canRestoreWorkspaceSession,
     persistenceGate: workspacePersistenceGate,
@@ -921,16 +847,13 @@ function RootInner({
     <RequestSecurityWorkspaceBridge workspaceTabs={windowWorkspaceTabs} />
   ) : null;
 
-  const { tryRefresh, clearCredentials } = useTokenRefresh();
-  void tryRefresh;
-  void clearCredentials;
   // 启动阻塞是桌面窗口保护期，手机 Web 远控在进入 Root 前已有配对/加载页。
   // Web 端继续使用该 gate 会在 workspace tab 注入前渲染空 RootShell，露出浏览器白底。
   const isStartupRenderBlocked = shouldShowRootStartupLoading({
     isDesktop,
-    welcomeScreenOpen: Boolean(welcomeScreenOpenReason),
-    isResolvingStartupAuthState,
-    isResolvingProviderStartupState,
+    welcomeScreenOpen,
+    // relay 门禁未确认前同样属于启动解析态，避免 provider 先就绪时露出空白 Root。
+    isResolvingProviderStartupState: isResolvingProviderStartupState || !relayGateResolved,
     isRestoring,
     isBootstrappingInitialWorkspace: isBootstrappingInitialWorkspace || isCreatingFallbackWorkspace,
   });
@@ -940,7 +863,7 @@ function RootInner({
     if (
       !shouldReportLaunchToInput({
         isStartupRenderBlocked,
-        welcomeScreenOpen: Boolean(welcomeScreenOpenReason),
+        welcomeScreenOpen,
         alreadyReported: launchReportedRef.current,
       })
     ) {
@@ -958,7 +881,7 @@ function RootInner({
       inputReady: Date.now(), // T6
       sessionId: `launch-${timings.marks.createdAt}`,
     });
-  }, [isStartupRenderBlocked, welcomeScreenOpenReason]);
+  }, [isStartupRenderBlocked, welcomeScreenOpen]);
 
   useRootPlatformEffects({
     clientMode: "desktop-continuous",
@@ -1015,24 +938,16 @@ function RootInner({
     });
   }, [platform]);
 
-  useRootOAuthEffects({
-    accountIntentKey: JSON.stringify([
-      user?.id,
-      appSettings?.providerFamilyDomain,
-      appSettings?.providerFamilyConnectionSelections,
-    ]),
-    platform,
-    services,
-    refreshProviderState,
-    refreshAppSettings,
-    setUser,
-    setIsRestoringOAuthSession,
-    setOAuthError,
-    oauthPollingActive,
-    setOAuthPollingActive,
-    markOAuthSuccess,
-    onReauthenticationRequired: handleReauthenticationRequired,
-  });
+  // OAuth 应用登录已移除，但桌面 renderer-ready 握手与 deep-link 回调排空必须保留：
+  // main 的 appLaunchGate 等待 rendererReady；onOAuthCallback 内部会发送 handled 信号，
+  // 不注册监听会让挂起的 deep link 永远留在 main 队列（docs/ui/relay-login.md）。
+  useEffect(() => {
+    const disposeOAuthCallback = platform.onOAuthCallback?.(() => {
+      logger.info("[Root] 已忽略失效的 OAuth deep-link 回调");
+    });
+    platform.notifyRendererReady();
+    return () => disposeOAuthCallback?.();
+  }, [platform]);
 
   useEffect(
     () =>
@@ -1073,9 +988,7 @@ function RootInner({
   );
 
   const canEnterNativeThemeSyncSurface = Boolean(
-    !isStartupRenderBlocked &&
-    !welcomeScreenOpenReason &&
-    (workspaceShellPath || isSettingsTabActive),
+    !isStartupRenderBlocked && (workspaceShellPath || isSettingsTabActive),
   );
 
   useEffect(() => {
@@ -1119,12 +1032,12 @@ function RootInner({
   useEffect(() => {
     if (
       shouldBlockRootRender({
-        isResolvingStartupAuthState,
         isResolvingProviderStartupState,
         isRestoring,
         isBootstrappingInitialWorkspace,
       }) ||
-      isStartupProviderLoginEntryOpen ||
+      relayGateResolved === false ||
+      relayLoginRequired ||
       workspaceShellPath ||
       isSettingsTabActive ||
       !allowOpenWorkspace ||
@@ -1173,10 +1086,10 @@ function RootInner({
     handleSelectConversationWorkspace,
     isBootstrappingInitialWorkspace,
     isResolvingProviderStartupState,
-    isResolvingStartupAuthState,
     isRestoring,
     isSettingsTabActive,
-    isStartupProviderLoginEntryOpen,
+    relayGateResolved,
+    relayLoginRequired,
     services.fileService,
     setWorkspaceActionError,
     tabStoreApi,
@@ -1193,50 +1106,21 @@ function RootInner({
     );
   }, [isSettingsTabActive, workspaceShellPath]);
 
-  useEffect(() => {
-    if (!loginEntryRequest) {
-      return;
-    }
-    // 登录入口已从模态弹窗收敛为 WelcomeScreen。
-    // provider 连接请求仍要先退出首次启动引导语义，避免连接完成后误创建默认 workspace。
-    setWelcomeScreenOpenReason("provider-request");
-  }, [loginEntryRequest]);
-
-  // 登录入口不依赖会话；保持引用稳定，避免草稿更新穿透侧栏 memo。
+  // 侧边栏/命令面板的登录入口：手动打开 relay 欢迎页。
+  // relay 不可用（Web/无 bridge）时不暴露入口，避免全屏欢迎页没有可用的关闭路径。
   const handleOpenLoginEntry = useCallback(() => {
-    setWelcomeScreenOpenReason("manual-login");
-  }, []);
-  const handleWelcomeScreenComplete = useCallback(
-    async (reason: LoginCompleteReason) => {
+    if (!relayRemote.supported) return;
+    setManualLoginOpen(true);
+  }, [relayRemote.supported]);
+  const handleWelcomeScreenComplete = useCallback(async () => {
+    setManualLoginOpen(false);
+    try {
       await refreshAppSettings();
-      if (
-        welcomeScreenOpenReason !== "startup-provider-required" ||
-        workspaceShellPath ||
-        !allowOpenWorkspace
-      ) {
-        setWelcomeScreenOpenReason(null);
-        return;
-      }
-
-      try {
-        await handleEnsureConversationWorkspace();
-      } catch (error) {
-        logger.error("[Root] 登录后创建默认 workspace 失败", {
-          error,
-          reason,
-        });
-      } finally {
-        setWelcomeScreenOpenReason(null);
-      }
-    },
-    [
-      allowOpenWorkspace,
-      handleEnsureConversationWorkspace,
-      refreshAppSettings,
-      welcomeScreenOpenReason,
-      workspaceShellPath,
-    ],
-  );
+      await refreshProviderState();
+    } catch (error) {
+      logger.warn("[Root] relay 登录后刷新状态失败", { error });
+    }
+  }, [refreshAppSettings, refreshProviderState]);
   const remoteProjectIntentEpoch = useRef(0);
   const [remoteProjectSelection, setRemoteProjectSelection] = useState<{
     host: RemoteProjectHost;
@@ -1440,15 +1324,13 @@ function RootInner({
     onCreateTask: handleCreateTask,
     onOpenWorkspace: handleOpenWorkspace,
     allowOpenWorkspace,
-    onLogin: !user ? handleOpenLoginEntry : undefined,
-    onLogout: user ? handleLogout : undefined,
-    user,
+    onLogin: relayRemote.supported ? handleOpenLoginEntry : undefined,
   };
 
   if (credentialRecovery.state) return <CredentialStoreRecovery recovery={credentialRecovery} />;
 
-  // 退出中阻断态复用启动画面：与重启后的启动画面视觉连续，且不渲染登录页或工作区。
-  if (isStartupRenderBlocked || isLogoutRelaunchPending) {
+  // 启动阻塞期间只渲染启动画面，不暴露登录入口或工作区。
+  if (isStartupRenderBlocked) {
     const loadingLabel = intl.formatMessage({ id: "common.loading" });
     return (
       <RootShell>
@@ -1464,7 +1346,7 @@ function RootInner({
     );
   }
 
-  if (welcomeScreenOpenReason) {
+  if (welcomeScreenOpen) {
     return (
       <RootShell>
         {rootModelSelectionErrorNode}
@@ -1559,9 +1441,7 @@ function RootInner({
                 remoteWorkspaceSessions={remoteWorkspaceSessions}
                 allowRemoteWorkspace={allowRemoteWorkspace}
                 handleBackFromSettings={handleBackFromSettings}
-                handleLogout={user ? handleLogout : undefined}
-                onLogin={!user ? handleOpenLoginEntry : undefined}
-                user={user}
+                onLogin={relayRemote.supported ? handleOpenLoginEntry : undefined}
                 reconnectingRemoteWorkspaceKeys={reconnectingRemoteWorkspaceKeys}
                 remoteWorkspaceRecoveryByWorkspaceKey={remoteWorkspaceRecoveryByWorkspaceKey}
                 remoteWorkspaceErrorByWorkspaceKey={remoteWorkspaceErrorByWorkspaceKey}

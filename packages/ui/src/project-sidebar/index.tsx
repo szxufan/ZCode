@@ -331,8 +331,6 @@ export const ProjectSidebar = memo(function ProjectSidebar(props: ProjectSidebar
                 onUsageClick={openSettings}
                 onUpgradeClick={upgrade}
                 onLogin={props.onLogin}
-                onLogout={props.onLogout}
-                user={props.user}
                 workspacePath={props.workspacePath}
                 // 项目侧栏不再从 tab 反推身份；远控入口必须沿用当前 attachment 的精确 scope。
                 workspaceIdentity={props.workspaceIdentity}

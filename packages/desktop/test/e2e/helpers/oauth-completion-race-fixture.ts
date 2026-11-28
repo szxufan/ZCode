@@ -9,17 +9,12 @@ export async function prepareOAuthCompletionRaceFixture(
   const credentialRecovery = specs.some((spec) =>
     spec.endsWith("credential-store-recovery.test.ts"),
   );
-  // 退出登录门禁用例复用同一合成 OAuth 控制面完成真实 UI 登录。
-  const usesFixture = specs.some(
-    (spec) =>
-      spec.endsWith("oauth-completion-race.test.ts") ||
-      spec.endsWith("logout-relaunch-login-gate.test.ts"),
-  );
-  if (!credentialRecovery && !usesFixture) return null;
+  // 保留给仍存在的 credential-store-recovery 专项；OAuth 完成竞态/退出登录门禁专项已删除。
+  if (!credentialRecovery) return null;
   let tokenResponse: ServerResponse | undefined;
   let tokenRequests = 0;
   let readyResponses = 0;
-  let pollingEnabled = credentialRecovery;
+  let pollingEnabled: boolean = credentialRecovery;
   let clockMode: "backward" | "forward" | "fast-clock" | "expired-init" | null = null;
   let pollRequests = 0;
   let failPolling = false;
