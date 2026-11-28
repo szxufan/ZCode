@@ -4245,6 +4245,7 @@ const ruRU: Record<string, string> = {
   "settings.modelProvider.catalogProviderEmpty": "Провайдеры не найдены",
   "settings.modelProvider.addProviderAction": "Добавить провайдера",
   "settings.modelProvider.templatePickerTitle": "Добавить провайдера",
+  "settings.modelProvider.templateGroup.fork": "LinkPi",
   "settings.modelProvider.templateGroup.zhipu": "Zhipu",
   "settings.modelProvider.templateGroup.other": "Другие",
   "settings.modelProvider.templatePickerBack": "Назад к сведениям о провайдере",

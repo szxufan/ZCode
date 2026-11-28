@@ -303,6 +303,7 @@ export function ModelProviderSection({
       {templatePickerOpen ? (
         <ProviderTemplatePicker
           templates={providerTemplates}
+          forkTemplateIds={providerSettingsView?.forkTemplateIds ?? []}
           creating={creatingProvider}
           onBack={() => setTemplatePickerOpen(false)}
           onCreateFromTemplate={(templateId) => {

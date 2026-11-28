@@ -794,6 +794,7 @@ nodes:
       - "Candidates are transient Renderer dialog state; no Host cache, no background sync, no fourth Runtime Overlay, and remote-disappeared models are never deleted."
       - "Existing models and non-chat endpoint candidates are disabled in the preview; import never overwrites existing model configs, order, enablement, or default selection."
       - "Only api-key + openai-chat-completions providers expose the pull button; connection-fingerprint/membership revalidation rejects stale imports without mutation."
+      - "Fork-owned templates declared in Release.forkTemplateIds are re-applied from Bundled after Bundled/Active/Remote selection; a higher-revision remote release cannot delete or replace them, and the template picker renders them in a dedicated leading group."
 
   - id: "capability.plan-entitlements"
     kind: "capability"

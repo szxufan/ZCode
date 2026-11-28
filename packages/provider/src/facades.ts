@@ -206,6 +206,8 @@ export interface ProviderSettingsTemplateView {
 
 export interface ProviderSettingsView {
   readonly revision: number;
+  /** fork 自有模板 ID；设置页据此把它们单独分组置顶。 */
+  readonly forkTemplateIds: readonly string[];
   readonly providerTemplates: readonly ProviderSettingsTemplateView[];
   readonly providerOrder: readonly ProviderId[];
   readonly providers: readonly ProviderSettingsProviderView[];
@@ -256,6 +258,7 @@ export class ProviderSettingsFacade {
       revision: snapshot.registry.revision,
       zcodeBuiltinProviders: snapshot.config.zcodeBuiltinProviders,
       zcodeBuiltinProviderTemplates: snapshot.config.zcodeBuiltinProviderTemplates,
+      forkTemplateIds: snapshot.config.forkTemplateIds,
       personalProviders: snapshot.config.personalProviders,
       personalModels: snapshot.config.personalModels,
       resolution: snapshot.resolution,
@@ -724,6 +727,7 @@ function createProviderSettingsView(input: {
   revision: number;
   zcodeBuiltinProviders: ProviderRegistryServiceSnapshot["config"]["zcodeBuiltinProviders"];
   zcodeBuiltinProviderTemplates: ProviderRegistryServiceSnapshot["config"]["zcodeBuiltinProviderTemplates"];
+  forkTemplateIds?: readonly string[];
   personalProviders: ProviderRegistryServiceSnapshot["config"]["personalProviders"];
   personalModels: ProviderRegistryServiceSnapshot["config"]["personalModels"];
   resolution: ProviderConfigResolution;
@@ -785,6 +789,7 @@ function createProviderSettingsView(input: {
   const configuredProviders = visibleProviders;
   return Object.freeze({
     revision: input.revision,
+    forkTemplateIds: Object.freeze([...(input.forkTemplateIds ?? [])]),
     providerTemplates: Object.freeze(
       (input.zcodeBuiltinProviderTemplates ?? ProviderTemplateMap.empty())
         .entries()

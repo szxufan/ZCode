@@ -2,7 +2,12 @@ import { watch, type FSWatcher } from "node:fs";
 import { createHash } from "node:crypto";
 import { mkdir, readFile } from "node:fs/promises";
 import { basename, dirname, resolve } from "node:path";
-import type { ProviderConfigLayerSnapshot, ProviderSource } from "@zcode/provider";
+import {
+  ModelConfigRules,
+  ProviderTemplateMap,
+  type ProviderConfigLayerSnapshot,
+  type ProviderSource,
+} from "@zcode/provider";
 import { atomicWritePrivateTextFile, withFileLock } from "@zcode/shared/node";
 import {
   decodeZCodeBuiltinRelease,
@@ -55,10 +60,8 @@ export class NodeZCodeBuiltinProviderConfigSource implements ProviderSource<Prov
     } catch {
       // Active 只是可丢弃缓存，目录锁、监听或原子物化失败不能阻断
       // Bundled 基线。缓存边界不可用时绕过 Active；Bundled 自身无效仍会在这里抛错。
-      release = selectReleaseCandidate(
-        await readBundledReleaseCandidate(this.#bundledFilePath),
-        null,
-      );
+      const bundled = await readBundledReleaseCandidate(this.#bundledFilePath);
+      release = overlayForkTemplates(selectReleaseCandidate(bundled, null), bundled.release);
     }
     this.#observedSignature ??= signatureOf(release);
     return snapshotFromRelease(release, this.#sourceKey);
@@ -71,15 +74,18 @@ export class NodeZCodeBuiltinProviderConfigSource implements ProviderSource<Prov
       this.#assertNotDisposed();
       const current = await this.#readAndMaterializeLocked();
       this.#assertNotDisposed();
-      if (release.revision < current.revision) return "stale" as const;
-      if (release.revision === current.revision) {
-        if (serializeZCodeBuiltinRelease(release) === serializeZCodeBuiltinRelease(current)) {
+      // 远端 Release 不能删除 fork 自有模板；比较与写入都用叠加后的完整内容。
+      const bundled = await readBundledReleaseCandidate(this.#bundledFilePath);
+      const effective = overlayForkTemplates(release, bundled.release);
+      if (effective.revision < current.revision) return "stale" as const;
+      if (effective.revision === current.revision) {
+        if (serializeZCodeBuiltinRelease(effective) === serializeZCodeBuiltinRelease(current)) {
           return "unchanged" as const;
         }
-        throw new Error(`ZCode Built-in 相同 revision ${release.revision} 对应不同内容`);
+        throw new Error(`ZCode Built-in 相同 revision ${effective.revision} 对应不同内容`);
       }
-      await this.#writeActiveLocked(release);
-      this.#observedSignature = signatureOf(release);
+      await this.#writeActiveLocked(effective);
+      this.#observedSignature = signatureOf(effective);
       return "updated" as const;
     });
     if (result === "updated" && !this.#disposed) this.#emit("remote-updated");
@@ -107,7 +113,7 @@ export class NodeZCodeBuiltinProviderConfigSource implements ProviderSource<Prov
         ? Promise.resolve(null)
         : readReleaseCandidate(this.#activeFilePath),
     ]);
-    const selected = selectReleaseCandidate(bundled, active);
+    const selected = overlayForkTemplates(selectReleaseCandidate(bundled, active), bundled.release);
     if (this.#activeFilePath !== this.#bundledFilePath) {
       const activeSignature = active?.release ? signatureOf(active.release) : null;
       if (activeSignature !== signatureOf(selected)) await this.#writeActiveLocked(selected);
@@ -205,6 +211,46 @@ async function readReleaseCandidate(filePath: string): Promise<ReleaseCandidate>
   }
 }
 
+/**
+ * fork 自有模板不是远端产品事实，但不能被更高 revision 的远端 Release 删除。
+ * 从随包 Bundled 读取 forkTemplateIds 指定的模板和其 template-model 规则，叠加到任何
+ * 已选中 Release；快照 revision 保持被选中 Release 的 revision，不制造新的发布单元。
+ */
+export function overlayForkTemplates(
+  selected: ZCodeBuiltinRelease,
+  bundled: ZCodeBuiltinRelease | undefined,
+): ZCodeBuiltinRelease {
+  const declaredForkTemplateIds = bundled?.forkTemplateIds ?? [];
+  if (!bundled || declaredForkTemplateIds.length === 0) return selected;
+  const forkTemplateIds = [...new Set(declaredForkTemplateIds)];
+  const ids = new Set(forkTemplateIds);
+  const templates = new ProviderTemplateMap(
+    bundled.config.providerTemplates.entries().filter(([templateId]) => ids.has(templateId)),
+  );
+  for (const templateId of ids) {
+    if (!templates.has(templateId)) {
+      throw new Error(`forkTemplateIds 指定的模板不在 Bundled 中: ${templateId}`);
+    }
+  }
+  const rules = bundled.config.modelConfigRules
+    .rules()
+    .filter((rule) => rule.type === "template-model" && ids.has(rule.templateId));
+  // Active 可能已经包含上一次叠加写入的 fork 规则；先移除同一模板的旧规则再追加，
+  // 保证 overlay 幂等，避免每次读取都重复规则并重写 Active。
+  const retainedRules = selected.config.modelConfigRules
+    .rules()
+    .filter((rule) => rule.type !== "template-model" || !ids.has(rule.templateId));
+  return Object.freeze({
+    ...selected,
+    forkTemplateIds: Object.freeze([...forkTemplateIds]) as readonly string[],
+    config: Object.freeze({
+      providers: selected.config.providers,
+      providerTemplates: selected.config.providerTemplates.overlay(templates),
+      modelConfigRules: new ModelConfigRules([...retainedRules, ...rules]),
+    }),
+  });
+}
+
 function selectReleaseCandidate(
   bundled: ReleaseCandidate | null,
   active: ReleaseCandidate | null,
@@ -241,6 +287,7 @@ function snapshotFromRelease(
     revision: `zcode-builtin:${release.revision}:${sourceKey}`,
     providers: release.config.providers,
     providerTemplates: release.config.providerTemplates,
+    forkTemplateIds: release.forkTemplateIds,
     models: release.config.modelConfigRules,
   });
 }

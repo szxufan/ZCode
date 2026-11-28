@@ -21,12 +21,14 @@ type CustomProviderCreate = (label: string) => Promise<void>;
 
 export function ProviderTemplatePicker({
   templates,
+  forkTemplateIds = [],
   onBack,
   onCreateFromTemplate,
   onCreateCustom,
   creating,
 }: {
   templates: ProviderSettingsView["providerTemplates"];
+  forkTemplateIds?: readonly string[];
   onBack: () => void;
   onCreateFromTemplate: ProviderTemplateCreate;
   onCreateCustom: CustomProviderCreate;
@@ -35,20 +37,31 @@ export function ProviderTemplatePicker({
   const { intl, locale } = useZCodeIntl();
   const { dismissFeedback, showFeedback } = useProviderDetailFeedback();
   const customLabel = intl.formatMessage({ id: "settings.modelProvider.newProviderName" });
-  const groups = [
-    {
-      id: "zhipu",
-      templates: OFFICIAL_PROVIDER_TEMPLATE_IDS.flatMap((id) =>
-        templates.filter((template) => template.templateId === id),
-      ),
-    },
-    {
-      id: "other",
-      templates: templates.filter(
-        (template) => !OFFICIAL_PROVIDER_TEMPLATE_IDS.includes(template.templateId),
-      ),
-    },
-  ] as const;
+  const forkIds = new Set(forkTemplateIds);
+  const groups = (
+    [
+      {
+        id: "fork",
+        templates: templates.filter((template) => forkIds.has(template.templateId)),
+      },
+      {
+        id: "zhipu",
+        templates: OFFICIAL_PROVIDER_TEMPLATE_IDS.flatMap((id) =>
+          templates.filter(
+            (template) => template.templateId === id && !forkIds.has(template.templateId),
+          ),
+        ),
+      },
+      {
+        id: "other",
+        templates: templates.filter(
+          (template) =>
+            !OFFICIAL_PROVIDER_TEMPLATE_IDS.includes(template.templateId) &&
+            !forkIds.has(template.templateId),
+        ),
+      },
+    ] as const
+  ).filter((group) => group.id !== "fork" || group.templates.length > 0);
   const createWithFeedback = async (create: () => Promise<void>) => {
     const feedbackKey = "provider-template-create";
     dismissFeedback(feedbackKey);

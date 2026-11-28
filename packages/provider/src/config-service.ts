@@ -24,6 +24,8 @@ export interface ProviderConfigLayerSnapshot {
   readonly revision: string;
   readonly providers: ProviderConfigMap;
   readonly providerTemplates?: ProviderTemplateMap;
+  /** Release 根部声明的 fork 自有模板 ID，由 Source 叠加后投影给设置页分组。 */
+  readonly forkTemplateIds?: readonly string[];
   readonly models: ModelConfigRules;
   readonly providerOrder?: readonly ProviderId[];
   readonly defaultModelSelection?: ModelSelection;
@@ -118,6 +120,7 @@ export class ProviderConfigService implements ProviderSource<ProviderConfigSnaps
     return Object.freeze({
       revision: JSON.stringify([zcodeBuiltin.revision, personal.revision]),
       zcodeBuiltinRevision: zcodeBuiltin.revision,
+      forkTemplateIds: zcodeBuiltin.forkTemplateIds,
       personalRevision: personal.revision,
       zcodeBuiltinProviders: zcodeBuiltin.providers,
       zcodeBuiltinProviderTemplates: zcodeBuiltin.providerTemplates ?? ProviderTemplateMap.empty(),

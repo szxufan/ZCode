@@ -31,6 +31,11 @@ ZCode Built-in 在物理上继续使用一份完整、原子的 JSON，不拆成
 发布内容的一部分；具体 Rule 类型、物理写作顺序、Endpoint 特化、证据和默认启用目录规范见
 [`zcode-builtin-provider-config.md`](./zcode-builtin-provider-config.md)。这些规范不新增 Rule priority 或动态重排。
 
+Release 根部 `forkTemplateIds` 声明 fork 自有模板。Source 在 Bundled/Active/Remote 候选中选中 Release
+之后，总是从随包 Bundled 把这些模板及其 `templateModelRules` 叠加回生效配置；远端 Release 不能删除或
+替换 fork 自有模板，只能追加其他规则。`forkTemplateIds` 只承载身份声明，模板内容与规则仍只有 Built-in
+Config 一处事实。远端同 revision 冲突判定使用叠加后的完整 Release，避免叠加前后内容不一致。
+
 Built-in Release 按以下产品来源组织：
 
 ```text

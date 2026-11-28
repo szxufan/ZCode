@@ -4169,6 +4169,7 @@ const koKR: Record<string, string> = {
   "settings.modelProvider.catalogProviderEmpty": "공급자를 찾을 수 없습니다",
   "settings.modelProvider.addProviderAction": "공급자 추가",
   "settings.modelProvider.templatePickerTitle": "공급자 추가",
+  "settings.modelProvider.templateGroup.fork": "LinkPi",
   "settings.modelProvider.templateGroup.zhipu": "Zhipu",
   "settings.modelProvider.templateGroup.other": "기타",
   "settings.modelProvider.templatePickerBack": "공급자 세부 정보로 돌아가기",

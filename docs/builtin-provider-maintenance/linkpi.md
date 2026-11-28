@@ -42,11 +42,13 @@ Date: 2026-11-26
 
 ## 验收
 
-- 连接派模板出现在"添加供应商"聚合区末尾；创建实例后 Base URL 和 API 类型正确继承。
+- 连接派模板在 Release 根部 `forkTemplateIds` 中声明，Source 对所有候选叠加；即使远端 Release
+  revision 更高且不含 linkpi，模板也不会丢失。
+- 连接派模板在"添加供应商"独立分组"连接派"中置顶，不进"其他"；创建实例后 Base URL 和 API 类型正确继承。
 - 设置页显示"拉取模型"按钮；点击后打开筛选多选弹窗，不直接写入配置。
 - 确认导入选中的新模型后，模型出现在列表中并进入 Registry；取消则无副作用。
-- E2E 候选用例 `provider-model-discovery.test.ts` 3/3 通过（保持 `manual-review/pending` 直到人工 review）。
-  运行产物：`packages/desktop/.e2e-artifacts/desktop-e2e-20261126124013874-p57748-4e3532a384534b77`（Windows Electron，2026-11-26）。
+- E2E 候选用例 `provider-model-discovery.test.ts` 4/4 通过（保持 `manual-review/pending` 直到人工 review）。
+  运行产物：`packages/desktop/.e2e-artifacts/desktop-e2e-20261128050654624-p1748-17ff5a8357c81aeb`（Windows Electron，2026-11-28）。
 - 真实 `/models` 解析（76 条，61 个对话端点）和 `glm-5.3-flash` 低预算 `/chat/completions` 冒烟通过
   （finish=length，16 completion tokens；密钥不入库）。
 

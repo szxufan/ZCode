@@ -6,8 +6,10 @@ import {
   TID_MODEL_DISCOVERY_MODEL_CHECKBOX,
   TID_MODEL_DISCOVERY_SEARCH_INPUT,
   TID_MODEL_DISCOVERY_SELECT_ALL,
+  TID_MODEL_PROVIDER_ADD_PROVIDER_BUTTON,
   TID_MODEL_PROVIDER_NAV_ITEM,
   TID_MODEL_PROVIDER_PULL_MODELS_BUTTON,
+  TID_MODEL_PROVIDER_TEMPLATE_ITEM,
   TID_SETTINGS_SECTION_NAV,
   TID_TASK_SETTINGS_BUTTON,
   testId,
@@ -109,13 +111,6 @@ describe("provider model discovery preview and selective import", () => {
     await clickTestIdByDom(testId(TID_MODEL_PROVIDER_NAV_ITEM, `custom:${PROVIDER_ID}`));
   }
 
-  async function openDiscoveryDialog() {
-    await clickTestIdByDom(TID_MODEL_PROVIDER_PULL_MODELS_BUTTON);
-    await $(`[data-testid="${TID_MODEL_DISCOVERY_DIALOG}"]`).waitForDisplayed({
-      timeout: 15_000,
-    });
-  }
-
   async function readPersonalConfigModelIds() {
     const paths = getE2EAppDataPaths();
     const raw = JSON.parse(await readFile(paths.configFile, "utf8")) as {
@@ -133,6 +128,31 @@ describe("provider model discovery preview and selective import", () => {
     );
     return provider?.config?.personalModelIds ?? [];
   }
+
+  it("linkpi template is pinned in its own group", async function () {
+    this.timeout(120_000);
+    await prepareV4ConversationE2E({ skipProvider: true });
+    await restartIntoWorkspace({ afterElectronProcessExit: () => seedProvider() });
+    await clickTestIdByDom(TID_TASK_SETTINGS_BUTTON);
+    await clickTestIdByDom(testId(TID_SETTINGS_SECTION_NAV, "modelProvider"));
+    await clickTestIdByDom(TID_MODEL_PROVIDER_ADD_PROVIDER_BUTTON);
+    const ids = await $$("[data-provider-template-group]").map((group) =>
+      group.getAttribute("data-provider-template-group"),
+    );
+    expect(ids).toEqual(["fork", "zhipu", "other"]);
+    const forkCards = await $$('[data-provider-template-group="fork"] [data-testid]').map((item) =>
+      item.getAttribute("data-testid"),
+    );
+    expect(forkCards).toContain(testId(TID_MODEL_PROVIDER_TEMPLATE_ITEM, "linkpi"));
+    const card = $(
+      `[data-provider-template-group="fork"] [data-testid="${testId(TID_MODEL_PROVIDER_TEMPLATE_ITEM, "linkpi")}"]`,
+    );
+    await card.waitForDisplayed({ timeout: 10_000 });
+    const otherCard = $(
+      `[data-provider-template-group="other"] [data-testid="${testId(TID_MODEL_PROVIDER_TEMPLATE_ITEM, "linkpi")}"]`,
+    );
+    expect(await otherCard.isExisting()).toBe(false);
+  });
 
   it("pulls preview, filters, and imports only selected new models", async function () {
     this.timeout(180_000);

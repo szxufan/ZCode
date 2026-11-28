@@ -1,6 +1,7 @@
 {
   "schemaVersion": 1,
-  "revision": 45,
+  "revision": 49,
+  "forkTemplateIds": ["linkpi"],
   "config": {
     "providerConfigRules": {
       "templateRules": [

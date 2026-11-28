@@ -41,7 +41,7 @@ flowchart TD
 | [Model Schema](../../packages/shared/src/model-config.ts)                     | 能力、选项与完整性                                |
 | [Resolver](../../packages/provider/src/resolver.ts)                           | 模板继承、成员及最终可执行配置                    |
 
-文件外壳是 `{schemaVersion: 1, revision, config}`。配置内容变化要使用新 revision，避免同号异内容；纯文档整理不递增。revision 与产品版本号不同，具体交付见[交付规范](./delivery.md)。不手工扩展 Schema 未接受的字段。
+文件外壳是 `{schemaVersion: 1, revision, forkTemplateIds?, config}`。`forkTemplateIds` 是 fork 自有模板的身份声明，Source 会在任何 Bundled/Active/Remote 候选之后从 Bundled 叠加这些模板，远端更高 revision 不能删除它们。配置内容变化要使用新 revision，避免同号异内容；纯文档整理不递增。revision 与产品版本号不同，具体交付见[交付规范](./delivery.md)。不手工扩展 Schema 未接受的字段。
 
 ## 模板、成员和规则
 

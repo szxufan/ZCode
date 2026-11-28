@@ -1,6 +1,6 @@
 # 当前配置与维护状态
 
-当前 Git 配置为 revision 45，新增聚合平台供应商 `linkpi`（连接派，`openai-chat-completions`，成员为空，模型由设置页拉取导入），见[连接派规格](./linkpi.md)。revision 44 OpenAI 官方模板新增并默认启用 `gpt-6.1-terra`，Luna 配置保持原样；两者新增独立待执行回归清单，真实 API 本轮未测，见[Terra 维护规格](./openai-terra.md)。revision 43 澄清 TokenHub 为中国站账号下的广州 / 新加坡 API；revision 42 关闭 Coding Plan 与加速卡入口 GLM-5.3 标准版的视频，保留图片与 Flash；此前新增默认启用 `doubao-seed-evolving`。方舟普通 API 的 Pro/Lite/Turbo 三个成员默认关闭视频输入，原因是当前 Messages 入口拒绝视频内容块；其余能力保持不变。2026-10-27 经确认统一关闭 OpenCode Go Chat 的原生 JSON Schema 声明，模板成员及同站点自建供应商沿用该策略，其他能力和入口不变。2026-10-26 新增 MiniMax M3.1 Flash 的四个入口成员并默认启用；原厂 M2.7 两项及套餐 Preview 默认关闭，删除原厂明确下线的 M2/M2.1 三个成员，精确差异与证据见[M3.1 Flash 规格](./minimax-m31-flash.md)。revision 37 已整理模板品牌顺序；revision 36 已新增八条 Kimi K3.1 Pro/Highspeed，见[K3.1 Pro 规格](./kimi-k3-1-pro.md)。此前的主流供应商、套餐扩展见[实施规格](./expansion-2026-10-15.md)。账号配置与共享模型规则保持不变；下文为 Git 状态，不代表上线或全部真实调用通过。
+当前 Git 配置为 revision 49，新增聚合平台供应商 `linkpi`（连接派，`openai-chat-completions`，成员为空，模型由设置页拉取导入），见[连接派规格](./linkpi.md)。revision 49 为 fork 自有模板归属修复：根 `forkTemplateIds` 声明 linkpi，Source 在任何远端 Release 后从 Bundled 叠加，避免高 revision 远端覆盖；设置页将连接派单列置顶。revision 44 OpenAI 官方模板新增并默认启用 `gpt-6.1-terra`，Luna 配置保持原样；两者新增独立待执行回归清单，真实 API 本轮未测，见[Terra 维护规格](./openai-terra.md)。revision 43 澄清 TokenHub 为中国站账号下的广州 / 新加坡 API；revision 42 关闭 Coding Plan 与加速卡入口 GLM-5.3 标准版的视频，保留图片与 Flash；此前新增默认启用 `doubao-seed-evolving`。方舟普通 API 的 Pro/Lite/Turbo 三个成员默认关闭视频输入，原因是当前 Messages 入口拒绝视频内容块；其余能力保持不变。2026-10-27 经确认统一关闭 OpenCode Go Chat 的原生 JSON Schema 声明，模板成员及同站点自建供应商沿用该策略，其他能力和入口不变。2026-10-26 新增 MiniMax M3.1 Flash 的四个入口成员并默认启用；原厂 M2.7 两项及套餐 Preview 默认关闭，删除原厂明确下线的 M2/M2.1 三个成员，精确差异与证据见[M3.1 Flash 规格](./minimax-m31-flash.md)。revision 37 已整理模板品牌顺序；revision 36 已新增八条 Kimi K3.1 Pro/Highspeed，见[K3.1 Pro 规格](./kimi-k3-1-pro.md)。此前的主流供应商、套餐扩展见[实施规格](./expansion-2026-10-15.md)。账号配置与共享模型规则保持不变；下文为 Git 状态，不代表上线或全部真实调用通过。
 
 ## 历史问题处置（2026-10-27）
 
@@ -21,11 +21,11 @@
 ## 基线与口径
 
 - 检查日期：2026-11-04。维护基线为 staging `7f3165500d`，产品源码版本 3.17.1；下文为本轮工作分支配置，不表示该版本已发布。
-- 正式/测试均为 schemaVersion 1、revision 45；测试文件与正式文件同源同步。
+- 正式/测试均为 schemaVersion 1、revision 49；根部 `forkTemplateIds: ["linkpi"]`；测试文件与正式文件同源同步。
 - 35 个普通 API/套餐模板，10 个固定账号 Provider；模板成员共 315 条，其中默认启用 128 条，包含跨模板重复型号。连接派模板成员为空，不计入成员数。相对最初 revision 33 累计新增 13 个模板、72 条成员（其中 Preview 已转一般维护）；累计 22 条默认关闭变更，删除 3 条原厂已下线成员。
 - Model 规则 83、Model+API 规则 73、正式 Site 规则 58、测试 Site 规则 70、模板精确规则 317、固定 Provider 精确规则 30。
-- 正式文件 SHA-256：`ebf49a2fb5792aa2d137da9864358c4a438fcbe340ebf4b534ba807df5e91f11`。
-- 测试文件 SHA-256：`996f5ac607b6469f4d1f5c51144b4b9b50c9c41dbe19b00a033d2209cc2c2bd4`。hash 针对 Git 内容（LF）；本地 CRLF checkout 需要按仓库换行归一后比较。
+- 正式文件 SHA-256：`b787867fe4c86416f51f244c0a38b086a629da65bada775f5726a2e0e7c3464b`。
+- 测试文件 SHA-256：`91b107144eb900bfd7b4a8cfa4d6fab0f522e769c3f6188fbf43a99bc73be23d`。hash 针对 Git 内容（LF）；本地 CRLF checkout 需要按仓库换行归一后比较。
 
 清单直接从[正式 JSON](../../config/provider/zcode-builtin.json)提取。下面的启停是模板精确规则，不包含用户覆盖或实际 Key/权益；存在于列表不等于该入口在本轮已真实验证。
 

@@ -4271,6 +4271,7 @@ const jaJP: Record<string, string> = {
   "settings.modelProvider.catalogProviderEmpty": "プロバイダーが見つかりません",
   "settings.modelProvider.addProviderAction": "プロバイダーを追加",
   "settings.modelProvider.templatePickerTitle": "プロバイダーを追加",
+  "settings.modelProvider.templateGroup.fork": "LinkPi",
   "settings.modelProvider.templateGroup.zhipu": "Zhipu",
   "settings.modelProvider.templateGroup.other": "その他",
   "settings.modelProvider.templatePickerBack": "プロバイダーの詳細に戻る",

@@ -15,6 +15,7 @@ export interface ProviderSource<TSnapshot> {
 export interface ProviderConfigSnapshot {
   readonly revision: string;
   readonly zcodeBuiltinRevision: string;
+  readonly forkTemplateIds?: readonly string[];
   readonly personalRevision: string;
   readonly zcodeBuiltinProviders: ProviderConfigMap;
   readonly zcodeBuiltinProviderTemplates: ProviderTemplateMap;

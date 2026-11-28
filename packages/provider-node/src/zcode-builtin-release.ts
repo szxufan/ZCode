@@ -19,6 +19,8 @@ export interface ZCodeBuiltinConfigContent {
 export interface ZCodeBuiltinRelease {
   readonly schemaVersion: typeof ZCODE_BUILTIN_RELEASE_SCHEMA_VERSION;
   readonly revision: number;
+  /** fork 自有模板 ID；由 Bundled 声明，Source 选中任何 Release 后都从 Bundled 重新叠加。 */
+  readonly forkTemplateIds?: readonly string[];
   readonly config: ZCodeBuiltinConfigContent;
 }
 
@@ -26,6 +28,7 @@ const releaseSchema = z
   .object({
     schemaVersion: z.literal(ZCODE_BUILTIN_RELEASE_SCHEMA_VERSION),
     revision: z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER),
+    forkTemplateIds: z.array(z.string().min(1)).optional(),
     config: z
       .object({
         providerConfigRules: z.unknown(),
@@ -48,6 +51,9 @@ export function decodeZCodeBuiltinRelease(input: unknown): ZCodeBuiltinRelease {
   return Object.freeze({
     schemaVersion: ZCODE_BUILTIN_RELEASE_SCHEMA_VERSION,
     revision: parsed.revision,
+    ...(parsed.forkTemplateIds
+      ? { forkTemplateIds: Object.freeze([...parsed.forkTemplateIds]) as readonly string[] }
+      : {}),
     config: Object.freeze({
       providers,
       providerTemplates,
@@ -60,6 +66,7 @@ export function encodeZCodeBuiltinRelease(release: ZCodeBuiltinRelease): object 
   return {
     schemaVersion: ZCODE_BUILTIN_RELEASE_SCHEMA_VERSION,
     revision: release.revision,
+    ...(release.forkTemplateIds ? { forkTemplateIds: [...release.forkTemplateIds] } : {}),
     config: {
       providerConfigRules: {
         templateRules: release.config.providerTemplates.toJSON(),
